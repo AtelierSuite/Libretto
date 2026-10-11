@@ -7,10 +7,10 @@ import UIKit
 @MainActor
 @Suite("Code editor")
 struct CodeEditorTests {
-    private func makeEditor(_ source: String) -> (CodeEditorController, () -> WordDocument?) {
+    private func makeEditor(_ source: String, language: SourceLanguage = .swift) -> (CodeEditorController, () -> WordDocument?) {
         var document = PlainText.document(from: Data(source.utf8), format: PlainText.codeFormat)
-        document.sourceLanguage = .swift
-        let controller = CodeEditorController(document: document, language: .swift, scheme: .light)
+        document.sourceLanguage = language
+        let controller = CodeEditorController(document: document, language: language, scheme: .light)
         controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 600)
         controller.view.layoutIfNeeded()
         var latest: WordDocument?
@@ -18,9 +18,9 @@ struct CodeEditorTests {
         return (controller, { latest })
     }
 
-    @Test("Return keeps the line's indent, and typing reaches the document as lines")
-    func typing() throws {
-        let (controller, latest) = makeEditor("func f() {\n\tlet a = 1\n}")
+    @Test("Return keeps the line's indent, and typing reaches the document as lines", arguments: [SourceLanguage.swift, .plainText])
+    func typing(language: SourceLanguage) throws {
+        let (controller, latest) = makeEditor("func f() {\n\tlet a = 1\n}", language: language)
         let textView = controller.view.textView
         textView.selectedRange = NSRange(location: ("func f() {\n\tlet a = 1" as NSString).length, length: 0)
         if controller.textView(textView, shouldChangeTextIn: textView.selectedRange, replacementText: "\n") {
@@ -32,7 +32,7 @@ struct CodeEditorTests {
 
         let document = try #require(latest())
         #expect(String(decoding: PlainText.data(from: document), as: UTF8.self) == "func f() {\n\tlet a = 1\n\tlet b = 2\n}\n")
-        #expect(document.sourceLanguage == .swift)
+        #expect(document.sourceLanguage == language)
     }
 
     @Test("A long line makes the text wider than the screen rather than wrapping")

@@ -105,8 +105,12 @@ struct SyntaxHighlighterTests {
         #expect(SourceLanguage(contentType: .mpeg2TransportStream, filename: "app.ts") == .typeScript)
         #expect(SourceLanguage(contentType: .plainText, filename: "run.sh") == .shell)
         #expect(SourceLanguage(contentType: .pythonScript, filename: nil) == .python)
-        #expect(SourceLanguage(contentType: .plainText, filename: "notes.txt") == nil)
+        #expect(SourceLanguage(contentType: .plainText, filename: "notes.txt") == .plainText)
+        #expect(SourceLanguage(contentType: .plainText, filename: "NOTES.TXT") == .plainText)
+        #expect(SourceLanguage(contentType: .plainText, filename: nil) == .plainText)
         #expect(SourceLanguage(contentType: .markdownDocument, filename: "README.md") == nil)
+        #expect(SourceLanguage(contentType: .markdownDocument, filename: nil) == nil)
+        #expect(SourceLanguage(contentType: .openXMLDocument, filename: nil) == nil)
     }
 
     @Test("Colouring changes only colours, so the text reads back the same")
@@ -117,6 +121,13 @@ struct SyntaxHighlighterTests {
         let plain = text.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? UIColor
         #expect(keyword == SyntaxHighlighter.color(for: .keyword, scheme: .light))
         #expect(plain == .black)
+        #expect(text.string == "let x = 1 // c")
+
+        SyntaxHighlighter.apply(.plainText, to: text, scheme: .light, plainColor: .black)
+        #expect(SyntaxHighlighter.tokens(in: text.string, language: .plainText).isEmpty)
+        text.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: text.length)) { color, _, _ in
+            #expect(color as? UIColor == .black)
+        }
         #expect(text.string == "let x = 1 // c")
     }
 }

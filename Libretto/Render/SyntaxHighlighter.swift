@@ -32,6 +32,7 @@ struct SyntaxToken: Equatable, Sendable {
 /// as a file's.
 enum SyntaxHighlighter {
     static func tokens(in text: String, language: SourceLanguage) -> [SyntaxToken] {
+        guard language != .plainText else { return [] }
         var scanner = Scanner(units: Array(text.utf16))
         let all = 0..<scanner.units.count
         switch language {
@@ -154,7 +155,7 @@ private struct CodeRules {
             keywords = Self.shell
             capitalisedTypes = false
             isShell = true
-        case .html, .css:
+        case .plainText, .html, .css:
             strings = quoted
             keywords = []
         }

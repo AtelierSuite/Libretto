@@ -15,10 +15,9 @@ extension UTType {
 /// `.docm`, or from a Markdown, source code or plain text file.
 ///
 /// A `.docm` opens like any other document. Its macros are kept, and saved
-/// back with it, but Libretto never runs them. A text file is saved back as
-/// text, so any formatting given to it is not kept, and a Markdown file keeps
-/// only the formatting Markdown has. Source code is set in a code font and
-/// coloured by its syntax, and saved back as text.
+/// back with it, but Libretto never runs them. Plain text and source code open
+/// in the code editor and save back as text, with syntax colouring only for
+/// source code. A Markdown file keeps only the formatting Markdown has.
 struct LibrettoDocument: FileDocument {
     static let readableContentTypes: [UTType] = [
         .openXMLDocument, .macroEnabledDocument, .markdownDocument,

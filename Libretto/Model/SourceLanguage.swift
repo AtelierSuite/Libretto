@@ -6,9 +6,9 @@ extension UTType {
     static let typeScriptSource = UTType("com.microsoft.typescript") ?? .sourceCode
 }
 
-/// The programming language of a source file, which is opened as text and
-/// coloured by its syntax.
+/// The language of a file opened in the code editor. Plain text has no syntax colouring.
 enum SourceLanguage: String, CaseIterable, Sendable {
+    case plainText
     case swift
     case python
     case javaScript
@@ -24,6 +24,7 @@ enum SourceLanguage: String, CaseIterable, Sendable {
 
     var fileExtensions: [String] {
         switch self {
+        case .plainText: return ["txt"]
         case .swift: return ["swift"]
         case .python: return ["py"]
         case .javaScript: return ["js", "mjs", "cjs"]
@@ -50,6 +51,8 @@ enum SourceLanguage: String, CaseIterable, Sendable {
         case let type where type.conforms(to: .html): self = .html
         case let type where type.conforms(to: .css): self = .css
         case let type where type.conforms(to: .shellScript): self = .shell
+        case let type where type.conforms(to: .plainText) && !type.conforms(to: .markdownDocument):
+            self = .plainText
         default: return nil
         }
     }
