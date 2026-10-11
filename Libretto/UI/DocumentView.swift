@@ -8,6 +8,7 @@ struct DocumentView: View {
     var fileName: String?
     @State private var state = EditorState()
     @State private var history = DocumentHistory()
+    @State private var bottomToolbarInset: CGFloat = 0
     @State private var photo: PhotosPickerItem?
     /// The mode this window was last in, so it comes back the same way.
     @SceneStorage("viewMode") private var storedMode: String?
@@ -18,23 +19,25 @@ struct DocumentView: View {
     private var wordDocument: Binding<WordDocument> { $document.document }
 
     var body: some View {
-        // A stack rather than an overlay: the pages run under the home
-        // indicator, but the bar must stay clear of it, where taps go to the system.
-        ZStack(alignment: .bottom) {
-            content
+        content
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             // Code is edited as text: there is nothing to format.
             if !isCode {
                 if state.viewMode == .page {
                     if !state.isFinding {
                         FloatingActionBar(state: state, namespace: panelTransition)
-                            .padding(.bottom, 8)
+                            .padding(.bottom, 8 + bottomToolbarInset)
                             .transition(.opacity)
                     }
                 } else {
                     editButton
+                        .padding(.bottom, bottomToolbarInset)
                 }
             }
         }
+            .background {
+                ToolbarBottomSafeAreaReader { bottomToolbarInset = $0 }
+            }
             .background(Color(uiColor: .secondarySystemBackground))
             .onAppear {
                 if let storedMode, let mode = ViewMode(rawValue: storedMode) {
@@ -403,6 +406,49 @@ private struct UnsupportedFeatureNotice: View {
                 configuration.title
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+}
+
+private struct ToolbarBottomSafeAreaReader: UIViewRepresentable {
+    let insetChanged: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.insetChanged = insetChanged
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: ObserverView, context: Context) {
+        view.insetChanged = insetChanged
+        view.setNeedsLayout()
+    }
+
+    final class ObserverView: UIView {
+        var insetChanged: ((CGFloat) -> Void)?
+        private var lastInset: CGFloat?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            setNeedsLayout()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let window else { return }
+            let frameInWindow = convert(bounds, to: window)
+            let safeBottom = window.bounds.maxY - window.safeAreaInsets.bottom
+            let inset = max(0, frameInWindow.maxY - safeBottom)
+            guard lastInset != inset else { return }
+            lastInset = inset
+            let insetChanged = insetChanged
+            DispatchQueue.main.async { insetChanged?(inset) }
         }
     }
 }
