@@ -41,7 +41,7 @@ struct FloatingActionBar: View {
                             action("list.number", isOn: format.listKind == .numbered, label: "ActionBar.Numbering") {
                                 controller?.toggleList(.numbered)
                             }
-                            panelAction("text.line.spacing", label: "ActionBar.Paragraph", panel: .paragraph)
+                            panelAction("paragraphsign", label: "ActionBar.Paragraph", panel: .paragraph)
                         }
 
                         group {
