@@ -85,6 +85,7 @@ struct FloatingActionBar: View {
                 .animation(.snappy(duration: 0.2), value: state.isOnImage)
             }
             .scrollIndicators(.hidden)
+            .scrollClipDisabled()
             .scrollBounceBehavior(.basedOnSize)
             // What can be done to a table just picked out sits at the far end
             // of the bar; bring it into view rather than leave it to be found.
@@ -97,7 +98,7 @@ struct FloatingActionBar: View {
                 withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(Self.selectionActionsID, anchor: .trailing) }
             }
         }
-        .frame(height: 56)
+        .frame(height: 60)
     }
 
     private var styleMenu: some View {
@@ -243,17 +244,16 @@ struct FloatingActionBar: View {
 
     private func menuLabel(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 15, weight: .medium))
-            .frame(width: 40, height: 40)
+            .font(.system(size: 17))
+            .frame(width: 44, height: 44)
             .foregroundStyle(Color.primary)
             .contentShape(.circle)
     }
 
     private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 8) {
             content()
         }
-        .padding(.horizontal, 4)
         .glassEffect(.regular.interactive(), in: .capsule)
     }
 
@@ -262,8 +262,8 @@ struct FloatingActionBar: View {
     ) -> some View {
         Button(action: perform) {
             Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 40, height: 40)
+                .font(.system(size: 17))
+                .frame(width: 44, height: 44)
                 .foregroundStyle(isOn ? Color.accentColor : .primary)
                 // A round highlight, so an active control reads as a lit key.
                 .background(isOn ? Color.accentColor.opacity(0.2) : .clear, in: .circle)
