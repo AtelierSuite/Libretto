@@ -79,6 +79,7 @@ struct DocumentView: View {
             .sheet(isPresented: $state.isShowingUnsupportedFeatureNotice) {
                 UnsupportedFeatureNotice(report: document.unsupportedFeatures)
                     .presentationDetents([.medium])
+                    .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
             }
             .photosPicker(isPresented: $state.isPickingPhoto, selection: $photo, matching: .images)
@@ -373,25 +374,27 @@ private struct UnsupportedFeatureNotice: View {
     var report: UnsupportedFeatureReport
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Notice.UnsupportedFeatures.Title", systemImage: "exclamationmark.triangle")
-                .font(.headline)
-                .labelStyle(.titleAndIcon)
-            Text("Notice.UnsupportedFeatures.Message")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(report.orderedFeatures, id: \.self) { feature in
-                    Label(feature.label, systemImage: feature == .macros ? "curlybraces" : "circle.fill")
-                        .font(.callout)
-                        .labelStyle(BulletLabelStyle(isMacro: feature == .macros))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Notice.UnsupportedFeatures.Title", systemImage: "exclamationmark.triangle")
+                    .font(.headline)
+                    .labelStyle(.titleAndIcon)
+                Text("Notice.UnsupportedFeatures.Message")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(report.orderedFeatures, id: \.self) { feature in
+                        Label(feature.label, systemImage: feature == .macros ? "curlybraces" : "circle.fill")
+                            .font(.callout)
+                            .labelStyle(BulletLabelStyle(isMacro: feature == .macros))
+                    }
                 }
             }
+            .multilineTextAlignment(.leading)
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .multilineTextAlignment(.leading)
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private struct BulletLabelStyle: LabelStyle {
