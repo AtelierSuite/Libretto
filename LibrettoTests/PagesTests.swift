@@ -195,6 +195,31 @@ struct PagesTests {
         #expect(saved.footer?.text == "Page {PAGE} of {NUMPAGES}")
     }
 
+    @Test("A page layout document's text boxes, shapes and pictures read down the page")
+    func pageLayout() throws {
+        let document = try PagesReader.document(from: Data(
+            contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Layout.pages")
+        ))
+        let paragraphs = document.allParagraphs
+        #expect(paragraphs.map(\.plainText) == ["Top box text", "", "In a shape", "Lower box text"])
+        guard case .image(let image) = paragraphs[1].inlines.first?.content else {
+            Issue.record("No picture")
+            return
+        }
+        #expect(image.width == 120)
+        #expect(image.height == 60)
+        #expect(document.unsupportedFeatures.isEmpty)
+    }
+
+    @Test("A page layout document's pages follow one another, a page break between them")
+    func pageLayoutPages() throws {
+        let document = try PagesReader.document(from: Data(
+            contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/TwoPages.pages")
+        ))
+        #expect(document.allParagraphs.map(\.plainText) == ["First page box", "Second page box"])
+        #expect(document.allParagraphs[0].inlines.last?.content == .pageBreak)
+    }
+
     @Test("Files that are not Pages documents are turned away")
     func rejects() throws {
         let docx = try ZipArchive.archive(entries: [(path: "word/document.xml", data: Data("<w:document/>".utf8))])

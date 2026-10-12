@@ -42,6 +42,7 @@ enum PagesReader {
         static let paragraphStyle: UInt32 = 2022
         static let listStyle: UInt32 = 2023
         static let image: UInt32 = 3005
+        static let shapeInfo: UInt32 = 2011
         static let tableInfo: UInt32 = 6000
         static let tableModel: UInt32 = 6001
     }
@@ -260,22 +261,86 @@ private struct PagesConverter {
 
     mutating func convert(_ root: ProtoMessage) -> WordDocument {
         readPageSetup(root)
-        if let storage = archive[root.reference(4)], storage.type == PagesReader.Types.storage {
-            var blocks = self.blocks(from: storage.message)
-            // A table cannot end the document; Word wants a paragraph after it.
-            if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
-                blocks.append(.paragraph(Paragraph()))
+        let storage = archive[root.reference(4)].flatMap { $0.type == PagesReader.Types.storage ? $0.message : nil }
+        var blocks = storage.map { self.blocks(from: $0) } ?? []
+        let floating = archive[root.reference(3)]?.message.messages(1).filter { !$0.messages(4).isEmpty } ?? []
+        if !floating.isEmpty {
+            if blocks.allSatisfy(Self.isBlank) {
+                // A page layout document has no body text, only a break between each page and the
+                // next: its pages are what is placed on them.
+                blocks = floatingBlocks(floating)
+            } else {
+                // Objects placed on a page of a word-processing document have no place in its text.
+                document.unsupportedFeatures.insert(.shapes)
             }
-            document.body = blocks
-            adoptStyles()
-            readHeadersAndFooters(storage.message)
         }
-        // Objects placed on the page, rather than in the text, are left behind.
-        if let floating = archive[root.reference(3)]?.message, !floating.fields.isEmpty,
-           floating.messages(1).contains(where: { !$0.fields.isEmpty }) {
-            document.unsupportedFeatures.insert(.shapes)
+        // A table cannot end the document; Word wants a paragraph after it.
+        if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
+            blocks.append(.paragraph(Paragraph()))
         }
+        document.body = blocks
+        adoptStyles()
+        if let storage { readHeadersAndFooters(storage) }
         return document
+    }
+
+    /// What is placed on the pages, page by page, read down each page and
+    /// across: text boxes' and shapes' text as paragraphs, pictures and
+    /// tables as they are, and a page break between pages.
+    private mutating func floatingBlocks(_ pages: [ProtoMessage]) -> [Block] {
+        var blocks: [Block] = []
+        for (index, page) in pages.sorted(by: { $0.uint(1) < $1.uint(1) }).enumerated() {
+            if index > 0 {
+                if case .paragraph(var last) = blocks.last {
+                    last.inlines.append(Inline(.pageBreak))
+                    blocks[blocks.count - 1] = .paragraph(last)
+                } else {
+                    blocks.append(.paragraph(Paragraph(inlines: [Inline(.pageBreak)])))
+                }
+            }
+            let objects = page.messages(4).compactMap { entry -> (object: IWorkArchive.Object, x: Double, y: Double)? in
+                guard let object = archive[entry.reference(1)] else { return nil }
+                let position = Self.geometry(of: object)?.message(1)
+                return (object, position?.float(1) ?? 0, position?.float(2) ?? 0)
+            }
+            for item in objects.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
+                switch item.object.type {
+                case PagesReader.Types.shapeInfo:
+                    guard let text = archive[item.object.message.reference(2)], text.type == PagesReader.Types.storage
+                    else { continue }
+                    let content = self.blocks(from: text.message)
+                    if content.allSatisfy(Self.isBlank) {
+                        // A shape with no text is a drawing Libretto cannot bring across.
+                        document.unsupportedFeatures.insert(.shapes)
+                    } else {
+                        blocks += content
+                    }
+                case PagesReader.Types.image:
+                    if let image = image(item.object.message) {
+                        blocks.append(.paragraph(Paragraph(inlines: [Inline(.image(image))])))
+                    }
+                case PagesReader.Types.tableInfo:
+                    if let table = table(item.object.message) { blocks.append(.table(table)) }
+                default:
+                    document.unsupportedFeatures.insert(.shapes)
+                }
+            }
+        }
+        return blocks
+    }
+
+    /// Whether a block shows nothing: a paragraph with no text, or only breaks.
+    private static func isBlank(_ block: Block) -> Bool {
+        guard case .paragraph(let paragraph) = block else { return false }
+        return paragraph.inlines.allSatisfy { $0.content == .pageBreak }
+    }
+
+    /// A drawable's `TSD.GeometryArchive`, from its `TSD.DrawableArchive`
+    /// or from the shape that one is the super of.
+    private static func geometry(of object: IWorkArchive.Object) -> ProtoMessage? {
+        let drawable = object.type == PagesReader.Types.shapeInfo
+            ? object.message.message(1)?.message(1) : object.message.message(1)
+        return drawable?.message(1)
     }
 
     private mutating func readPageSetup(_ root: ProtoMessage) {
