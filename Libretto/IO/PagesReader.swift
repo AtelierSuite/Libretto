@@ -802,7 +802,7 @@ struct PagesConverter {
     }
 
     /// What a cell's storage holds.
-    private struct CellValue {
+    struct CellValue {
         var type: UInt8
         var decimal: Double?
         var double: Double?
@@ -827,13 +827,14 @@ struct PagesConverter {
             if flags & 0x20 != 0 { styleKey = Self.read(bytes, 4, at: offset) }
         }
 
-        /// The format before: the version, then the type at the third byte,
-        /// flags at the fifth, and the values after the keys the flags ask for.
+        /// The format before: the version, then the type, at the second byte
+        /// from version 4 and the third before it, flags at the fifth, and the
+        /// values after the keys the flags ask for.
         init?(oldStorage bytes: ArraySlice<UInt8>) {
             guard bytes.count >= 8 else { return nil }
             let version = bytes[bytes.startIndex]
             guard (1...4).contains(version) else { return nil }
-            type = bytes[bytes.startIndex + 2]
+            type = bytes[bytes.startIndex + (version >= 4 ? 1 : 2)]
             let flags = Self.read(bytes, 4, at: 4) ?? 0
             var offset = (version > 1 ? 12 : 8) + (flags & (version > 1 ? 0x0D8E : 0x018E)).nonzeroBitCount * 4
             if flags & 0x200 != 0 { richKey = Self.read(bytes, 4, at: offset); offset += 4 }

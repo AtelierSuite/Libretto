@@ -195,6 +195,15 @@ struct PagesTests {
         #expect(saved.footer?.text == "Page {PAGE} of {NUMPAGES}")
     }
 
+    @Test("Cells stored before 2019 keep their type, from the second byte in version 4")
+    func oldCellStorage() throws {
+        // A text cell as Pages 5 wrote it: version 4, type 3, a style and a string key.
+        let bytes: [UInt8] = [4, 3, 0, 0, 0x14, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 7, 0, 0, 0]
+        let value = try #require(PagesConverter.CellValue(oldStorage: bytes[...]))
+        #expect(value.type == 3)
+        #expect(value.stringKey == 7)
+    }
+
     @Test("A page layout document's text boxes, shapes and pictures read down the page")
     func pageLayout() throws {
         let document = try PagesReader.document(from: Data(
