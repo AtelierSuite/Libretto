@@ -43,6 +43,9 @@ struct WordDocument: Equatable, Sendable {
     /// The language of the file opened in the code editor, including plain
     /// text without syntax colouring. `nil` for word-processing documents.
     var sourceLanguage: SourceLanguage?
+    /// The format the document was converted from, which Libretto reads but
+    /// cannot save. `nil` for a document that saves back to its own file.
+    var importedFormat: ImportedFormat?
 
     /// Whether the file carries a VBA project. Libretto keeps it but never runs it.
     var hasMacros: Bool { package.parts.keys.contains { $0.lowercased().hasSuffix("vbaproject.bin") } }
@@ -117,6 +120,11 @@ struct WordDocument: Equatable, Sendable {
         guard let index = body.firstIndex(where: { $0.id == block.id }) else { return }
         body[index] = block
     }
+}
+
+/// A format Libretto converts documents from, but does not write.
+enum ImportedFormat: Sendable {
+    case pages
 }
 
 // MARK: - Blocks

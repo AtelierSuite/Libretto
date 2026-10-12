@@ -233,7 +233,11 @@ private struct PagesParagraphProperties {
 
 private struct PagesConverter {
     let archive: IWorkArchive
-    var document = WordDocument()
+    var document: WordDocument = {
+        var document = WordDocument()
+        document.importedFormat = .pages
+        return document
+    }()
 
     private var paragraphStyles: [UInt64: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [UInt64: PagesCharacterProperties] = [:]

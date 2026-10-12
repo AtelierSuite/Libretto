@@ -7771,6 +7771,111 @@
         }
       }
     },
+    "Notice.Imported.Message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pages documents open read-only. Share a copy as a Word document to keep your changes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pagesの書類は読み出し専用で開きます。変更を残すには、Word書類としてコピーを共有してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pages 문서는 읽기 전용으로 열립니다. 변경 사항을 유지하려면 Word 문서로 사본을 공유하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pages 文稿以只读方式打开。若要保留更改，请将副本共享为 Word 文稿。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pages 文件會以唯讀方式開啟。若要保留變更，請將副本分享為 Word 文件。"
+          }
+        }
+      }
+    },
+    "Notice.Imported.Share": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share a Copy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピーを共有"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사본 공유"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享副本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享副本"
+          }
+        }
+      }
+    },
+    "Notice.UnsupportedFeatures.ImportedMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This document uses things Libretto can’t bring across from Pages. They’re left out of what you see here, and of any copy you share."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この書類には、LibrettoがPagesから取り込めない要素が含まれています。これらはここでの表示にも、共有するコピーにも含まれません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 문서에는 Libretto가 Pages에서 가져올 수 없는 요소가 있습니다. 이러한 요소는 여기에 표시되지 않으며 공유하는 사본에도 포함되지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文稿包含 Libretto 无法从 Pages 导入的内容。这些内容不会显示在此处，也不会包含在你共享的副本中。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件包含 Libretto 無法從 Pages 匯入的內容。這些內容不會顯示在此處，也不會包含在你分享的副本中。"
+          }
+        }
+      }
+    },
     "Notice.UnsupportedFeatures.Message": {
       "extractionState": "manual",
       "localizations": {

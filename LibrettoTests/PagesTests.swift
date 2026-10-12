@@ -24,6 +24,7 @@ struct PagesTests {
 
     @Test("The body text reads paragraph by paragraph")
     func text() {
+        #expect(Self.document.importedFormat == .pages)
         #expect(paragraphs.map(\.plainText) == [
             "Quarterly Report",
             "This is a bold word, an italic word, underlined text and struck text.",

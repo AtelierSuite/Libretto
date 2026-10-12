@@ -20,6 +20,9 @@ struct DocumentView: View {
 
     var body: some View {
         content
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if document.document.importedFormat != nil { importedNotice }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Code is edited as text: there is nothing to format.
             if !isCode {
@@ -77,7 +80,9 @@ struct DocumentView: View {
                 .presentationBackground(.regularMaterial)
             }
             .sheet(isPresented: $state.isShowingUnsupportedFeatureNotice) {
-                UnsupportedFeatureNotice(report: document.unsupportedFeatures)
+                UnsupportedFeatureNotice(
+                    report: document.unsupportedFeatures, isImported: document.document.importedFormat != nil
+                )
                     .presentationDetents([.medium])
                     .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
@@ -289,6 +294,29 @@ struct DocumentView: View {
         }
     }
 
+    /// Says a converted document cannot be saved where it came from, and
+    /// offers the way to keep what is done to it.
+    private var importedNotice: some View {
+        HStack(spacing: 12) {
+            Label("Notice.Imported.Message", systemImage: "lock.doc")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "doc.text"))) {
+                Text("Notice.Imported.Share")
+            }
+            .font(.footnote.weight(.semibold))
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("importedNotice")
+    }
+
     private var findButton: some View {
         Button("Toolbar.Find", systemImage: "magnifyingglass", action: find)
             .accessibilityIdentifier("find")
@@ -372,6 +400,8 @@ struct DocumentView: View {
 /// business stopping the user before they have seen their document.
 private struct UnsupportedFeatureNotice: View {
     var report: UnsupportedFeatureReport
+    /// Converted from another format, which leaves out what it cannot bring across.
+    var isImported = false
 
     var body: some View {
         ScrollView {
@@ -379,7 +409,7 @@ private struct UnsupportedFeatureNotice: View {
                 Label("Notice.UnsupportedFeatures.Title", systemImage: "exclamationmark.triangle")
                     .font(.headline)
                     .labelStyle(.titleAndIcon)
-                Text("Notice.UnsupportedFeatures.Message")
+                Text(isImported ? "Notice.UnsupportedFeatures.ImportedMessage" : "Notice.UnsupportedFeatures.Message")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
