@@ -175,6 +175,11 @@ struct PagesTests {
         #expect(paragraph.inlines.filter { $0.hyperlink != nil }.count == 1)
     }
 
+    @Test("Page numbers in a footer become its page number and count")
+    func pageNumbers() {
+        #expect(Self.fields.footer?.text == "Page {PAGE} of {NUMPAGES}")
+    }
+
     @Test("Files that are not Pages documents are turned away")
     func rejects() throws {
         let docx = try ZipArchive.archive(entries: [(path: "word/document.xml", data: Data("<w:document/>".utf8))])

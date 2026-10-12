@@ -37,6 +37,7 @@ enum PagesReader {
         static let drawableAttachment: UInt32 = 2003
         static let footnoteAttachment: UInt32 = 2008
         static let hyperlink: UInt32 = 2032
+        static let pageNumber: UInt32 = 2043
         static let characterStyle: UInt32 = 2021
         static let paragraphStyle: UInt32 = 2022
         static let listStyle: UInt32 = 2023
@@ -427,13 +428,31 @@ private struct PagesConverter {
     /// Paragraph breaks, and the page and section breaks that also end a paragraph.
     private static let paragraphTerminators: Set<UInt16> = [0x0A, 0x2029, 0x04, 0x05]
 
-    /// The plain text of a storage, its paragraphs a line each.
+    /// The plain text of a storage, its paragraphs a line each, with page
+    /// numbers as the placeholders headers and footers fill in.
     func plainText(of storage: ProtoMessage) -> String {
-        let text = storage.strings(3).joined()
-        let lines = text.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\u{2029}" }
-        return lines.map { line in
-            String(line.unicodeScalars.filter { $0.value >= 0x20 && $0 != "\u{FFFC}" || $0 == "\t" }.map(Character.init))
-        }.joined(separator: "\n").trimmingCharacters(in: .newlines)
+        let text = Array(storage.strings(3).joined().utf16)
+        let attachments = AttributeTable(storage.message(9))
+        var result: [UInt16] = []
+        for (index, unit) in text.enumerated() {
+            switch unit {
+            case 0x0A, 0x2029, 0x2028:
+                result.append(0x0A)
+            case 0x09:
+                result.append(unit)
+            case 0xFFFC:
+                guard let field = archive[attachments.object(at: index)], field.type == PagesReader.Types.pageNumber
+                else { continue }
+                let placeholder = field.message.message(1)?.uint(2) == 1
+                    ? HeaderFooterText.pageCountPlaceholder : HeaderFooterText.pageNumberPlaceholder
+                result += placeholder.utf16
+            case 0x00..<0x20:
+                continue
+            default:
+                result.append(unit)
+            }
+        }
+        return String(decoding: result, as: UTF16.self).trimmingCharacters(in: .newlines)
     }
 
     /// A link to the address a `TSWP.HyperlinkFieldArchive` holds, made the first time it is met.
