@@ -272,6 +272,25 @@ struct PagesParagraphProperties {
     }
 }
 
+/// The styles of the body's plain paragraphs, counted, for the one most of
+/// the text is set in to become the Normal style.
+struct PagesStyleTally<Key: Hashable> {
+    private var entries: [Key: (order: Int, count: Int, style: (PagesParagraphProperties, PagesCharacterProperties))] = [:]
+
+    mutating func add(_ key: Key, _ style: @autoclosure () -> (PagesParagraphProperties, PagesCharacterProperties)) {
+        if entries[key] != nil {
+            entries[key]!.count += 1
+        } else {
+            entries[key] = (entries.count, 1, style())
+        }
+    }
+
+    /// The style most paragraphs are in; of those as common, the first met.
+    var mostUsed: (PagesParagraphProperties, PagesCharacterProperties)? {
+        entries.values.max { ($0.count, -$0.order) < ($1.count, -$1.order) }?.style
+    }
+}
+
 // MARK: - Conversion
 
 struct PagesConverter {
@@ -292,7 +311,7 @@ struct PagesConverter {
     private var storageDepth = 0
     /// The formatting of the body's first plain paragraph, and of its first
     /// heading of each level, which become the Normal and heading styles.
-    private var bodyStyle: (PagesParagraphProperties, PagesCharacterProperties)?
+    private var bodyStyles = PagesStyleTally<UInt64?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
 
     init(archive: IWorkArchive) {
@@ -402,7 +421,7 @@ struct PagesConverter {
     }
 
     private mutating func adoptStyles() {
-        document.adoptPagesStyles(body: bodyStyle, headings: headingStyles)
+        document.adoptPagesStyles(body: bodyStyles.mostUsed, headings: headingStyles)
     }
 
     // MARK: Text
@@ -435,8 +454,8 @@ struct PagesConverter {
             if storageDepth == 1 {
                 if let level = paragraphFormat.outlineLevel ?? nil {
                     if headingStyles[level] == nil { headingStyles[level] = (paragraphFormat, baseCharacters) }
-                } else if bodyStyle == nil, listNumberingID == nil, start < end {
-                    bodyStyle = (paragraphFormat, baseCharacters)
+                } else if listNumberingID == nil, start < end {
+                    bodyStyles.add(styleID, (paragraphFormat, baseCharacters))
                 }
             }
             if let numberingID = listNumberingID {

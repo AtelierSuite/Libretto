@@ -158,7 +158,7 @@ private struct Pages09Converter {
     private var paragraphStyles: [ObjectIdentifier: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [ObjectIdentifier: PagesCharacterProperties] = [:]
     private var lists: [ObjectIdentifier: Int?] = [:]
-    private var bodyStyle: (PagesParagraphProperties, PagesCharacterProperties)?
+    private var bodyStyles = PagesStyleTally<ObjectIdentifier?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     /// The text of the body's footnotes not yet referred to, in order.
     private var footnotes: [String] = []
@@ -204,7 +204,9 @@ private struct Pages09Converter {
             blocks.append(.paragraph(Paragraph()))
         }
         document.body = blocks
-        document.adoptPagesStyles(body: bodyStyle, headings: headingStyles)
+        document.adoptPagesStyles(
+            body: bodyStyles.mostUsed ?? (PagesParagraphProperties(), Self.defaultCharacters), headings: headingStyles
+        )
         readHeadersAndFooters()
         return document
     }
@@ -321,16 +323,16 @@ private struct Pages09Converter {
             paragraph.properties.indentLeft = nil
             paragraph.properties.indentFirstLine = nil
         }
-        if recordsStyles {
-            if let level = paragraphFormat.outlineLevel ?? nil {
-                if headingStyles[level] == nil { headingStyles[level] = (paragraphFormat, baseCharacters) }
-            } else if bodyStyle == nil, numberingID == nil {
-                bodyStyle = (paragraphFormat, baseCharacters)
-            }
-        }
         var runs = Runs()
         appendContent(of: node, characters: baseCharacters, link: nil, to: &runs)
         paragraph.inlines = runs.inlines
+        if recordsStyles {
+            if let level = paragraphFormat.outlineLevel ?? nil {
+                if headingStyles[level] == nil { headingStyles[level] = (paragraphFormat, baseCharacters) }
+            } else if numberingID == nil, !paragraph.plainText.isEmpty {
+                bodyStyles.add(style.map(ObjectIdentifier.init), (paragraphFormat, baseCharacters))
+            }
+        }
         return paragraph
     }
 

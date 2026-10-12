@@ -204,6 +204,22 @@ struct Pages09Tests {
         #expect(document.unsupportedFeatures.features == [.shapes])
     }
 
+    @Test("Normal takes the style most of the text is in, not a title before it")
+    func normalStyle() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles><sf:paragraphstyle sf:ident="title"><sf:property-map>\
+            <sf:fontSize><sf:number sfa:number="28"/></sf:fontSize></sf:property-map></sf:paragraphstyle>\
+            <sf:paragraphstyle sf:ident="body"><sf:property-map><sf:fontSize><sf:number sfa:number="11"/></sf:fontSize>\
+            </sf:property-map></sf:paragraphstyle></sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:p sf:style="title">Proposal</sf:p>\
+            <sf:p sf:style="body">One</sf:p><sf:p sf:style="body">Two</sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.styles.styles["Normal"]?.runStyle.fontSize == 22)
+    }
+
     @Test("A damaged index is turned away")
     func damaged() {
         #expect(throws: IWorkError.self) {
