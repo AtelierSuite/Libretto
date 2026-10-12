@@ -308,7 +308,7 @@ private struct Pages09Converter {
     private mutating func paragraph(_ node: Node, recordsStyles: Bool) -> Paragraph {
         let style = node.attributes["style"].flatMap(styleNode)
         var paragraphFormat = PagesParagraphProperties()
-        var baseCharacters = PagesCharacterProperties()
+        var baseCharacters = Self.defaultCharacters
         if let style { (paragraphFormat, baseCharacters) = paragraphStyle(style) }
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
         let listStyle = style.flatMap { inheritedValue("listStyle", from: $0) }.flatMap { value -> Node? in
@@ -633,11 +633,19 @@ private struct Pages09Converter {
         chain(style).reversed().lazy.compactMap { self.value(name, in: $0) }.first
     }
 
+    /// What Pages sets text in when no style says: 12-point Helvetica.
+    private static let defaultCharacters = {
+        var characters = PagesCharacterProperties()
+        characters.fontName = "Helvetica"
+        characters.fontSize = 12
+        return characters
+    }()
+
     private mutating func paragraphStyle(_ style: Node) -> (PagesParagraphProperties, PagesCharacterProperties) {
         let key = ObjectIdentifier(style)
         if let cached = paragraphStyles[key] { return cached }
         var paragraph = PagesParagraphProperties()
-        var characters = PagesCharacterProperties()
+        var characters = Self.defaultCharacters
         for node in chain(style) {
             paragraph = paragraph.overlaid(with: paragraphProperties(node))
             characters = characters.overlaid(with: characterProperties(node))

@@ -152,7 +152,7 @@ struct Pages09Tests {
     }
 
     @Test("The page and header come across")
-    func page() {
+    func page() throws {
         let setup = Self.document.pageSetup
         #expect(setup.width == 11900)
         #expect(setup.height == 16840)
@@ -161,6 +161,13 @@ struct Pages09Tests {
         #expect(Self.document.header?.text == "Page {PAGE} of {NUMPAGES}")
         #expect(Self.document.header?.alignment == .center)
         #expect(Self.document.styles.styles["Normal"]?.runStyle.fontName == "Georgia")
+        // A style that names no font is in Pages' own, 12-point Helvetica.
+        let unstyled = try PagesReader.document(fromFiles: ["index.xml": Data("""
+            <sl:document xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:p>Plain</sf:p></sf:text-body></sf:text-storage></sl:document>
+            """.utf8)])
+        #expect(unstyled.styles.styles["Normal"]?.runStyle.fontName == "Helvetica")
+        #expect(unstyled.styles.styles["Normal"]?.runStyle.fontSize == 24)
     }
 
     @Test("A package's gzipped index reads the same")
