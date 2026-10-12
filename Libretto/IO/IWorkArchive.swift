@@ -51,7 +51,7 @@ struct IWorkArchive {
             if files.keys.contains(where: { $0.hasSuffix(".iwph") || $0.hasSuffix(".iwpv2") }) {
                 throw IWorkError.passwordProtected
             }
-            if files.keys.contains(where: { $0 == "index.xml" || $0 == "index.xml.gz" || $0 == "Index.zip" }) {
+            if files.keys.contains(where: { $0 == "index.xml" || $0 == "index.xml.gz" }) {
                 throw IWorkError.legacyFormat
             }
             throw IWorkError.notAnIWorkDocument

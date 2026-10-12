@@ -21,10 +21,33 @@ enum PagesReader {
 
     /// Reads a document saved as a package, by its files' paths within it.
     static func document(fromFiles files: [String: Data]) throws -> WordDocument {
+        let files = try unwrapped(files)
         if let index = try Pages09Reader.index(in: files) {
             return try Pages09Reader.document(fromIndex: index, files: files)
         }
         return try document(from: IWorkArchive(files: files))
+    }
+
+    /// The package's files as the readers expect them: out of the folder a
+    /// ZIP may hold the package in, and with the archives of a Pages 5
+    /// package, which keeps them zipped in `Index.zip`, alongside the rest.
+    private static func unwrapped(_ files: [String: Data]) throws -> [String: Data] {
+        var files = files
+        let folders = Set(files.keys.map { $0.prefix { $0 != "/" } })
+        if folders.count == 1, let folder = folders.first, folder.hasSuffix(".pages"),
+           files.keys.allSatisfy({ $0.hasPrefix(folder + "/") || $0 == folder }) {
+            files = Dictionary(
+                files.compactMap { path, data in
+                    let inner = String(path.dropFirst(folder.count + 1))
+                    return inner.isEmpty ? nil : (inner, data)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+        if let index = files.removeValue(forKey: "Index.zip") {
+            files.merge(try ZipArchive.entries(in: index)) { existing, _ in existing }
+        }
+        return files
     }
 
     static func document(from archive: IWorkArchive) throws -> WordDocument {

@@ -157,6 +157,20 @@ struct PagesTests {
         #expect(document.allParagraphs.map(\.plainText) == Self.document.allParagraphs.map(\.plainText))
     }
 
+    @Test("A Pages 5 package, its archives zipped in Index.zip, and a package inside a folder read the same")
+    func olderPackages() throws {
+        let files = try ZipArchive.entries(in: Self.data)
+        let texts = Self.document.allParagraphs.map(\.plainText)
+
+        var zipped = files.filter { !$0.key.hasPrefix("Index/") }
+        zipped["Index.zip"] = try ZipArchive.archive(entries: files.filter { $0.key.hasPrefix("Index/") }.map { ($0.key, $0.value) })
+        #expect(try PagesReader.document(fromFiles: zipped).allParagraphs.map(\.plainText) == texts)
+
+        var wrapped = Dictionary(uniqueKeysWithValues: files.map { ("Report.pages/" + $0.key, $0.value) })
+        wrapped["Report.pages/"] = Data()
+        #expect(try PagesReader.document(fromFiles: wrapped).allParagraphs.map(\.plainText) == texts)
+    }
+
     /// `Fields.pages`: a link, a table with cells merged across and down,
     /// and a footer with the page number and count.
     private static let fields = try! PagesReader.document(from: Data(
