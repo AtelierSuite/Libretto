@@ -9,6 +9,9 @@ extension UTType {
     static let macroEnabledDocument = UTType("org.openxmlformats.wordprocessingml.document.macroenabled") ?? .data
     /// Markdown, declared by the app. It conforms to plain text, so it is asked about first.
     static let markdownDocument = UTType("net.daringfireball.markdown") ?? .plainText
+    /// A Pages document saved as a single file, and as a package.
+    static let pagesDocument = UTType("com.apple.iwork.pages.sffpages") ?? .data
+    static let pagesPackage = UTType("com.apple.iwork.pages.pages") ?? .package
 }
 
 /// The app's document: a word-processing document, loaded from `.docx` or
@@ -17,10 +20,11 @@ extension UTType {
 /// A `.docm` opens like any other document. Its macros are kept, and saved
 /// back with it, but Libretto never runs them. Plain text and source code open
 /// in the code editor and save back as text, with syntax colouring only for
-/// source code. A Markdown file keeps only the formatting Markdown has.
+/// source code. A Markdown file keeps only the formatting Markdown has. A
+/// Pages document is only read: it is shared or exported to keep changes.
 struct LibrettoDocument: FileDocument {
     static let readableContentTypes: [UTType] = [
-        .openXMLDocument, .macroEnabledDocument, .markdownDocument,
+        .openXMLDocument, .macroEnabledDocument, .markdownDocument, .pagesDocument, .pagesPackage,
     ] + SourceLanguage.contentTypes + [.plainText]
     static let writableContentTypes: [UTType] = [
         .openXMLDocument, .macroEnabledDocument, .markdownDocument,
@@ -41,6 +45,10 @@ struct LibrettoDocument: FileDocument {
     }
 
     init(configuration: ReadConfiguration) throws {
+        if configuration.contentType.conforms(to: .pagesPackage) || configuration.file.isDirectory {
+            document = try PagesReader.document(fromFiles: Self.files(in: configuration.file))
+            return
+        }
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -56,12 +64,32 @@ struct LibrettoDocument: FileDocument {
             document = MarkdownReader.document(from: data)
         } else if configuration.contentType.conforms(to: .plainText) {
             document = PlainText.document(from: data)
+        } else if configuration.contentType.conforms(to: .pagesDocument) {
+            document = try PagesReader.document(from: data)
         } else {
             document = try DOCXReader.document(from: data)
         }
     }
 
+    /// A package's files, by their paths within it.
+    private static func files(in wrapper: FileWrapper, under prefix: String = "") -> [String: Data] {
+        guard wrapper.isDirectory else { return [:] }
+        var files: [String: Data] = [:]
+        for (name, child) in wrapper.fileWrappers ?? [:] {
+            if child.isDirectory {
+                files.merge(Self.files(in: child, under: prefix + name + "/")) { first, _ in first }
+            } else if let contents = child.regularFileContents {
+                files[prefix + name] = contents
+            }
+        }
+        return files
+    }
+
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        // A Pages document is never overwritten with something Pages cannot open.
+        if configuration.contentType.conforms(to: .pagesDocument) || configuration.contentType.conforms(to: .pagesPackage) {
+            throw CocoaError(.fileWriteUnsupportedScheme)
+        }
         // Text has no way to track changes; it is saved as it reads with them accepted.
         var text = document
         text.body = Revisions.resolve(document.body, accept: true)
