@@ -55,14 +55,18 @@ struct Pages09Tests {
         <sf:page-number sf:format="arabic"/> of <sf:page-count/></sf:p></sf:text-body></sf:text-storage></sf:header>\
         </sf:headers>\
         <sf:text-storage sf:kind="body" sfa:ID="SFWPStorage-8"><sf:stylesheet-ref sfa:IDREF="SFSStylesheet-2"/>\
+        <sf:footnotes><sf:text-storage sf:kind="footnote"><sf:text-body>\
+        <sf:p><sf:span><sf:footnote-mark sf:mark="1"/></sf:span> The first note.<sf:footnotebr/></sf:p>\
+        <sf:p><sf:span><sf:footnote-mark sf:mark="2"/></sf:span> The second note,<sf:br/></sf:p>\
+        <sf:p>over two paragraphs.<sf:footnotebr/></sf:p></sf:text-body></sf:text-storage></sf:footnotes>\
         <sf:text-body><sf:page-start sf:page-index="0"/><sf:container-hint sf:page-index="0"/>\
         <sf:section sf:name="Text Page"><sf:layout>\
         <sf:p sf:style="paragraph-style-35">Annual Report<sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-32">Plain, <sf:annotation-field sf:ranged="true" sfa:ID="SFWPAnnotatedField-1">\
         <sf:span sf:style="character-style-1">emphasised</sf:span></sf:annotation-field>, and \
-        <sf:link href="https://example.com/"><sf:span sf:style="SFWPCharacterStyle-7">linked</sf:span></sf:link>.<sf:br/></sf:p>\
+        <sf:link href="https://example.com/"><sf:span sf:style="SFWPCharacterStyle-7">linked</sf:span></sf:link><sf:footnote sf:index="0" sf:autonumber="1"/>.<sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-41">One<sf:lnbr/>two<sf:tab/>three<sf:br/></sf:p>\
-        <sf:p sf:style="paragraph-style-40">First point<sf:br/></sf:p>\
+        <sf:p sf:style="paragraph-style-40">First point<sf:span><sf:footnote sf:index="0" sf:autonumber="2"/></sf:span><sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-40">Second point<sf:pgbr/></sf:p>\
         <sf:p sf:style="paragraph-style-32"><sf:ghost-text>Type here</sf:ghost-text></sf:p>\
         </sf:layout></sf:section><sf:insertion-point/></sf:text-body></sf:text-storage>\
@@ -107,6 +111,13 @@ struct Pages09Tests {
         let centred = paragraphs[2].properties
         #expect(centred.alignment == .center)
         #expect(centred.lineSpacing == LineSpacing(line: 360, rule: .auto))
+    }
+
+    @Test("Footnotes take their text from the body's footnotes, in order")
+    func footnotes() {
+        #expect(Self.document.notes.map(\.text) == ["The first note.", "The second note,\nover two paragraphs."])
+        let references = paragraphs.flatMap(\.inlines).compactMap { if case .note(let note) = $0.content { note.id } else { nil } }
+        #expect(references == Self.document.notes.map(\.id))
     }
 
     @Test("Lists keep their numbering")

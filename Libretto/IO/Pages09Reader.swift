@@ -158,6 +158,8 @@ private struct Pages09Converter {
     private var lists: [ObjectIdentifier: Int?] = [:]
     private var bodyStyle: (PagesParagraphProperties, PagesCharacterProperties)?
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
+    /// The text of the body's footnotes not yet referred to, in order.
+    private var footnotes: [String] = []
 
     init(root: Node, files: [String: Data]) {
         self.root = root
@@ -178,6 +180,9 @@ private struct Pages09Converter {
     mutating func convert() -> WordDocument {
         readPageSetup()
         var blocks: [Block] = []
+        if let notes = root.first("text-storage")?.first("footnotes")?.first("text-storage")?.first("text-body") {
+            footnotes = footnoteTexts(notes)
+        }
         if let body = root.first("text-storage")?.first("text-body") {
             blocks = paragraphs(in: body, recordsStyles: true).map(Block.paragraph)
         }
@@ -298,7 +303,9 @@ private struct Pages09Converter {
                 case "crbr":
                     runs.append(Inline(.columnBreak))
                 case "footnote":
-                    let text = plainText(element)
+                    // The text is the reference's own, or the next of the body's footnotes.
+                    var text = plainText(element)
+                    if text.isEmpty, !footnotes.isEmpty { text = footnotes.removeFirst() }
                     guard !text.isEmpty else { continue }
                     let id = document.unusedNoteID(.footnote)
                     document.notes.append(Note(kind: .footnote, id: id, text: text))
@@ -350,6 +357,20 @@ private struct Pages09Converter {
         walk(node)
         if !line.isEmpty { lines.append(line) }
         return lines.joined(separator: "\n").trimmingCharacters(in: .newlines)
+    }
+
+    /// The footnotes' text, each from a paragraph that starts with its mark to the next.
+    private func footnoteTexts(_ body: Node) -> [String] {
+        var notes: [[String]] = []
+        for paragraph in body.descendants(where: { $0.name == "p" }) {
+            let line = plainText(paragraph)
+            if paragraph.descendants(where: { $0.name == "footnote-mark" }).isEmpty, !notes.isEmpty {
+                notes[notes.count - 1].append(line)
+            } else {
+                notes.append([line])
+            }
+        }
+        return notes.map { $0.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
     private mutating func hyperlink(_ address: String?) -> Hyperlink? {
