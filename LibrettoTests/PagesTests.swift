@@ -215,6 +215,7 @@ struct PagesTests {
         #expect(table.rows[0].cells.map(\.gridSpan) == [2, 1])
         #expect(table.rows[1].cells[0].verticalMerge == .restart)
         #expect(table.rows[2].cells[0].verticalMerge == .continue)
+        #expect(table.rows[2].cells[0].shadingHex == table.rows[1].cells[0].shadingHex)
 
         let saved = try DOCXReader.document(from: DOCXWriter.data(from: Self.fields))
         let savedTable = try #require(saved.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)

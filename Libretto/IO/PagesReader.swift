@@ -797,7 +797,12 @@ struct PagesConverter {
                     var cell = cell
                     cell.gridSpan = spans[row][column]
                     cell.verticalMerge = merges[row][column]
-                    if cell.verticalMerge == .continue { cell.blocks = [] }
+                    if cell.verticalMerge == .continue {
+                        // A cell merged into the one above shows that one's fill.
+                        cell.blocks = []
+                        let origin = (0..<row).last { merges[$0][column] == .restart }
+                        cell.shadingHex = origin.flatMap { cells[$0][column].shadingHex }
+                    }
                     if cell.blocks.isEmpty { cell.blocks = [.paragraph(Paragraph())] }
                     cell.preservedPropertiesXML = Self.cellPropertiesXML(cell, width: grid[column..<(column + cell.gridSpan)].reduce(0, +))
                     return cell
