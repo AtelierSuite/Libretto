@@ -180,6 +180,21 @@ struct PagesTests {
         #expect(Self.fields.footer?.text == "Page {PAGE} of {NUMPAGES}")
     }
 
+    @Test("Merged cells span their columns and rows")
+    func mergedCells() throws {
+        let table = try #require(Self.fields.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(table.rows.map { $0.cells.map(\.plainText) } == [["Wide", "C1"], ["Tall", "B2", "C2"], ["", "B3", "C3"]])
+        #expect(table.rows[0].cells.map(\.gridSpan) == [2, 1])
+        #expect(table.rows[1].cells[0].verticalMerge == .restart)
+        #expect(table.rows[2].cells[0].verticalMerge == .continue)
+
+        let saved = try DOCXReader.document(from: DOCXWriter.data(from: Self.fields))
+        let savedTable = try #require(saved.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(savedTable.rows[0].cells.map(\.gridSpan) == [2, 1])
+        #expect(savedTable.rows[2].cells[0].verticalMerge == .continue)
+        #expect(saved.footer?.text == "Page {PAGE} of {NUMPAGES}")
+    }
+
     @Test("Files that are not Pages documents are turned away")
     func rejects() throws {
         let docx = try ZipArchive.archive(entries: [(path: "word/document.xml", data: Data("<w:document/>".utf8))])

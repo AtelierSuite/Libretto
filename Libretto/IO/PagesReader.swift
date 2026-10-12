@@ -632,9 +632,10 @@ private struct PagesConverter {
             if widths.indices.contains(index), let size = header.float(2), size > 0 { widths[index] = size }
         }
 
-        let strings = dataList(store.reference(4))
-        let richText = dataList(store.reference(17))
-        let cellStyles = dataList(store.reference(5))
+        let lists = CellLists(
+            strings: dataList(store.reference(4)), richText: dataList(store.reference(17)),
+            styles: dataList(store.reference(5))
+        )
         var cells = Array(repeating: Array(repeating: TableCell(blocks: []), count: columnCount), count: rowCount)
         let tileStorage = store.message(3)
         let tileSize = Int(tileStorage?.optionalUInt(2) ?? 256)
@@ -643,39 +644,99 @@ private struct PagesConverter {
             let firstRow = Int(tileEntry.uint(1)) * tileSize
             for rowInfo in tile.messages(5) {
                 let row = firstRow + Int(rowInfo.uint(1))
-                guard row < rowCount, let buffer = rowInfo.bytes(6), let offsets = rowInfo.bytes(7) else { continue }
+                // Pages has written both formats since 2019; older files have only the first.
+                let isNew = rowInfo.has(7)
+                guard row < rowCount, let buffer = rowInfo.bytes(isNew ? 6 : 3), let offsets = rowInfo.bytes(isNew ? 7 : 4)
+                else { continue }
+                // Wide rows count their offsets in fours.
+                let scale = rowInfo.bool(8) == true ? 4 : 1
                 for column in 0..<min(columnCount, offsets.count / 2) {
                     let at = offsets.startIndex + column * 2
                     let offset = Int(offsets[at]) | Int(offsets[at + 1]) << 8
-                    guard offset != 0xFFFF, buffer.startIndex + offset < buffer.endIndex else { continue }
-                    cells[row][column] = cell(
-                        buffer[(buffer.startIndex + offset)...], strings: strings, richText: richText, styles: cellStyles
-                    )
+                    guard offset != 0xFFFF, buffer.startIndex + offset * scale < buffer.endIndex else { continue }
+                    let bytes = buffer[(buffer.startIndex + offset * scale)...]
+                    let value = isNew ? CellValue(newStorage: bytes) : CellValue(oldStorage: bytes)
+                    if let value { cells[row][column] = cell(value, lists: lists) }
                 }
             }
         }
 
-        let headerRows = Int(model.message.uint(9))
         let grid = widths.map { Int(($0 * 20).rounded()) }
-        let rows = cells.enumerated().map { index, row in
+        var spans = Array(repeating: Array(repeating: 1, count: columnCount), count: rowCount)
+        var covered = Array(repeating: Array(repeating: false, count: columnCount), count: rowCount)
+        var merges = Array(repeating: Array(repeating: TableCell.VerticalMerge?.none, count: columnCount), count: rowCount)
+        for region in mergedRegions(model.message, store: store) {
+            let rows = region.rows.clamped(to: 0..<rowCount)
+            let columns = region.columns.clamped(to: 0..<columnCount)
+            guard let top = rows.first, let left = columns.first, rows.count * columns.count > 1 else { continue }
+            for row in rows {
+                spans[row][left] = columns.count
+                if rows.count > 1 { merges[row][left] = row == top ? .restart : .continue }
+                for column in columns.dropFirst() { covered[row][column] = true }
+            }
+        }
+
+        let headerRows = Int(model.message.uint(9))
+        let rows = cells.enumerated().map { row, cellsInRow in
             TableRow(
-                cells: row.enumerated().map { column, cell in
+                cells: cellsInRow.enumerated().compactMap { column, cell -> TableCell? in
+                    guard !covered[row][column] else { return nil }
                     var cell = cell
+                    cell.gridSpan = spans[row][column]
+                    cell.verticalMerge = merges[row][column]
+                    if cell.verticalMerge == .continue { cell.blocks = [] }
                     if cell.blocks.isEmpty { cell.blocks = [.paragraph(Paragraph())] }
-                    // The writer gives a cell its fill only from properties of its own.
-                    if let fill = cell.shadingHex {
-                        cell.preservedPropertiesXML = "<w:tcPr><w:tcW w:w=\"\(grid[column])\" w:type=\"dxa\"/>"
-                            + "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"\(fill)\"/></w:tcPr>"
-                    }
+                    cell.preservedPropertiesXML = Self.cellPropertiesXML(cell, width: grid[column..<(column + cell.gridSpan)].reduce(0, +))
                     return cell
                 },
-                isHeader: index < headerRows
+                isHeader: row < headerRows
             )
         }
         return Table(
             rows: rows, gridColumns: grid,
             preservedPropertiesXML: nil, styleID: nil, hasBorders: true
         )
+    }
+
+    /// `w:tcPr` for a cell, since the writer gives a cell only its width
+    /// unless it has properties of its own.
+    private static func cellPropertiesXML(_ cell: TableCell, width: Int) -> String? {
+        guard cell.gridSpan > 1 || cell.verticalMerge != nil || cell.shadingHex != nil else { return nil }
+        var xml = "<w:tcPr><w:tcW w:w=\"\(width)\" w:type=\"dxa\"/>"
+        if cell.gridSpan > 1 { xml += "<w:gridSpan w:val=\"\(cell.gridSpan)\"/>" }
+        switch cell.verticalMerge {
+        case .restart: xml += "<w:vMerge w:val=\"restart\"/>"
+        case .continue: xml += "<w:vMerge/>"
+        case nil: break
+        }
+        if let fill = cell.shadingHex { xml += "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"\(fill)\"/>" }
+        return xml + "</w:tcPr>"
+    }
+
+    /// The table's merged cells, as row and column ranges.
+    private func mergedRegions(_ model: ProtoMessage, store: ProtoMessage) -> [(rows: Range<Int>, columns: Range<Int>)] {
+        // Since 2019, each merge is a range reference among the table's formulas.
+        var regions: [(rows: Range<Int>, columns: Range<Int>)] = []
+        for formula in model.message(47)?.message(2)?.messages(3) ?? [] {
+            for node in formula.message(2)?.message(1)?.messages(1) ?? [] {
+                guard let range = node.message(40), let columns = range.message(3), let rows = range.message(4) else { continue }
+                func span(_ message: ProtoMessage) -> Range<Int> {
+                    let first = Int(message.uint(1))
+                    return first..<(Int(message.optionalUInt(2) ?? UInt64(first)) + 1)
+                }
+                regions.append((span(rows), span(columns)))
+            }
+        }
+        // Before, a map of ranges, each corner and size packed as row and column halves.
+        if regions.isEmpty, let map = archive[store.reference(13)]?.message {
+            for range in map.messages(1) {
+                guard let origin = range.message(1)?.optionalUInt(1), let size = range.message(2)?.optionalUInt(1) else { continue }
+                let row = Int(origin & 0xFFFF)
+                let column = Int(origin >> 16 & 0xFFFF)
+                regions.append((row..<(row + Int(size & 0xFFFF)), column..<(column + Int(size >> 16 & 0xFFFF))))
+            }
+        }
+        return regions
     }
 
     /// A `TST.TableDataList`'s entries by key: their text, or the rich text they refer to.
@@ -686,51 +747,90 @@ private struct PagesConverter {
         )
     }
 
-    /// A cell in the storage format Pages has written since 2019: a version
-    /// byte, the value's type, flags at the eighth byte saying which values
-    /// follow from the twelfth, in a fixed order.
-    private mutating func cell(
-        _ bytes: ArraySlice<UInt8>, strings: [UInt64: ProtoMessage], richText: [UInt64: ProtoMessage],
-        styles: [UInt64: ProtoMessage]
-    ) -> TableCell {
-        let base = bytes.startIndex
-        guard bytes.count >= 12, bytes[base] >= 5 else { return TableCell(blocks: []) }
-        func read(_ count: Int, at offset: Int) -> UInt64? {
-            guard base + offset + count <= bytes.endIndex else { return nil }
-            return bytes[(base + offset)..<(base + offset + count)].reversed().reduce(0) { $0 << 8 | UInt64($1) }
-        }
-        let type = bytes[base + 1]
-        let flags = read(4, at: 8) ?? 0
-        var offset = 12
+    /// The lists a table's cells refer to by key.
+    private struct CellLists {
+        var strings: [UInt64: ProtoMessage]
+        var richText: [UInt64: ProtoMessage]
+        var styles: [UInt64: ProtoMessage]
+    }
+
+    /// What a cell's storage holds.
+    private struct CellValue {
+        var type: UInt8
         var decimal: Double?
         var double: Double?
         var seconds: Double?
         var stringKey: UInt64?
         var richKey: UInt64?
-        if flags & 0x1 != 0 { decimal = Self.decimal128(bytes, at: base + offset); offset += 16 }
-        if flags & 0x2 != 0 { double = read(8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
-        if flags & 0x4 != 0 { seconds = read(8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
-        if flags & 0x8 != 0 { stringKey = read(4, at: offset); offset += 4 }
-        if flags & 0x10 != 0 { richKey = read(4, at: offset); offset += 4 }
-        let styleKey = flags & 0x20 != 0 ? read(4, at: offset) : nil
-        let shading = styleKey.flatMap { styles[$0]?.reference(4) }.flatMap(cellFill)
+        var styleKey: UInt64?
 
+        /// The format Pages has written since 2019: a version byte, the
+        /// value's type, flags at the eighth byte saying which values follow
+        /// from the twelfth, in a fixed order.
+        init?(newStorage bytes: ArraySlice<UInt8>) {
+            guard bytes.count >= 12, bytes[bytes.startIndex] >= 5 else { return nil }
+            type = bytes[bytes.startIndex + 1]
+            let flags = Self.read(bytes, 4, at: 8) ?? 0
+            var offset = 12
+            if flags & 0x1 != 0 { decimal = Self.decimal128(bytes, at: bytes.startIndex + offset); offset += 16 }
+            if flags & 0x2 != 0 { double = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            if flags & 0x4 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            if flags & 0x8 != 0 { stringKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            if flags & 0x10 != 0 { richKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            if flags & 0x20 != 0 { styleKey = Self.read(bytes, 4, at: offset) }
+        }
+
+        /// The format before: the version, then the type at the third byte,
+        /// flags at the fifth, and the values after the keys the flags ask for.
+        init?(oldStorage bytes: ArraySlice<UInt8>) {
+            guard bytes.count >= 8 else { return nil }
+            let version = bytes[bytes.startIndex]
+            guard (1...4).contains(version) else { return nil }
+            type = bytes[bytes.startIndex + 2]
+            let flags = Self.read(bytes, 4, at: 4) ?? 0
+            var offset = (version > 1 ? 12 : 8) + (flags & (version > 1 ? 0x0D8E : 0x018E)).nonzeroBitCount * 4
+            if flags & 0x200 != 0 { richKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            offset += (flags & (version > 1 ? 0x3000 : 0x1000)).nonzeroBitCount * 4
+            if flags & 0x10 != 0 { stringKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            if flags & 0x20 != 0 { double = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            if flags & 0x40 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) } }
+        }
+
+        private static func read(_ bytes: ArraySlice<UInt8>, _ count: Int, at offset: Int) -> UInt64? {
+            let start = bytes.startIndex + offset
+            guard start + count <= bytes.endIndex else { return nil }
+            return bytes[start..<(start + count)].reversed().reduce(0) { $0 << 8 | UInt64($1) }
+        }
+
+        /// An IEEE 754 decimal128 in binary integer form, as cells store numbers.
+        private static func decimal128(_ bytes: ArraySlice<UInt8>, at start: Int) -> Double? {
+            guard start + 16 <= bytes.endIndex else { return nil }
+            let exponent = (Int(bytes[start + 15] & 0x7F) << 7 | Int(bytes[start + 14]) >> 1) - 0x1820
+            var mantissa = Double(bytes[start + 14] & 1)
+            for index in stride(from: 13, through: 0, by: -1) { mantissa = mantissa * 256 + Double(bytes[start + index]) }
+            let value = mantissa * pow(10, Double(exponent))
+            return bytes[start + 15] & 0x80 != 0 ? -value : value
+        }
+    }
+
+    private mutating func cell(_ value: CellValue, lists: CellLists) -> TableCell {
+        let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap(cellFill)
         let text: String?
-        switch type {
+        switch value.type {
         case 3:
-            text = stringKey.flatMap { strings[$0]?.string(3) }
+            text = value.stringKey.flatMap { lists.strings[$0]?.string(3) }
         case 9:
-            if let payload = archive[richKey.flatMap { richText[$0]?.reference(9) }],
+            if let payload = archive[value.richKey.flatMap { lists.richText[$0]?.reference(9) }],
                let storage = archive[payload.message.reference(1)], storage.type == PagesReader.Types.storage {
                 return TableCell(blocks: blocks(from: storage.message), shadingHex: shading)
             }
             text = nil
         case 2, 10:
-            text = (decimal ?? double).map(Self.numberText)
+            text = (value.decimal ?? value.double).map(Self.numberText)
         case 5:
-            text = seconds.map { Date(timeIntervalSinceReferenceDate: $0).formatted(date: .numeric, time: .omitted) }
+            text = value.seconds.map { Date(timeIntervalSinceReferenceDate: $0).formatted(date: .numeric, time: .omitted) }
         case 6:
-            text = (double ?? decimal).map { $0 != 0 ? "TRUE" : "FALSE" }
+            text = (value.double ?? value.decimal).map { $0 != 0 ? "TRUE" : "FALSE" }
         default:
             text = nil
         }
@@ -751,16 +851,6 @@ private struct PagesConverter {
             depth += 1
         }
         return nil
-    }
-
-    /// An IEEE 754 decimal128 in binary integer form, as cells store numbers.
-    private static func decimal128(_ bytes: ArraySlice<UInt8>, at start: Int) -> Double? {
-        guard start + 16 <= bytes.endIndex else { return nil }
-        let exponent = (Int(bytes[start + 15] & 0x7F) << 7 | Int(bytes[start + 14]) >> 1) - 0x1820
-        var mantissa = Double(bytes[start + 14] & 1)
-        for index in stride(from: 13, through: 0, by: -1) { mantissa = mantissa * 256 + Double(bytes[start + index]) }
-        let value = mantissa * pow(10, Double(exponent))
-        return bytes[start + 15] & 0x80 != 0 ? -value : value
     }
 
     private static func numberText(_ value: Double) -> String {
