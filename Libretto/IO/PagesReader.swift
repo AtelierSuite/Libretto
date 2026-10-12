@@ -735,7 +735,20 @@ struct PagesConverter {
             strings: dataList(store.reference(4)), richText: dataList(store.reference(17)),
             styles: dataList(store.reference(5))
         )
-        var cells = Array(repeating: Array(repeating: TableCell(blocks: []), count: columnCount), count: rowCount)
+        // Header rows and columns, footer rows and the body each have a cell style, whose fill a cell's own replaces.
+        let headerRows = Int(model.message.uint(9))
+        let headerColumns = Int(model.message.uint(10))
+        let footerRows = Int(model.message.uint(11))
+        let regionFills = [19, 20, 21, 18].map { (model.message.reference($0).flatMap(cellFill) ?? nil) }
+        func regionFill(row: Int, column: Int) -> String? {
+            if row < headerRows { return regionFills[0] }
+            if column < headerColumns { return regionFills[1] }
+            if row >= rowCount - footerRows { return regionFills[2] }
+            return regionFills[3]
+        }
+        var cells = (0..<rowCount).map { row in
+            (0..<columnCount).map { column in TableCell(blocks: [], shadingHex: regionFill(row: row, column: column)) }
+        }
         let tileStorage = store.message(3)
         let tileSize = Int(tileStorage?.optionalUInt(2) ?? 256)
         for tileEntry in tileStorage?.messages(1) ?? [] {
@@ -755,7 +768,9 @@ struct PagesConverter {
                     guard offset != 0xFFFF, buffer.startIndex + offset * scale < buffer.endIndex else { continue }
                     let bytes = buffer[(buffer.startIndex + offset * scale)...]
                     let value = isNew ? CellValue(newStorage: bytes) : CellValue(oldStorage: bytes)
-                    if let value { cells[row][column] = cell(value, lists: lists) }
+                    if let value {
+                        cells[row][column] = cell(value, lists: lists, regionFill: regionFill(row: row, column: column))
+                    }
                 }
             }
         }
@@ -775,7 +790,6 @@ struct PagesConverter {
             }
         }
 
-        let headerRows = Int(model.message.uint(9))
         let rows = cells.enumerated().map { row, cellsInRow in
             TableRow(
                 cells: cellsInRow.enumerated().compactMap { column, cell -> TableCell? in
@@ -913,8 +927,8 @@ struct PagesConverter {
         }
     }
 
-    private mutating func cell(_ value: CellValue, lists: CellLists) -> TableCell {
-        let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap(cellFill)
+    private mutating func cell(_ value: CellValue, lists: CellLists, regionFill: String?) -> TableCell {
+        let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap(cellFill) ?? regionFill
         let text: String?
         switch value.type {
         case 3:
@@ -937,15 +951,16 @@ struct PagesConverter {
         return TableCell(blocks: text.map { [.paragraph(Paragraph(text: $0))] } ?? [], shadingHex: shading)
     }
 
-    /// The fill of a `TST.CellStyleArchive`, or of the style it is a variation of.
-    private func cellFill(_ identifier: UInt64) -> String? {
+    /// The fill of a `TST.CellStyleArchive`, or of the style it is a variation
+    /// of: `.some(nil)` for none, and `nil` if neither says.
+    private func cellFill(_ identifier: UInt64) -> String?? {
         var next: UInt64? = identifier
         var depth = 0
         while let current = next, let style = archive[current], depth < 32 {
             // An empty fill takes away the one the style it varies has.
             if let fill = style.message.message(11)?.message(1) {
-                guard let color = fill.message(1), color.float(6) != 0 else { return nil }
-                return Self.hex(color)
+                guard let color = fill.message(1), color.float(6) != 0 else { return .some(nil) }
+                return .some(Self.hex(color))
             }
             next = style.message.message(1)?.reference(3)
             depth += 1
