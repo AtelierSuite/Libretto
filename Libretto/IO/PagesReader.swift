@@ -778,7 +778,7 @@ struct PagesConverter {
 
     /// `w:tcPr` for a cell, since the writer gives a cell only its width
     /// unless it has properties of its own.
-    private static func cellPropertiesXML(_ cell: TableCell, width: Int) -> String? {
+    static func cellPropertiesXML(_ cell: TableCell, width: Int) -> String? {
         guard cell.gridSpan > 1 || cell.verticalMerge != nil || cell.shadingHex != nil else { return nil }
         var xml = "<w:tcPr><w:tcW w:w=\"\(width)\" w:type=\"dxa\"/>"
         if cell.gridSpan > 1 { xml += "<w:gridSpan w:val=\"\(cell.gridSpan)\"/>" }
@@ -932,7 +932,7 @@ struct PagesConverter {
         return nil
     }
 
-    private static func numberText(_ value: Double) -> String {
+    static func numberText(_ value: Double) -> String {
         if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
         return String(value)
     }

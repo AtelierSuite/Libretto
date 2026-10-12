@@ -59,6 +59,14 @@ struct Pages09Tests {
         <sf:p><sf:span><sf:footnote-mark sf:mark="1"/></sf:span> The first note.<sf:footnotebr/></sf:p>\
         <sf:p><sf:span><sf:footnote-mark sf:mark="2"/></sf:span> The second note,<sf:br/></sf:p>\
         <sf:p>over two paragraphs.<sf:footnotebr/></sf:p></sf:text-body></sf:text-storage></sf:footnotes>\
+        <sf:attachments><sf:attachment sf:kind="tabular-attachment" sfa:ID="SFTTableAttachment-0"><sf:tabular-info>\
+        <sf:tabular-model sf:num-header-rows="1"><sf:grid sf:numcols="3" sf:numrows="3"><sf:columns>\
+        <sf:grid-column sf:width="120"/><sf:grid-column sf:width="60"/><sf:grid-column sf:width="60"/></sf:columns>\
+        <sf:rows><sf:grid-row/><sf:grid-row/><sf:grid-row/></sf:rows><sf:datasource>\
+        <sf:t><sf:ct sfa:s="Item"/></sf:t><sf:t sf:col-span="2"><sf:ct sfa:s="Figures"/></sf:t><sf:s/>\
+        <sf:t sf:row-span="2"><sf:ct sfa:s="Fruit"/></sf:t><sf:n sf:v="3"/><sf:b sf:v="1"/>\
+        <sf:s/><sf:n sf:v="2.5"/><sf:e/>\
+        </sf:datasource></sf:grid></sf:tabular-model></sf:tabular-info></sf:attachment></sf:attachments>\
         <sf:text-body><sf:page-start sf:page-index="0"/><sf:container-hint sf:page-index="0"/>\
         <sf:section sf:name="Text Page"><sf:layout>\
         <sf:p sf:style="paragraph-style-35">Annual Report<sf:br/></sf:p>\
@@ -68,6 +76,7 @@ struct Pages09Tests {
         <sf:p sf:style="paragraph-style-41">One<sf:lnbr/>two<sf:tab/>three<sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-40">First point<sf:span><sf:footnote sf:index="0" sf:autonumber="2"/></sf:span><sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-40">Second point<sf:pgbr/></sf:p>\
+        <sf:p sf:style="paragraph-style-32"><sf:attachment-ref sfa:IDREF="SFTTableAttachment-0" sf:kind="tabular-ref"/><sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-32"><sf:ghost-text>Type here</sf:ghost-text></sf:p>\
         </sf:layout></sf:section><sf:insertion-point/></sf:text-body></sf:text-storage>\
         </sl:document>
@@ -77,7 +86,9 @@ struct Pages09Tests {
         from: ZipArchive.archive(entries: [(path: "index.xml", data: Data(index.utf8))])
     )
 
-    private var paragraphs: [Paragraph] { Self.document.allParagraphs }
+    private var paragraphs: [Paragraph] {
+        Self.document.body.compactMap { if case .paragraph(let paragraph) = $0 { paragraph } else { nil } }
+    }
 
     @Test("Paragraphs read in order, breaks and tabs among them")
     func text() {
@@ -120,6 +131,17 @@ struct Pages09Tests {
         #expect(references == Self.document.notes.map(\.id))
     }
 
+    @Test("Tables keep their cells, merges and column widths")
+    func table() throws {
+        let table = try #require(Self.document.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(table.rows.map { $0.cells.map(\.plainText) } == [["Item", "Figures"], ["Fruit", "3", "TRUE"], ["", "2.5", ""]])
+        #expect(table.gridColumns == [2400, 1200, 1200])
+        #expect(table.rows[0].cells.map(\.gridSpan) == [1, 2])
+        #expect(table.rows[0].isHeader)
+        #expect(table.rows[1].cells[0].verticalMerge == .restart)
+        #expect(table.rows[2].cells[0].verticalMerge == .continue)
+    }
+
     @Test("Lists keep their numbering")
     func lists() throws {
         let first = try #require(paragraphs[3].properties.list)
@@ -144,7 +166,7 @@ struct Pages09Tests {
     @Test("A package's gzipped index reads the same")
     func package() throws {
         let document = try PagesReader.document(fromFiles: ["index.xml.gz": Self.gzip(Data(Self.index.utf8))])
-        #expect(document.allParagraphs.map(\.plainText) == paragraphs.map(\.plainText))
+        #expect(document.allParagraphs.map(\.plainText) == Self.document.allParagraphs.map(\.plainText))
     }
 
     @Test("A damaged index is turned away")

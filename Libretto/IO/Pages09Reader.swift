@@ -4,8 +4,8 @@ import Foundation
 /// document as `index.xml`, gzipped when the package is a folder.
 ///
 /// The body text comes across with its paragraph and character formatting,
-/// lists, links, inline pictures and footnotes, and the page's size, margins,
-/// headers and footers. Tables and objects placed on the page do not.
+/// lists, links, inline pictures, tables and footnotes, and the page's size,
+/// margins, headers and footers. Objects placed on the page do not.
 enum Pages09Reader {
     /// The document's XML, if the package is one of these.
     static func index(in files: [String: Data]) throws -> Data? {
@@ -160,6 +160,8 @@ private struct Pages09Converter {
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     /// The text of the body's footnotes not yet referred to, in order.
     private var footnotes: [String] = []
+    /// Tables set in the paragraph being read, which follow it.
+    private var pendingTables: [Table] = []
 
     init(root: Node, files: [String: Data]) {
         self.root = root
@@ -184,9 +186,12 @@ private struct Pages09Converter {
             footnotes = footnoteTexts(notes)
         }
         if let body = root.first("text-storage")?.first("text-body") {
-            blocks = paragraphs(in: body, recordsStyles: true).map(Block.paragraph)
+            blocks = self.blocks(in: body, recordsStyles: true)
         }
-        if blocks.isEmpty { blocks = [.paragraph(Paragraph())] }
+        // A table cannot end the document; Word wants a paragraph after it.
+        if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
+            blocks.append(.paragraph(Paragraph()))
+        }
         document.body = blocks
         document.adoptPagesStyles(body: bodyStyle, headings: headingStyles)
         readHeadersAndFooters()
@@ -220,13 +225,20 @@ private struct Pages09Converter {
 
     // MARK: Text
 
-    /// The paragraphs of a text body, through its sections and layouts.
-    private mutating func paragraphs(in container: Node, recordsStyles: Bool) -> [Paragraph] {
-        var result: [Paragraph] = []
+    /// The blocks of a text body, through its sections and layouts: its
+    /// paragraphs, and the tables set in them.
+    private mutating func blocks(in container: Node, recordsStyles: Bool) -> [Block] {
+        var result: [Block] = []
         for node in container.elements {
             switch node.name {
-            case "p": result.append(paragraph(node, recordsStyles: recordsStyles))
-            case "section", "layout", "text-body": result += paragraphs(in: node, recordsStyles: recordsStyles)
+            case "p":
+                let paragraph = paragraph(node, recordsStyles: recordsStyles)
+                let tables = pendingTables
+                pendingTables = []
+                // A paragraph that only held a table becomes the table.
+                if tables.isEmpty || !paragraph.inlines.isEmpty { result.append(.paragraph(paragraph)) }
+                result += tables.map(Block.table)
+            case "section", "layout", "text-body": result += blocks(in: node, recordsStyles: recordsStyles)
             default: break
             }
         }
@@ -313,7 +325,9 @@ private struct Pages09Converter {
                     noteFormat.style.verticalAlignment = .superscript
                     runs.append(Inline(.note(NoteReference(kind: .footnote, id: id)), format: noteFormat))
                 case "attachment-ref":
-                    if let image = attachment(element.attributes["IDREF"]) {
+                    if let table = element.attributes["IDREF"].flatMap({ byID[$0] }).flatMap({ table($0) }) {
+                        pendingTables.append(table)
+                    } else if let image = attachment(element.attributes["IDREF"]) {
                         runs.append(Inline(.image(image), format: format))
                     } else {
                         document.unsupportedFeatures.insert(.shapes)
@@ -402,6 +416,99 @@ private struct Pages09Converter {
             fileExtension: fileExtension, contentType: contentType
         )
         return InlineImage(relationshipID: rid, width: width, height: height, xml: nil)
+    }
+
+    // MARK: Tables
+
+    /// The table an attachment or drawable holds, with each cell's content.
+    private mutating func table(_ node: Node) -> Table? {
+        guard let model = node.descendants(where: { $0.name == "tabular-model" }).first,
+              let grid = model.first("grid"), let source = grid.first("datasource") else { return nil }
+        let widths = (grid.first("columns")?.elements ?? []).filter { $0.name == "grid-column" }
+            .map { $0.attributes["width"].flatMap(Double.init) ?? 100 }
+        let columnCount = widths.count
+        let rowCount = (grid.first("rows")?.elements ?? []).filter { $0.name == "grid-row" }.count
+        guard rowCount > 0, columnCount > 0, rowCount * columnCount <= 100_000 else { return nil }
+
+        // Cells come row by row. A merged cell gives its span; the cells it
+        // covers are there to be skipped, unless the source leaves them out.
+        let elements = source.elements
+        let coveredAreListed = elements.count >= rowCount * columnCount
+        var cells = Array(repeating: Array(repeating: TableCell(blocks: []), count: columnCount), count: rowCount)
+        var spans = Array(repeating: Array(repeating: 1, count: columnCount), count: rowCount)
+        var covered = Array(repeating: Array(repeating: false, count: columnCount), count: rowCount)
+        var merges = Array(repeating: Array(repeating: TableCell.VerticalMerge?.none, count: columnCount), count: rowCount)
+        var position = 0
+        for element in elements {
+            if !coveredAreListed {
+                while position < rowCount * columnCount, covered[position / columnCount][position % columnCount] { position += 1 }
+            }
+            guard position < rowCount * columnCount else { break }
+            let row = position / columnCount
+            let column = position % columnCount
+            position += 1
+            guard !covered[row][column] else { continue }
+            cells[row][column] = TableCell(blocks: cellBlocks(element))
+            let columnSpan = min(max(element.attributes["col-span"].flatMap(Int.init) ?? 1, 1), columnCount - column)
+            let rowSpan = min(max(element.attributes["row-span"].flatMap(Int.init) ?? 1, 1), rowCount - row)
+            guard columnSpan * rowSpan > 1 else { continue }
+            for spannedRow in row..<(row + rowSpan) {
+                spans[spannedRow][column] = columnSpan
+                if rowSpan > 1 { merges[spannedRow][column] = spannedRow == row ? .restart : .continue }
+                for spannedColumn in column..<(column + columnSpan) where (spannedRow, spannedColumn) != (row, column) {
+                    covered[spannedRow][spannedColumn] = true
+                }
+            }
+        }
+
+        let gridColumns = widths.map { Int(($0 * 20).rounded()) }
+        let headerRows = model.attributes["num-header-rows"].flatMap(Int.init) ?? 0
+        let rows = cells.enumerated().map { row, cellsInRow in
+            TableRow(
+                cells: cellsInRow.enumerated().compactMap { column, cell -> TableCell? in
+                    // A cell merged down stays, as the continuation of the one above.
+                    guard !covered[row][column] || merges[row][column] == .continue else { return nil }
+                    var cell = cell
+                    cell.gridSpan = spans[row][column]
+                    cell.verticalMerge = merges[row][column]
+                    if cell.verticalMerge == .continue { cell.blocks = [] }
+                    if cell.blocks.isEmpty { cell.blocks = [.paragraph(Paragraph())] }
+                    cell.preservedPropertiesXML = PagesConverter.cellPropertiesXML(
+                        cell, width: gridColumns[column..<(column + cell.gridSpan)].reduce(0, +)
+                    )
+                    return cell
+                },
+                isHeader: row < headerRows
+            )
+        }
+        return Table(rows: rows, gridColumns: gridColumns, preservedPropertiesXML: nil, styleID: nil, hasBorders: true)
+    }
+
+    /// What a cell shows: its text's paragraphs, or its value as text.
+    private mutating func cellBlocks(_ cell: Node) -> [Block] {
+        if let body = cell.descendants(where: { $0.name == "text-body" }).first {
+            let blocks = self.blocks(in: body, recordsStyles: false)
+            if !blocks.isEmpty { return blocks }
+        }
+        let text: String?
+        switch cell.name {
+        case "t":
+            text = cell.first("ct")?.attributes["s"]
+        case "n":
+            text = cell.attributes["v"].flatMap(Double.init).map(PagesConverter.numberText)
+        case "b":
+            text = cell.attributes["v"].map { $0 == "1" || $0 == "true" ? "TRUE" : "FALSE" }
+        case "d":
+            text = cell.attributes["cell-date"].map { value in
+                (try? Date(value, strategy: .iso8601)).map { $0.formatted(date: .numeric, time: .omitted) } ?? value
+            }
+        default:
+            // A formula's result, or nothing, for a cell that is empty or covered.
+            let result = cell.descendants { $0.attributes["v"] != nil || $0.attributes["s"] != nil }.first
+            text = result.flatMap { $0.attributes["v"].map { Double($0).map(PagesConverter.numberText) ?? $0 } ?? $0.attributes["s"] }
+        }
+        guard let text, !text.isEmpty else { return [] }
+        return [.paragraph(Paragraph(text: text))]
     }
 
     // MARK: Styles
