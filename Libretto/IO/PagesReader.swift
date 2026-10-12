@@ -140,8 +140,10 @@ struct PagesCharacterProperties {
         var style = RunStyle()
         style.fontName = fontName.map(PagesConverter.familyName)
         style.fontSize = fontSize.map { Int(($0 * 2).rounded()) }
-        style.isBold = isBold == true ? true : nil
-        style.isItalic = isItalic == true ? true : nil
+        // A bold or italic typeface, such as Helvetica-Bold, is bold or italic itself.
+        let traits = fontName.map(PagesConverter.fontTraits) ?? (isBold: false, isItalic: false)
+        style.isBold = isBold == true || traits.isBold ? true : nil
+        style.isItalic = isItalic == true || traits.isItalic ? true : nil
         if let colorHex, let hex = colorHex, hex != "000000" { style.colorHex = hex }
         switch verticalPosition {
         case 1: style.verticalAlignment = .superscript
@@ -1015,6 +1017,22 @@ struct PagesConverter {
     }
 
     /// A font's family name, as Word names fonts, from the PostScript name Pages records.
+    /// Whether the typeface a PostScript name names is bold or italic.
+    static func fontTraits(_ postScriptName: String) -> (isBold: Bool, isItalic: Bool) {
+        let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
+        if CTFontCopyPostScriptName(font) as String == postScriptName {
+            let traits = CTFontGetSymbolicTraits(font)
+            return (traits.contains(.traitBold), traits.contains(.traitItalic))
+        }
+        // Not installed: go by the style the name ends with.
+        guard let dash = postScriptName.lastIndex(of: "-") else { return (false, false) }
+        let style = postScriptName[postScriptName.index(after: dash)...].lowercased()
+        return (
+            ["bold", "black", "heavy"].contains { style.contains($0) },
+            ["italic", "oblique"].contains { style.contains($0) }
+        )
+    }
+
     static func familyName(_ postScriptName: String) -> String {
         let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
         if CTFontCopyPostScriptName(font) as String == postScriptName {

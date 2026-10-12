@@ -61,6 +61,20 @@ struct PagesTests {
         #expect(style(of: "Centred paragraph in ", in: centred)?.fontName == "Helvetica")
     }
 
+    @Test("A bold or italic typeface makes the text bold or italic")
+    func typefaces() {
+        var characters = PagesCharacterProperties()
+        characters.fontName = "Helvetica-BoldOblique"
+        #expect(characters.runStyle.fontName == "Helvetica")
+        #expect(characters.runStyle.isBold == true)
+        #expect(characters.runStyle.isItalic == true)
+        characters.fontName = "NotInstalledSans-Italic"
+        #expect(characters.runStyle.isBold == nil)
+        #expect(characters.runStyle.isItalic == true)
+        characters.fontName = "Helvetica"
+        #expect(characters.runStyle.isBold == nil)
+    }
+
     @Test("Paragraph formatting and headings come across")
     func paragraphFormatting() {
         #expect(paragraph(startingWith: "Quarterly").properties.styleID == "Heading1")
