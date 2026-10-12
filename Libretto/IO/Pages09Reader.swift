@@ -5,7 +5,9 @@ import Foundation
 ///
 /// The body text comes across with its paragraph and character formatting,
 /// lists, links, inline pictures, tables and footnotes, and the page's size,
-/// margins, headers and footers. Objects placed on the page do not.
+/// margins, headers and footers. A page layout document's text boxes,
+/// pictures and tables are read in page order; objects placed on the pages
+/// of a word-processing document are left out.
 enum Pages09Reader {
     /// The document's XML, if the package is one of these.
     static func index(in files: [String: Data]) throws -> Data? {
@@ -188,6 +190,15 @@ private struct Pages09Converter {
         if let body = root.first("text-storage")?.first("text-body") {
             blocks = self.blocks(in: body, recordsStyles: true)
         }
+        let drawables = root.first("drawables")
+        let pages = (drawables?.elements ?? []).filter { $0.name == "page-group" }
+        if !pages.isEmpty, blocks.allSatisfy(Self.isBlank) {
+            // A page layout document has no body text: its pages are what is placed on them.
+            blocks = floatingBlocks(pages)
+        } else if drawables?.descendants(where: { $0.name == "drawable-shape" || $0.name == "media" }).isEmpty == false {
+            // Objects placed on a page of a word-processing document have no place in its text.
+            document.unsupportedFeatures.insert(.shapes)
+        }
         // A table cannot end the document; Word wants a paragraph after it.
         if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
             blocks.append(.paragraph(Paragraph()))
@@ -195,10 +206,59 @@ private struct Pages09Converter {
         document.body = blocks
         document.adoptPagesStyles(body: bodyStyle, headings: headingStyles)
         readHeadersAndFooters()
-        if root.first("drawables")?.descendants(where: { $0.name == "drawable-shape" || $0.name == "media" }).isEmpty == false {
-            document.unsupportedFeatures.insert(.shapes)
-        }
         return document
+    }
+
+    /// What is placed on the pages, page by page, read down each page and
+    /// across: text boxes' and shapes' text as paragraphs, pictures and
+    /// tables as they are, and a page break between pages.
+    private mutating func floatingBlocks(_ pages: [Node]) -> [Block] {
+        var blocks: [Block] = []
+        let ordered = pages.sorted { ($0.attributes["page"].flatMap(Int.init) ?? 0) < ($1.attributes["page"].flatMap(Int.init) ?? 0) }
+        for (index, page) in ordered.enumerated() {
+            if index > 0 {
+                if case .paragraph(var last) = blocks.last {
+                    last.inlines.append(Inline(.pageBreak))
+                    blocks[blocks.count - 1] = .paragraph(last)
+                } else {
+                    blocks.append(.paragraph(Paragraph(inlines: [Inline(.pageBreak)])))
+                }
+            }
+            let items = page.elements.map { item -> (node: Node, x: Double, y: Double) in
+                let position = item.first("geometry")?.first("position")?.attributes
+                return (item, position?["x"].flatMap(Double.init) ?? 0, position?["y"].flatMap(Double.init) ?? 0)
+            }
+            for item in items.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
+                switch item.node.name {
+                case "drawable-shape":
+                    let body = item.node.first("text")?.first("text-storage")?.first("text-body")
+                    let content = body.map { self.blocks(in: $0, recordsStyles: true) } ?? []
+                    if content.allSatisfy(Self.isBlank) {
+                        // A shape with no text is a drawing Libretto cannot bring across.
+                        document.unsupportedFeatures.insert(.shapes)
+                    } else {
+                        blocks += content
+                    }
+                case "tabular-info":
+                    if let table = table(item.node) { blocks.append(.table(table)) }
+                case "media":
+                    if let image = image(in: item.node) {
+                        blocks.append(.paragraph(Paragraph(inlines: [Inline(.image(image))])))
+                    } else {
+                        document.unsupportedFeatures.insert(.shapes)
+                    }
+                default:
+                    document.unsupportedFeatures.insert(.shapes)
+                }
+            }
+        }
+        return blocks
+    }
+
+    /// Whether a block shows nothing: a paragraph with no text, or only breaks.
+    private static func isBlank(_ block: Block) -> Bool {
+        guard case .paragraph(let paragraph) = block else { return false }
+        return paragraph.inlines.allSatisfy { $0.content == .pageBreak }
     }
 
     private mutating func readPageSetup() {
@@ -397,9 +457,13 @@ private struct Pages09Converter {
         )
     }
 
-    /// A picture an attachment holds: the first data file found in it, at the size it is shown.
+    /// A picture an attachment holds.
     private mutating func attachment(_ id: String?) -> InlineImage? {
-        guard let node = id.flatMap({ byID[$0] }) else { return nil }
+        id.flatMap { byID[$0] }.flatMap { image(in: $0) }
+    }
+
+    /// The first data file found in an element, as a picture at the size it is shown.
+    private mutating func image(in node: Node) -> InlineImage? {
         let files = self.files
         let data = node.descendants { $0.name == "data" && $0.attributes["path"] != nil }.lazy.compactMap { data -> Data? in
             let path = data.attributes["path"]!

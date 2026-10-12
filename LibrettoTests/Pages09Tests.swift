@@ -169,6 +169,34 @@ struct Pages09Tests {
         #expect(document.allParagraphs.map(\.plainText) == Self.document.allParagraphs.map(\.plainText))
     }
 
+    @Test("A page layout document's text boxes and tables read down each page, a page break between pages")
+    func pageLayout() throws {
+        func box(_ text: String, x: Int, y: Int) -> String {
+            """
+            <sf:drawable-shape><sf:geometry><sf:position sfa:x="\(x)" sfa:y="\(y)"/></sf:geometry><sf:text>\
+            <sf:text-storage sf:kind="textbox"><sf:text-body><sf:p>\(text)<sf:br/></sf:p></sf:text-body></sf:text-storage>\
+            </sf:text></sf:drawable-shape>
+            """
+        }
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:drawables><sl:page-group sl:page="2">\(box("Second page", x: 40, y: 40))</sl:page-group>\
+            <sl:page-group sl:page="1">\(box("Lower", x: 20, y: 300))\(box("Right", x: 300, y: 50))\(box("Left", x: 20, y: 50))\
+            <sf:drawable-shape><sf:geometry><sf:position sfa:x="0" sfa:y="0"/></sf:geometry></sf:drawable-shape>\
+            <sf:tabular-info><sf:geometry><sf:position sfa:x="20" sfa:y="200"/></sf:geometry><sf:tabular-model><sf:grid>\
+            <sf:columns><sf:grid-column sf:width="100"/></sf:columns><sf:rows><sf:grid-row/></sf:rows>\
+            <sf:datasource><sf:t><sf:ct sfa:s="Cell"/></sf:t></sf:datasource></sf:grid></sf:tabular-model></sf:tabular-info>\
+            </sl:page-group></sl:drawables>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:section><sf:layout><sf:p><sf:br/></sf:p></sf:layout></sf:section>\
+            </sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.allParagraphs.map(\.plainText) == ["Left", "Right", "Cell", "Lower", "Second page"])
+        #expect(document.allParagraphs[3].inlines.last?.content == .pageBreak)
+        #expect(document.unsupportedFeatures.features == [.shapes])
+    }
+
     @Test("A damaged index is turned away")
     func damaged() {
         #expect(throws: IWorkError.self) {
