@@ -44,11 +44,6 @@ struct IWorkArchive {
     /// Data file names, by the identifier objects refer to them with.
     private var dataFileNames: [UInt64: String] = [:]
 
-    /// Reads a document saved as a single file, which is a ZIP of the package.
-    init(zipData: Data) throws {
-        try self.init(files: ZipArchive.entries(in: zipData))
-    }
-
     init(files: [String: Data]) throws {
         self.files = files
         let archives = files.keys.filter { $0.hasPrefix("Index/") && $0.hasSuffix(".iwa") }

@@ -330,7 +330,7 @@ enum ZipArchive {
     /// A `nil` result means the decoder produced nothing usable. Output that is
     /// merely short — a truncated stream — still comes back here; the caller's
     /// CRC check is what rejects it.
-    private static func inflate(_ data: Data, expectedSize: Int) -> Data? {
+    static func inflate(_ data: Data, expectedSize: Int) -> Data? {
         guard !data.isEmpty else { return Data() }
 
         // The central directory usually tells us the exact output size, but a

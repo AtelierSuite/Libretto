@@ -7,17 +7,24 @@ import UniformTypeIdentifiers
 /// as `.docx`. Nothing of the Pages file is kept to be written back.
 ///
 /// The body text comes across with its paragraph and character formatting,
-/// lists, inline pictures, tables, footnotes, and the page's size, margins,
-/// headers and footers. Objects floating on the page do not.
+/// lists, links, inline pictures, tables, footnotes, and the page's size,
+/// margins, headers and footers. A page layout document's text boxes and
+/// pictures are read in page order; objects placed on the pages of a
+/// word-processing document are left out.
+///
+/// Documents from Pages '09 and before, which are XML, are read by `Pages09Reader`.
 enum PagesReader {
     /// Reads a document saved as a single file, which is a ZIP of the package.
     static func document(from data: Data) throws -> WordDocument {
-        try document(from: IWorkArchive(zipData: data))
+        try document(fromFiles: ZipArchive.entries(in: data))
     }
 
     /// Reads a document saved as a package, by its files' paths within it.
     static func document(fromFiles files: [String: Data]) throws -> WordDocument {
-        try document(from: IWorkArchive(files: files))
+        if let index = try Pages09Reader.index(in: files) {
+            return try Pages09Reader.document(fromIndex: index, files: files)
+        }
+        return try document(from: IWorkArchive(files: files))
     }
 
     static func document(from archive: IWorkArchive) throws -> WordDocument {
@@ -51,7 +58,7 @@ enum PagesReader {
 // MARK: - Styles
 
 /// Character formatting from a `TSWP.CharacterStylePropertiesArchive`; `nil` inherits.
-private struct PagesCharacterProperties {
+struct PagesCharacterProperties {
     var isBold: Bool?
     var isItalic: Bool?
     var fontSize: Double?
@@ -134,7 +141,7 @@ private struct PagesCharacterProperties {
 }
 
 /// Paragraph formatting from a `TSWP.ParagraphStylePropertiesArchive`, in points; `nil` inherits.
-private struct PagesParagraphProperties {
+struct PagesParagraphProperties {
     var alignment: Int?
     var firstLineIndent: Double?
     var leftIndent: Double?
@@ -234,7 +241,7 @@ private struct PagesParagraphProperties {
 
 // MARK: - Conversion
 
-private struct PagesConverter {
+struct PagesConverter {
     let archive: IWorkArchive
     var document: WordDocument = {
         var document = WordDocument()
@@ -361,33 +368,8 @@ private struct PagesConverter {
         document.pageSetup = setup
     }
 
-    /// Makes the Normal and heading styles look as the document's own do,
-    /// so what takes its formatting from them, such as headers, footnotes
-    /// and list numbers, looks as it did in Pages.
     private mutating func adoptStyles() {
-        if let (paragraph, characters) = bodyStyle {
-            adopt(paragraph, characters, into: document.styles.defaultParagraphStyleID ?? "Normal", isHeading: false)
-        }
-        let headings: [ParagraphStyleChoice] = [.heading1, .heading2, .heading3]
-        for (level, (paragraph, characters)) in headingStyles where headings.indices.contains(level) {
-            adopt(paragraph, characters, into: headings[level].defaultID, isHeading: true)
-        }
-    }
-
-    private mutating func adopt(
-        _ paragraph: PagesParagraphProperties, _ characters: PagesCharacterProperties, into id: String, isHeading: Bool
-    ) {
-        guard var style = document.styles.styles[id] else { return }
-        let run = characters.runStyle
-        style.runStyle.fontName = run.fontName ?? style.runStyle.fontName
-        style.runStyle.fontSize = run.fontSize ?? style.runStyle.fontSize
-        // A heading's own colour is replaced even by black, which the body leaves automatic.
-        if let colorHex = run.colorHex ?? (isHeading ? "000000" : nil) { style.runStyle.colorHex = colorHex }
-        // Pages leaves out spacing it has none of.
-        style.paragraphProperties.spacingBefore = Int(((paragraph.spaceBefore ?? 0) * 20).rounded())
-        style.paragraphProperties.spacingAfter = Int(((paragraph.spaceAfter ?? 0) * 20).rounded())
-        style.paragraphProperties.lineSpacing = paragraph.lineSpacing ?? LineSpacing(line: 240, rule: .auto)
-        document.styles.styles[id] = style
+        document.adoptPagesStyles(body: bodyStyle, headings: headingStyles)
     }
 
     // MARK: Text
@@ -655,7 +637,7 @@ private struct PagesConverter {
     }
 
     /// An image as Word reads it: PNG and JPEG as they are, anything else as PNG.
-    private static func wordImage(_ data: Data) -> (Data, String, String)? {
+    static func wordImage(_ data: Data) -> (Data, String, String)? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source).flatMap({ UTType($0 as String) }) else { return nil }
         if type.conforms(to: .png) { return (data, "png", "image/png") }
@@ -1048,5 +1030,39 @@ private struct AttributeTable {
             if entries[middle].index <= index { low = middle + 1 } else { high = middle }
         }
         return low == 0 ? nil : low - 1
+    }
+}
+
+extension WordDocument {
+    /// Makes the Normal and heading styles look as a Pages document's own
+    /// do, so what takes its formatting from them, such as headers,
+    /// footnotes and list numbers, looks as it did in Pages.
+    mutating func adoptPagesStyles(
+        body: (PagesParagraphProperties, PagesCharacterProperties)?,
+        headings: [Int: (PagesParagraphProperties, PagesCharacterProperties)]
+    ) {
+        if let (paragraph, characters) = body {
+            adopt(paragraph, characters, into: styles.defaultParagraphStyleID ?? "Normal", isHeading: false)
+        }
+        let choices: [ParagraphStyleChoice] = [.heading1, .heading2, .heading3]
+        for (level, (paragraph, characters)) in headings where choices.indices.contains(level) {
+            adopt(paragraph, characters, into: choices[level].defaultID, isHeading: true)
+        }
+    }
+
+    private mutating func adopt(
+        _ paragraph: PagesParagraphProperties, _ characters: PagesCharacterProperties, into id: String, isHeading: Bool
+    ) {
+        guard var style = styles.styles[id] else { return }
+        let run = characters.runStyle
+        style.runStyle.fontName = run.fontName ?? style.runStyle.fontName
+        style.runStyle.fontSize = run.fontSize ?? style.runStyle.fontSize
+        // A heading's own colour is replaced even by black, which the body leaves automatic.
+        if let colorHex = run.colorHex ?? (isHeading ? "000000" : nil) { style.runStyle.colorHex = colorHex }
+        // Pages leaves out spacing it has none of.
+        style.paragraphProperties.spacingBefore = Int(((paragraph.spaceBefore ?? 0) * 20).rounded())
+        style.paragraphProperties.spacingAfter = Int(((paragraph.spaceAfter ?? 0) * 20).rounded())
+        style.paragraphProperties.lineSpacing = paragraph.lineSpacing ?? LineSpacing(line: 240, rule: .auto)
+        styles.styles[id] = style
     }
 }
