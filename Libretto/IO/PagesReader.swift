@@ -16,7 +16,15 @@ import UniformTypeIdentifiers
 enum PagesReader {
     /// Reads a document saved as a single file, which is a ZIP of the package.
     static func document(from data: Data) throws -> WordDocument {
-        try document(fromFiles: ZipArchive.entries(in: data))
+        let files: [String: Data]
+        do {
+            files = try ZipArchive.entries(in: data)
+        } catch ZipError.unsupportedCompression {
+            // Pages '09 stores a password-protected document's files encrypted,
+            // under a compression method of its own.
+            throw IWorkError.passwordProtected
+        }
+        return try document(fromFiles: files)
     }
 
     /// Reads a document saved as a package, by its files' paths within it.

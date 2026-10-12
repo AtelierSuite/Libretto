@@ -145,6 +145,20 @@ struct Pages09Tests {
         }
     }
 
+    @Test("A password-protected document is recognised")
+    func passwordProtected() throws {
+        // Pages '09 marks its encrypted entries with a compression method of its own.
+        var archive = try ZipArchive.archive(entries: [(path: "index.xml", data: Data(Self.index.utf8))])
+        archive.replaceSubrange(8..<10, with: [0x6B, 0x63])
+        let central = try #require(archive.lastRange(of: Data([0x50, 0x4B, 0x01, 0x02])))
+        archive.replaceSubrange((central.lowerBound + 10)..<(central.lowerBound + 12), with: [0x6B, 0x63])
+        #expect {
+            try PagesReader.document(from: archive)
+        } throws: { error in
+            if case IWorkError.passwordProtected = error { true } else { false }
+        }
+    }
+
     /// A gzip member holding `data` in one stored DEFLATE block.
     private static func gzip(_ data: Data) -> Data {
         var output = Data([0x1F, 0x8B, 8, 0, 0, 0, 0, 0, 0, 0xFF, 0x01])
