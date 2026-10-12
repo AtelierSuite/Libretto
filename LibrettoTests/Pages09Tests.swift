@@ -58,7 +58,8 @@ struct Pages09Tests {
         <sf:text-body><sf:page-start sf:page-index="0"/><sf:container-hint sf:page-index="0"/>\
         <sf:section sf:name="Text Page"><sf:layout>\
         <sf:p sf:style="paragraph-style-35">Annual Report<sf:br/></sf:p>\
-        <sf:p sf:style="paragraph-style-32">Plain, <sf:span sf:style="character-style-1">emphasised</sf:span>, and \
+        <sf:p sf:style="paragraph-style-32">Plain, <sf:annotation-field sf:ranged="true" sfa:ID="SFWPAnnotatedField-1">\
+        <sf:span sf:style="character-style-1">emphasised</sf:span></sf:annotation-field>, and \
         <sf:link href="https://example.com/"><sf:span sf:style="SFWPCharacterStyle-7">linked</sf:span></sf:link>.<sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-41">One<sf:lnbr/>two<sf:tab/>three<sf:br/></sf:p>\
         <sf:p sf:style="paragraph-style-40">First point<sf:br/></sf:p>\
@@ -83,7 +84,7 @@ struct Pages09Tests {
         #expect(Self.document.importedFormat == .pages)
     }
 
-    @Test("Styles inherit, and spans and links keep their formatting")
+    @Test("Styles inherit, and spans, links and commented text keep their formatting")
     func formatting() throws {
         let heading = paragraphs[0]
         #expect(heading.properties.styleID == "Heading1")

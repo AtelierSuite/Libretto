@@ -289,8 +289,6 @@ private struct Pages09Converter {
                     appendContent(of: element, characters: inner, link: link, to: &runs)
                 case "link":
                     appendContent(of: element, characters: characters, link: hyperlink(element.attributes["href"]) ?? link, to: &runs)
-                case "ghost-text", "bookmark":
-                    appendContent(of: element, characters: characters, link: link, to: &runs)
                 case "tab":
                     runs.append(Inline(.tab, format: format, hyperlink: link))
                 case "lnbr":
@@ -314,9 +312,10 @@ private struct Pages09Converter {
                         document.unsupportedFeatures.insert(.shapes)
                     }
                 default:
-                    // `br` ends the paragraph the element itself ends; the rest
-                    // mark selections and layout, and take no room.
-                    break
+                    // Placeholder text, bookmarks, comments' ranges and fields
+                    // wrap the text they show; `br` ends the paragraph the
+                    // element itself ends, and the rest are empty markers.
+                    appendContent(of: element, characters: characters, link: link, to: &runs)
                 }
             }
         }
