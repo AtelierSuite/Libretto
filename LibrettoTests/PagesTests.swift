@@ -157,6 +157,24 @@ struct PagesTests {
         #expect(document.allParagraphs.map(\.plainText) == Self.document.allParagraphs.map(\.plainText))
     }
 
+    /// `Fields.pages`: a link, a table with cells merged across and down,
+    /// and a footer with the page number and count.
+    private static let fields = try! PagesReader.document(from: Data(
+        contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Fields.pages")
+    ))
+
+    @Test("Links keep their address")
+    func links() throws {
+        let paragraph = try #require(Self.fields.allParagraphs.first)
+        #expect(paragraph.plainText == "Visit the site today.")
+        let linked = try #require(paragraph.inlines.first { $0.hyperlink != nil })
+        #expect(linked.plainText == "the site")
+        #expect(linked.hyperlink?.url == URL(string: "https://example.com/"))
+        let id = try #require(linked.hyperlink?.relationshipID)
+        #expect(Self.fields.package.addedLinks[id] == "https://example.com/")
+        #expect(paragraph.inlines.filter { $0.hyperlink != nil }.count == 1)
+    }
+
     @Test("Files that are not Pages documents are turned away")
     func rejects() throws {
         let docx = try ZipArchive.archive(entries: [(path: "word/document.xml", data: Data("<w:document/>".utf8))])

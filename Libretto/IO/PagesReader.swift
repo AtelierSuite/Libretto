@@ -36,6 +36,7 @@ enum PagesReader {
         static let storage: UInt32 = 2001
         static let drawableAttachment: UInt32 = 2003
         static let footnoteAttachment: UInt32 = 2008
+        static let hyperlink: UInt32 = 2032
         static let characterStyle: UInt32 = 2021
         static let paragraphStyle: UInt32 = 2022
         static let listStyle: UInt32 = 2023
@@ -243,6 +244,8 @@ private struct PagesConverter {
     private var characterStyles: [UInt64: PagesCharacterProperties] = [:]
     /// The list each list style became, by the list style's identifier; `nil` for no list.
     private var lists: [UInt64: Int?] = [:]
+    /// The link each hyperlink field became, by its identifier; `nil` for none.
+    private var links: [UInt64: Hyperlink?] = [:]
     /// How deep in text storages the conversion is: one in the body, more in its tables.
     private var storageDepth = 0
     /// The formatting of the body's first plain paragraph, and of its first
@@ -334,6 +337,7 @@ private struct PagesConverter {
         let characterStyles = AttributeTable(storage.message(8))
         let attachments = AttributeTable(storage.message(9))
         let footnotes = AttributeTable(storage.message(16))
+        let smartFields = AttributeTable(storage.message(11))
 
         var blocks: [Block] = []
         var start = 0
@@ -365,9 +369,12 @@ private struct PagesConverter {
             var tables: [Block] = []
             var pending: [UInt16] = []
             var pendingFormat = RunFormat()
+            var pendingLink: Hyperlink?
             func flush() {
                 guard !pending.isEmpty else { return }
-                paragraph.inlines.append(Inline(.text(String(decoding: pending, as: UTF16.self)), format: pendingFormat))
+                paragraph.inlines.append(Inline(
+                    .text(String(decoding: pending, as: UTF16.self)), format: pendingFormat, hyperlink: pendingLink
+                ))
                 pending = []
             }
             for index in start..<end {
@@ -375,14 +382,15 @@ private struct PagesConverter {
                 var characters = PagesCharacterProperties()
                 if let styleID = characterStyles.object(at: index) { characters = characterStyle(styleID) }
                 let format = RunFormat(style: baseCharacters.overlaid(with: characters).runStyle)
-                if format != pendingFormat { flush(); pendingFormat = format }
+                let link = smartFields.object(at: index).flatMap { hyperlink($0) }
+                if format != pendingFormat || link != pendingLink { flush(); pendingFormat = format; pendingLink = link }
                 switch unit {
                 case 0x09:
                     flush()
-                    paragraph.inlines.append(Inline(.tab, format: format))
+                    paragraph.inlines.append(Inline(.tab, format: format, hyperlink: link))
                 case 0x2028:
                     flush()
-                    paragraph.inlines.append(Inline(.lineBreak, format: format))
+                    paragraph.inlines.append(Inline(.lineBreak, format: format, hyperlink: link))
                 case 0x000E:
                     flush()
                     if let reference = footnote(footnotes.object(at: index)) {
@@ -426,6 +434,24 @@ private struct PagesConverter {
         return lines.map { line in
             String(line.unicodeScalars.filter { $0.value >= 0x20 && $0 != "\u{FFFC}" || $0 == "\t" }.map(Character.init))
         }.joined(separator: "\n").trimmingCharacters(in: .newlines)
+    }
+
+    /// A link to the address a `TSWP.HyperlinkFieldArchive` holds, made the first time it is met.
+    private mutating func hyperlink(_ identifier: UInt64) -> Hyperlink? {
+        if let known = links[identifier] { return known }
+        guard let field = archive[identifier], field.type == PagesReader.Types.hyperlink,
+              let address = field.message.string(2), !address.isEmpty else {
+            links[identifier] = .some(nil)
+            return nil
+        }
+        let id = document.package.unusedRelationshipID()
+        document.package.addedLinks[id] = address
+        let link = Hyperlink(
+            relationshipID: id, anchor: nil, url: URL(string: address),
+            attributesXML: " r:id=\"\(id)\" w:history=\"1\""
+        )
+        links[identifier] = link
+        return link
     }
 
     private mutating func paragraphStyle(_ identifier: UInt64) -> (PagesParagraphProperties, PagesCharacterProperties) {
