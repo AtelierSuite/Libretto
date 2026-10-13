@@ -71,6 +71,7 @@ enum PagesReader {
         static let document: UInt32 = 10000
         static let pageMaster: UInt32 = 10143
         static let section: UInt32 = 10011
+        static let documentSettings: UInt32 = 10012
         static let storage: UInt32 = 2001
         static let drawableAttachment: UInt32 = 2003
         static let footnoteAttachment: UInt32 = 2008
@@ -83,6 +84,80 @@ enum PagesReader {
         static let shapeInfo: UInt32 = 2011
         static let tableInfo: UInt32 = 6000
         static let tableModel: UInt32 = 6001
+    }
+}
+
+// MARK: - Number formats
+
+/// How Pages shows a number: a `TSK.FormatStructArchive`, or the number
+/// format of a Pages '09 cell style. Types Libretto does not show, such as
+/// dates, durations and fractions, show the number as it is.
+struct PagesNumberFormat: Equatable {
+    enum Kind {
+        case automatic, number, currency, percentage
+    }
+
+    var kind: Kind
+    /// Places after the point; `nil` for as many as the number has.
+    var decimalPlaces: Int?
+    var currencyCode: String?
+    var showsThousandsSeparator = false
+    /// Negative numbers in brackets, rather than after a minus sign.
+    var bracketsNegatives = false
+    /// The currency symbol set apart from the amount, as accountants do.
+    var isAccounting = false
+
+    init(
+        kind: Kind, decimalPlaces: Int? = nil, currencyCode: String? = nil, showsThousandsSeparator: Bool = false,
+        bracketsNegatives: Bool = false, isAccounting: Bool = false
+    ) {
+        self.kind = kind
+        self.decimalPlaces = decimalPlaces
+        self.currencyCode = currencyCode
+        self.showsThousandsSeparator = showsThousandsSeparator
+        self.bracketsNegatives = bracketsNegatives
+        self.isAccounting = isAccounting
+    }
+
+    /// The kind both formats number: 256 a number, 257 currency, 258 a percentage.
+    static func kind(_ type: Int) -> Kind {
+        switch type {
+        case 256: .number
+        case 257: .currency
+        case 258: .percentage
+        default: .automatic
+        }
+    }
+
+    /// From a `TSK.FormatStructArchive`, whose 253 places means as many as the number has.
+    init(_ format: ProtoMessage) {
+        let places = format.optionalUInt(2).map(Int.init)
+        self.init(
+            kind: Self.kind(Int(format.uint(1))), decimalPlaces: places == 253 ? nil : places,
+            currencyCode: format.string(3), showsThousandsSeparator: format.bool(5) == true,
+            bracketsNegatives: [2, 3].contains(format.uint(4)), isAccounting: format.bool(6) == true
+        )
+    }
+
+    func text(_ value: Double, locale: Locale) -> String {
+        guard kind != .automatic, value.isFinite else { return PagesConverter.numberText(value) }
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = kind == .percentage ? .percent : kind == .currency && !isAccounting ? .currency : .decimal
+        if kind == .currency { formatter.currencyCode = currencyCode ?? locale.currency?.identifier ?? "USD" }
+        formatter.usesGroupingSeparator = showsThousandsSeparator
+        formatter.minimumFractionDigits = decimalPlaces ?? 0
+        formatter.maximumFractionDigits = decimalPlaces ?? 15
+        var text = formatter.string(from: NSNumber(value: abs(value))) ?? PagesConverter.numberText(abs(value))
+        if kind == .currency, isAccounting {
+            let symbol = NumberFormatter()
+            symbol.locale = locale
+            symbol.numberStyle = .currency
+            symbol.currencyCode = formatter.currencyCode
+            text = symbol.currencySymbol + " " + text
+        }
+        guard value < 0 else { return text }
+        return bracketsNegatives ? "(\(text))" : "-" + text
     }
 }
 
@@ -313,9 +388,13 @@ struct PagesConverter {
     /// heading of each level, which become the Normal and heading styles.
     private var bodyStyles = PagesStyleTally<UInt64?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
+    /// The document's language and region, which numbers in tables are written for.
+    private let locale: Locale
 
     init(archive: IWorkArchive) {
         self.archive = archive
+        let identifier = archive.objects(ofType: PagesReader.Types.documentSettings).first?.object.message.string(23)
+        locale = Locale(identifier: identifier.flatMap { $0.isEmpty ? nil : $0 } ?? "en_US")
     }
 
     mutating func convert(_ root: ProtoMessage) -> WordDocument {
@@ -733,7 +812,8 @@ struct PagesConverter {
 
         let lists = CellLists(
             strings: dataList(store.reference(4)), richText: dataList(store.reference(17)),
-            styles: dataList(store.reference(5))
+            styles: dataList(store.reference(5)),
+            formats: dataList(store.reference(22)), formatsBefore2019: dataList(store.reference(11))
         )
         // Header rows and columns, footer rows and the body each have a cell style, whose fill a cell's own replaces.
         let headerRows = Int(model.message.uint(9))
@@ -870,6 +950,9 @@ struct PagesConverter {
         var strings: [UInt64: ProtoMessage]
         var richText: [UInt64: ProtoMessage]
         var styles: [UInt64: ProtoMessage]
+        /// Number formats, for cells in the format since 2019 and before.
+        var formats: [UInt64: ProtoMessage]
+        var formatsBefore2019: [UInt64: ProtoMessage]
     }
 
     /// What a cell's storage holds.
@@ -881,6 +964,13 @@ struct PagesConverter {
         var stringKey: UInt64?
         var richKey: UInt64?
         var styleKey: UInt64?
+        /// Keys in the table's formats of the format the cell shows a number,
+        /// or an amount of money, in.
+        var numberFormatKey: UInt64?
+        var currencyFormatKey: UInt64?
+        /// Whether the cell is in the format Pages has written since 2019,
+        /// whose formats are in a list of their own.
+        var isNewStorage = false
 
         /// The format Pages has written since 2019: a version byte, the
         /// value's type, flags at the eighth byte saying which values follow
@@ -888,6 +978,7 @@ struct PagesConverter {
         init?(newStorage bytes: ArraySlice<UInt8>) {
             guard bytes.count >= 12, bytes[bytes.startIndex] >= 5 else { return nil }
             type = bytes[bytes.startIndex + 1]
+            isNewStorage = true
             let flags = Self.read(bytes, 4, at: 8) ?? 0
             var offset = 12
             if flags & 0x1 != 0 { decimal = Self.decimal128(bytes, at: bytes.startIndex + offset); offset += 16 }
@@ -895,7 +986,15 @@ struct PagesConverter {
             if flags & 0x4 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
             if flags & 0x8 != 0 { stringKey = Self.read(bytes, 4, at: offset); offset += 4 }
             if flags & 0x10 != 0 { richKey = Self.read(bytes, 4, at: offset); offset += 4 }
-            if flags & 0x20 != 0 { styleKey = Self.read(bytes, 4, at: offset) }
+            // A key for each flag after: the cell's style, its text style, on to its formats.
+            var keys: [UInt64: UInt64] = [:]
+            for bit in 5..<32 where flags & (1 << bit) != 0 {
+                keys[1 << bit] = Self.read(bytes, 4, at: offset)
+                offset += 4
+            }
+            styleKey = keys[0x20]
+            numberFormatKey = keys[0x2000]
+            currencyFormatKey = keys[0x4000]
         }
 
         /// The format before: the version, then the type, at the second byte
@@ -912,7 +1011,15 @@ struct PagesConverter {
             offset += (flags & (version > 1 ? 0x3000 : 0x1000)).nonzeroBitCount * 4
             if flags & 0x10 != 0 { stringKey = Self.read(bytes, 4, at: offset); offset += 4 }
             if flags & 0x20 != 0 { double = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
-            if flags & 0x40 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) } }
+            if flags & 0x40 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            // From version 2, the third word's high half flags the keys of the cell's formats, which follow.
+            guard version > 1, let formats = Self.read(bytes, 2, at: 10) else { return }
+            for bit in 0..<16 where formats & (1 << bit) != 0 {
+                let key = Self.read(bytes, 4, at: offset)
+                offset += 4
+                if bit == 0 { numberFormatKey = key }
+                if bit == 3 { currencyFormatKey = key }
+            }
         }
 
         private static func read(_ bytes: ArraySlice<UInt8>, _ count: Int, at offset: Int) -> UInt64? {
@@ -945,7 +1052,10 @@ struct PagesConverter {
             }
             text = nil
         case 2, 10:
-            text = (value.decimal ?? value.double).map(Self.numberText)
+            let formats = value.isNewStorage ? lists.formats : lists.formatsBefore2019
+            let keys = value.type == 10 ? [value.currencyFormatKey, value.numberFormatKey] : [value.numberFormatKey, value.currencyFormatKey]
+            let format = keys.lazy.compactMap { $0.flatMap { formats[$0]?.message(6) } }.first.map(PagesNumberFormat.init)
+            text = (value.decimal ?? value.double).map { format?.text($0, locale: locale) ?? Self.numberText($0) }
         case 5:
             text = value.seconds.map { Date(timeIntervalSinceReferenceDate: $0).formatted(date: .numeric, time: .omitted) }
         case 6:
@@ -973,6 +1083,7 @@ struct PagesConverter {
         return nil
     }
 
+    /// A number as Pages shows it with no format: as many places as it has.
     static func numberText(_ value: Double) -> String {
         if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
         return String(value)

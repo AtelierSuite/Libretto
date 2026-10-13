@@ -223,6 +223,33 @@ struct PagesTests {
         #expect(Self.fields.pageSetup.pageNumberFormat == nil)
     }
 
+    @Test("Numbers show in their cells' formats, formulas their results")
+    func numberFormats() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(table.rows.map { $0.cells.map(\.plainText) } == [
+            ["Item", "Number", "Currency", "Percent", "Sum"],
+            ["A", "1234.5", "$1234.50", "25%", "2469"],
+            ["B", "98765", "$99.00", "12.5%", "98864"],
+            ["Total", "99999.5", "$1333.50", "37.5%", "101333"],
+        ])
+    }
+
+    @Test("Number formats give places, separators, currency and brackets as Pages does")
+    func numberFormatText() {
+        let locale = Locale(identifier: "en_US")
+        let accounting = PagesNumberFormat(
+            kind: .currency, decimalPlaces: 0, currencyCode: "USD", showsThousandsSeparator: true,
+            bracketsNegatives: true, isAccounting: true
+        )
+        #expect(accounting.text(5500, locale: locale) == "$ 5,500")
+        #expect(accounting.text(-90, locale: locale) == "($ 90)")
+        #expect(PagesNumberFormat(kind: .currency, decimalPlaces: 2, currencyCode: "EUR").text(-3.5, locale: locale) == "-€3.50")
+        #expect(PagesNumberFormat(kind: .number, decimalPlaces: 2, showsThousandsSeparator: true).text(1234, locale: locale) == "1,234.00")
+        #expect(PagesNumberFormat(kind: .percentage, decimalPlaces: 1).text(0.125, locale: locale) == "12.5%")
+        #expect(PagesNumberFormat(kind: .number, showsThousandsSeparator: true).text(1234.5, locale: Locale(identifier: "de_DE")) == "1.234,5")
+        #expect(PagesNumberFormat(kind: .automatic).text(2.5, locale: locale) == "2.5")
+    }
+
     @Test("Merged cells span their columns and rows")
     func mergedCells() throws {
         let table = try #require(Self.fields.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
@@ -246,6 +273,13 @@ struct PagesTests {
         let value = try #require(PagesConverter.CellValue(oldStorage: bytes[...]))
         #expect(value.type == 3)
         #expect(value.stringKey == 7)
+
+        // A currency cell from a Pages 5 file: 100 as a double, then the key of its format.
+        let money: [UInt8] = [4, 2, 0, 0, 0x24, 0, 0, 0, 0x12, 8, 8, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x59, 0x40, 3, 0, 0, 0]
+        let amount = try #require(PagesConverter.CellValue(oldStorage: money[...]))
+        #expect(amount.double == 100)
+        #expect(amount.currencyFormatKey == 3)
+        #expect(!amount.isNewStorage)
     }
 
     @Test("A page layout document's text boxes, shapes and pictures read down the page")
