@@ -408,6 +408,9 @@ struct PagesConverter {
     private var runFormats: [[UInt64?]: RunFormat] = [:]
     /// The list each list style became, by the list style's identifier; `nil` for no list.
     private var lists: [UInt64: Int?] = [:]
+    /// The list each list style's paragraphs are being numbered in, by the
+    /// list style's identifier, once a paragraph has been.
+    private var numberingInUse: [UInt64: Int] = [:]
     /// The link each hyperlink field became, by its identifier; `nil` for none.
     private var links: [UInt64: Hyperlink?] = [:]
     /// How deep in text storages the conversion is: one in the body, more in its tables.
@@ -549,7 +552,10 @@ struct PagesConverter {
         defer { storageDepth -= 1 }
         let text = Array(storage.strings(3).joined().utf16)
         let paragraphStyles = AttributeTable(storage.message(5))
-        let paragraphData = storage.message(6)?.messages(1).map { (index: Int(clamping: $0.uint(1)), level: Int(clamping: $0.uint(2))) } ?? []
+        // Each paragraph's list level, and the number its list starts over at, if it does.
+        let paragraphData = storage.message(6)?.messages(1).map {
+            (index: Int(clamping: $0.uint(1)), level: Int(clamping: $0.uint(2)), start: Int(clamping: $0.uint(3)))
+        } ?? []
         let listStyles = AttributeTable(storage.message(7))
         let characterStyles = AttributeTable(storage.message(8))
         let attachments = AttributeTable(storage.message(9))
@@ -569,7 +575,8 @@ struct PagesConverter {
             var baseCharacters = PagesCharacterProperties()
             if let styleID { (paragraphFormat, baseCharacters) = paragraphStyle(styleID) }
             var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
-            let listNumberingID = listStyles.inheritedObject(at: start).flatMap { list(for: $0) }
+            let listStyleID = listStyles.inheritedObject(at: start)
+            var listNumberingID = listStyleID.flatMap { list(for: $0) }
             if storageDepth == 1 {
                 if let level = paragraphFormat.outlineLevel ?? nil {
                     if headingStyles[level] == nil { headingStyles[level] = (paragraphFormat, baseCharacters) }
@@ -578,8 +585,13 @@ struct PagesConverter {
                 }
             }
             while dataIndex + 1 < paragraphData.count, paragraphData[dataIndex + 1].index <= start { dataIndex += 1 }
+            let data = paragraphData.indices.contains(dataIndex) ? paragraphData[dataIndex] : nil
+            if let listStyleID, let numberingID = listNumberingID {
+                listNumberingID = numbering(of: listStyleID, list: numberingID, level: min(data?.level ?? 0, 8),
+                                            startingOverAt: data?.index == start ? data?.start ?? 0 : 0)
+            }
             if let numberingID = listNumberingID {
-                let level = paragraphData.indices.contains(dataIndex) ? paragraphData[dataIndex].level : 0
+                let level = data?.level ?? 0
                 paragraph.properties.list = ListReference(numberingID: numberingID, level: min(level, 8))
                 // The list's own indents apply, as they do in Pages.
                 paragraph.properties.indentLeft = nil
@@ -773,6 +785,18 @@ struct PagesConverter {
         let numberingID = document.numbering.addList(levels: levels, kind: first == 3 ? .numbered : .bulleted)
         lists[identifier] = numberingID
         return numberingID
+    }
+
+    /// The list a paragraph in a list style is numbered in: the one the
+    /// paragraphs before in the style are, or, where Pages starts the list
+    /// over, a new one, which starts at the number Pages gives.
+    private mutating func numbering(of listStyleID: UInt64, list: Int, level: Int, startingOverAt start: Int) -> Int {
+        if start > 0, numberingInUse[listStyleID] != nil || start != 1 {
+            numberingInUse[listStyleID] = document.numbering.restartList(list, level: level, at: start) ?? list
+        } else if numberingInUse[listStyleID] == nil {
+            numberingInUse[listStyleID] = list
+        }
+        return numberingInUse[listStyleID] ?? list
     }
 
     /// `w:numFmt` and `w:lvlText`, with `%` for the number, for a `TSWP.ListStyleArchive.NumberType`.
