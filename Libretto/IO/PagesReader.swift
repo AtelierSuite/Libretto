@@ -820,12 +820,15 @@ struct PagesConverter {
         let headerColumns = Int(model.message.uint(10))
         let footerRows = Int(model.message.uint(11))
         let regionFills = [19, 20, 21, 18].map { (model.message.reference($0).flatMap(cellFill) ?? nil) }
-        func regionFill(row: Int, column: Int) -> String? {
-            if row < headerRows { return regionFills[0] }
-            if column < headerColumns { return regionFills[1] }
-            if row >= rowCount - footerRows { return regionFills[2] }
-            return regionFills[3]
+        // Each also has a paragraph style, which values are set in unless the cell gives one.
+        let regionTextStyles = [25, 26, 27, 24].map { model.message.reference($0) }
+        func region(row: Int, column: Int) -> Int {
+            if row < headerRows { return 0 }
+            if column < headerColumns { return 1 }
+            if row >= rowCount - footerRows { return 2 }
+            return 3
         }
+        func regionFill(row: Int, column: Int) -> String? { regionFills[region(row: row, column: column)] }
         var cells = (0..<rowCount).map { row in
             (0..<columnCount).map { column in TableCell(blocks: [], shadingHex: regionFill(row: row, column: column)) }
         }
@@ -849,7 +852,10 @@ struct PagesConverter {
                     let bytes = buffer[(buffer.startIndex + offset * scale)...]
                     let value = isNew ? CellValue(newStorage: bytes) : CellValue(oldStorage: bytes)
                     if let value {
-                        cells[row][column] = cell(value, lists: lists, regionFill: regionFill(row: row, column: column))
+                        let region = region(row: row, column: column)
+                        cells[row][column] = cell(
+                            value, lists: lists, regionFill: regionFills[region], regionTextStyle: regionTextStyles[region]
+                        )
                     }
                 }
             }
@@ -964,6 +970,8 @@ struct PagesConverter {
         var stringKey: UInt64?
         var richKey: UInt64?
         var styleKey: UInt64?
+        /// Key in the table's styles of the paragraph style a value is set in.
+        var textStyleKey: UInt64?
         /// Keys in the table's formats of the format the cell shows a number,
         /// or an amount of money, in.
         var numberFormatKey: UInt64?
@@ -993,6 +1001,7 @@ struct PagesConverter {
                 offset += 4
             }
             styleKey = keys[0x20]
+            textStyleKey = keys[0x40]
             numberFormatKey = keys[0x2000]
             currencyFormatKey = keys[0x4000]
         }
@@ -1039,7 +1048,9 @@ struct PagesConverter {
         }
     }
 
-    private mutating func cell(_ value: CellValue, lists: CellLists, regionFill: String?) -> TableCell {
+    private mutating func cell(
+        _ value: CellValue, lists: CellLists, regionFill: String?, regionTextStyle: UInt64?
+    ) -> TableCell {
         let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap(cellFill) ?? regionFill
         let text: String?
         switch value.type {
@@ -1063,7 +1074,12 @@ struct PagesConverter {
         default:
             text = nil
         }
-        return TableCell(blocks: text.map { [.paragraph(Paragraph(text: $0))] } ?? [], shadingHex: shading)
+        guard let text else { return TableCell(blocks: [], shadingHex: shading) }
+        let textStyle = value.textStyleKey.flatMap { lists.styles[$0]?.reference(4) } ?? regionTextStyle
+        let (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), PagesCharacterProperties())
+        var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+        paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
+        return TableCell(blocks: [.paragraph(paragraph)], shadingHex: shading)
     }
 
     /// The fill of a `TST.CellStyleArchive`, or of the style it is a variation

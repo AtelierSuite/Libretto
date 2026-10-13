@@ -234,6 +234,16 @@ struct PagesTests {
         ])
     }
 
+    @Test("Numbers are set in their cells' text style, as text is")
+    func numberFonts() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        for cell in table.rows[1].cells.dropFirst() {
+            let style = cell.blocks.first?.paragraphs.first?.inlines.first?.format.style
+            #expect(style?.fontName == "Times New Roman")
+            #expect(style?.fontSize == 24)
+        }
+    }
+
     @Test("Number formats give places, separators, currency and brackets as Pages does")
     func numberFormatText() {
         let locale = Locale(identifier: "en_US")
