@@ -48,7 +48,7 @@ struct LibrettoDocument: FileDocument {
     }
 
     init(configuration: ReadConfiguration) throws {
-        if configuration.contentType.conforms(to: .pagesPackage) || configuration.file.isDirectory {
+        if configuration.file.isDirectory {
             document = try PagesReader.document(fromFiles: Self.files(in: configuration.file))
             return
         }
@@ -67,7 +67,8 @@ struct LibrettoDocument: FileDocument {
             document = MarkdownReader.document(from: data)
         } else if configuration.contentType.conforms(to: .plainText) {
             document = PlainText.document(from: data)
-        } else if configuration.contentType.conforms(to: .pagesDocument) {
+        } else if configuration.contentType.conforms(to: .pagesDocument) || configuration.contentType.conforms(to: .pagesPackage) {
+            // A package type on a single file is the package zipped.
             document = try PagesReader.document(from: data)
         } else {
             document = try DOCXReader.document(from: data)
