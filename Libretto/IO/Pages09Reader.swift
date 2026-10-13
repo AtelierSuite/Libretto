@@ -164,6 +164,7 @@ private struct Pages09Converter {
     private var byIdent: [String: Node] = [:]
     private var paragraphStyles: [ObjectIdentifier: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [ObjectIdentifier: PagesCharacterProperties] = [:]
+    private var textEffectStyles: [ObjectIdentifier: TextEffects] = [:]
     private var lists: [ObjectIdentifier: Int?] = [:]
     /// The list style each paragraph style gives, and what each cell style says, worked out once.
     private var listStyles: [ObjectIdentifier: Node?] = [:]
@@ -351,7 +352,8 @@ private struct Pages09Converter {
             paragraph.properties.indentFirstLine = nil
         }
         var runs = Runs()
-        appendContent(of: node, characters: baseCharacters, link: nil, to: &runs)
+        let effects = style.map { textEffects($0) } ?? TextEffects()
+        appendContent(of: node, characters: baseCharacters, effects: effects, link: nil, to: &runs)
         paragraph.inlines = runs.inlines
         if recordsStyles {
             if let level = paragraphFormat.outlineLevel ?? nil {
@@ -381,28 +383,52 @@ private struct Pages09Converter {
         }
     }
 
+    /// Character formatting `PagesCharacterProperties` does not carry; `nil` inherits.
+    private struct TextEffects {
+        /// Text Pages does not show, which Libretto leaves out.
+        var isHidden: Bool?
+
+        func overlaid(with other: TextEffects) -> TextEffects {
+            TextEffects(isHidden: other.isHidden ?? isHidden)
+        }
+    }
+
+    private mutating func textEffects(_ style: Node) -> TextEffects {
+        let key = ObjectIdentifier(style)
+        if let cached = textEffectStyles[key] { return cached }
+        let effects = chain(style).reduce(TextEffects()) { $0.overlaid(with: TextEffects(isHidden: flag("hidden", in: $1))) }
+        textEffectStyles[key] = effects
+        return effects
+    }
+
     private mutating func appendContent(
-        of node: Node, characters: PagesCharacterProperties, link: Hyperlink?, to runs: inout Runs
+        of node: Node, characters: PagesCharacterProperties, effects: TextEffects, link: Hyperlink?, to runs: inout Runs
     ) {
         let format = RunFormat(style: characters.runStyle)
+        let isHidden = effects.isHidden == true
         for child in node.children {
             switch child {
             case .text(let text):
-                runs.append(Inline(.text(text), format: format, hyperlink: link))
+                if !isHidden { runs.append(Inline(.text(text), format: format, hyperlink: link)) }
             case .element(let element):
                 switch element.name {
                 case "span":
                     var inner = characters
+                    var innerEffects = effects
                     if let style = element.attributes["style"].flatMap(styleNode) {
                         inner = characters.overlaid(with: characterStyle(style))
+                        innerEffects = effects.overlaid(with: textEffects(style))
                     }
-                    appendContent(of: element, characters: inner, link: link, to: &runs)
+                    appendContent(of: element, characters: inner, effects: innerEffects, link: link, to: &runs)
                 case "link":
-                    appendContent(of: element, characters: characters, link: hyperlink(element.attributes["href"]) ?? link, to: &runs)
+                    appendContent(
+                        of: element, characters: characters, effects: effects,
+                        link: hyperlink(element.attributes["href"]) ?? link, to: &runs
+                    )
                 case "tab":
-                    runs.append(Inline(.tab, format: format, hyperlink: link))
+                    if !isHidden { runs.append(Inline(.tab, format: format, hyperlink: link)) }
                 case "lnbr":
-                    runs.append(Inline(.lineBreak, format: format, hyperlink: link))
+                    if !isHidden { runs.append(Inline(.lineBreak, format: format, hyperlink: link)) }
                 case "pgbr", "sectbr":
                     runs.append(Inline(.pageBreak))
                 case "crbr":
@@ -433,7 +459,7 @@ private struct Pages09Converter {
                     // Placeholder text, bookmarks, comments' ranges and fields
                     // wrap the text they show; `br` ends the paragraph the
                     // element itself ends, and the rest are empty markers.
-                    appendContent(of: element, characters: characters, link: link, to: &runs)
+                    appendContent(of: element, characters: characters, effects: effects, link: link, to: &runs)
                 }
             }
         }

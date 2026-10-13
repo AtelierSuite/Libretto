@@ -427,6 +427,26 @@ struct Pages09Tests {
         #expect(document.unsupportedFeatures.features == [.embeddedObjects])
     }
 
+    @Test("Hidden text is left out, as Pages does not show it")
+    func hiddenText() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles>\
+            <sf:characterstyle sf:ident="hidden"><sf:property-map><sf:hidden><sf:number sfa:number="1"/></sf:hidden>\
+            </sf:property-map></sf:characterstyle>\
+            <sf:characterstyle sf:ident="shown"><sf:property-map><sf:hidden><sf:number sfa:number="0"/></sf:hidden>\
+            </sf:property-map></sf:characterstyle>\
+            <sf:paragraphstyle sf:ident="secret"><sf:property-map><sf:hidden><sf:number sfa:number="1"/></sf:hidden>\
+            </sf:property-map></sf:paragraphstyle></sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:text-body>\
+            <sf:p>Shown<sf:span sf:style="hidden"> and hidden<sf:tab/></sf:span>.</sf:p>\
+            <sf:p sf:style="secret">Secret<sf:span sf:style="shown"> but this</sf:span></sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.allParagraphs.map(\.plainText) == ["Shown.", " but this"])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
