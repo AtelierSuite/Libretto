@@ -721,6 +721,12 @@ struct PagesConverter {
                         blocks.append(.table(table))
                         paragraph = rest
                         splitByTable = true
+                    case .field(let code):
+                        paragraph.inlines += Fields.inlines(code: code, result: "1", format: format).map {
+                            var inline = $0
+                            inline.revision = revision
+                            return inline
+                        }
                     case nil: break
                     }
                 case 0x00..<0x20:
@@ -944,10 +950,16 @@ struct PagesConverter {
     private enum Attachment {
         case image(InlineImage)
         case table(Table)
+        /// A field, by its code, such as `PAGE`.
+        case field(String)
     }
 
     private mutating func attachment(_ identifier: UInt64?) -> Attachment? {
-        guard let attachment = archive[identifier], attachment.type == PagesReader.Types.drawableAttachment,
+        guard let attachment = archive[identifier] else { return nil }
+        if attachment.type == PagesReader.Types.pageNumber {
+            return .field(attachment.message.message(1)?.uint(2) == 1 ? "NUMPAGES" : "PAGE")
+        }
+        guard attachment.type == PagesReader.Types.drawableAttachment,
               let drawable = archive[attachment.message.reference(1)] else { return nil }
         switch drawable.type {
         case PagesReader.Types.image:
