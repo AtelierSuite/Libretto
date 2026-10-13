@@ -130,7 +130,6 @@ enum Snappy {
         var reader = ProtoReader(input)
         let expected = try reader.length()
         let start = output.count
-        output.reserveCapacity(start + expected)
         var position = reader.position
         let end = input.endIndex
         func byte() throws -> Int {
