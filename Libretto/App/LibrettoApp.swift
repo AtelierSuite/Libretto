@@ -4,7 +4,10 @@ import SwiftUI
 struct LibrettoApp: App {
     var body: some Scene {
         DocumentGroup(newDocument: LibrettoDocument()) { configuration in
-            DocumentView(document: configuration.$document, fileName: configuration.fileURL?.lastPathComponent)
+            DocumentView(
+                document: configuration.$document, fileName: configuration.fileURL?.lastPathComponent,
+                isEditable: configuration.isEditable
+            )
         }
 
         DocumentGroupLaunchScene(Text(verbatim: "")) {

@@ -7876,6 +7876,111 @@
         }
       }
     },
+    "Notice.ReadOnly.Message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This document is read-only. Save a copy to keep your changes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この書類は読み出し専用です。変更を残すには、コピーを保存してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 문서는 읽기 전용입니다. 변경 사항을 유지하려면 사본을 저장하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文稿为只读。若要保留更改，请存储副本。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件為唯讀。若要保留變更，請儲存副本。"
+          }
+        }
+      }
+    },
+    "Notice.ReadOnly.Save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save a Copy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピーを保存"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사본 저장"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存储副本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存副本"
+          }
+        }
+      }
+    },
+    "Notice.ReadOnly.Unsaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your changes aren’t saved. Save a copy to keep them."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更は保存されていません。変更を残すには、コピーを保存してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경 사항이 저장되지 않았습니다. 변경 사항을 유지하려면 사본을 저장하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改尚未存储。若要保留更改，请存储副本。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "變更尚未儲存。若要保留變更，請儲存副本。"
+          }
+        }
+      }
+    },
     "Notice.UnsupportedFeatures.ImportedMessage": {
       "extractionState": "manual",
       "localizations": {

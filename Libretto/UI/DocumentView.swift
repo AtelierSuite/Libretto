@@ -1,11 +1,15 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The document's root view: the pages or the reader, the floating action
 /// bar, and the navigation bar's controls.
 struct DocumentView: View {
     @Binding var document: LibrettoDocument
     var fileName: String?
+    /// Whether the file can be saved where it is: not, say, one in a
+    /// read-only folder, or one Libretto cannot write back.
+    var isEditable = true
     @State private var state = EditorState()
     @State private var history = DocumentHistory()
     @State private var bottomToolbarInset: CGFloat = 0
@@ -28,7 +32,7 @@ struct DocumentView: View {
     var body: some View {
         content
         .safeAreaInset(edge: .top, spacing: 0) {
-            if document.document.importedFormat != nil { importedNotice }
+            if !savesInPlace { readOnlyNotice }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Code is edited as text: there is nothing to format.
@@ -57,7 +61,7 @@ struct DocumentView: View {
                     state.viewMode = horizontalSizeClass == .compact ? .mobile : .page
                 }
                 attachHistory()
-                if keptDocument == nil, document.document.importedFormat != nil { keptDocument = document.document }
+                if keptDocument == nil, !savesInPlace { keptDocument = document.document }
             }
             .onChange(of: undoManager) { _, _ in attachHistory() }
             .onChange(of: document.document) { old, new in
@@ -97,7 +101,7 @@ struct DocumentView: View {
                     .presentationDragIndicator(.visible)
             }
             .fileExporter(
-                isPresented: $isSavingCopy, document: document, contentType: .openXMLDocument,
+                isPresented: $isSavingCopy, document: document, contentType: copyType,
                 defaultFilename: export.name
             ) { result in
                 switch result {
@@ -317,37 +321,52 @@ struct DocumentView: View {
         }
     }
 
-    /// Says a converted document cannot be saved where it came from, and
-    /// offers the way to keep what is done to it. Once it has been changed,
-    /// says those changes are not saved, as nothing else will.
-    private var importedNotice: some View {
+    /// Whether changes are saved to the file they were made in.
+    private var savesInPlace: Bool { isEditable && document.document.importedFormat == nil }
+
+    private var isImported: Bool { document.document.importedFormat != nil }
+
+    /// The type a copy is saved as: a Word document for one converted from
+    /// another format, and otherwise the type the file already is.
+    private var copyType: UTType {
+        if isImported { return .openXMLDocument }
+        let pathExtension = (fileName as NSString?)?.pathExtension ?? ""
+        return UTType(filenameExtension: pathExtension).flatMap { type in
+            LibrettoDocument.writableContentTypes.contains { type.conforms(to: $0) } ? type : nil
+        } ?? .openXMLDocument
+    }
+
+    /// Says a document cannot be saved where it is, and offers the way to
+    /// keep what is done to it. Once it has been changed, says those changes
+    /// are not saved, as nothing else will.
+    private var readOnlyNotice: some View {
         HStack(spacing: 12) {
             Group {
                 if hasUnsavedChanges {
                     Label {
-                        Text("Notice.Imported.Unsaved").foregroundStyle(.primary)
+                        Text(isImported ? "Notice.Imported.Unsaved" : "Notice.ReadOnly.Unsaved").foregroundStyle(.primary)
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     }
                 } else {
-                    Label("Notice.Imported.Message", systemImage: "lock.doc")
+                    Label(isImported ? "Notice.Imported.Message" : "Notice.ReadOnly.Message", systemImage: "lock.doc")
                         .foregroundStyle(.secondary)
                 }
             }
                 .font(.footnote)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            Button("Notice.Imported.Save") { isSavingCopy = true }
+            Button(isImported ? "Notice.Imported.Save" : "Notice.ReadOnly.Save") { isSavingCopy = true }
             .font(.footnote.weight(.semibold))
             .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
-            .accessibilityIdentifier("saveAsWord")
+            .accessibilityIdentifier("saveCopy")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("importedNotice")
+        .accessibilityIdentifier("readOnlyNotice")
     }
 
     private var findButton: some View {
