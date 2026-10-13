@@ -770,6 +770,9 @@ struct PageSetup: Equatable, Sendable {
     /// Text columns, and the space between them, in twips.
     var columns = 1
     var columnSpacing = 708
+    /// `w:pgNumType`'s format for the page numbers its headers and footers
+    /// show, such as `lowerRoman`; `nil` for 1, 2, 3.
+    var pageNumberFormat: String?
     var preservedXML: String?
     var original: PageSetupValues?
 
@@ -780,12 +783,14 @@ struct PageSetup: Equatable, Sendable {
         var start: SectionStart = .nextPage
         var columns = 1
         var columnSpacing = 708
+        var pageNumberFormat: String?
     }
 
     var values: PageSetupValues {
         PageSetupValues(
             width: width, height: height, marginTop: marginTop, marginBottom: marginBottom,
-            marginLeft: marginLeft, marginRight: marginRight, start: start, columns: columns, columnSpacing: columnSpacing
+            marginLeft: marginLeft, marginRight: marginRight, start: start, columns: columns, columnSpacing: columnSpacing,
+            pageNumberFormat: pageNumberFormat
         )
     }
 
@@ -843,8 +848,9 @@ struct HeaderFooterText: Equatable, Sendable {
     static let pageNumberPlaceholder = "{PAGE}"
     static let pageCountPlaceholder = "{NUMPAGES}"
 
-    func resolved(page: Int, of count: Int) -> String {
-        text.replacingOccurrences(of: Self.pageNumberPlaceholder, with: String(page))
+    /// The text page `page` shows, its number in a list format such as `lowerRoman`.
+    func resolved(page: Int, of count: Int, format: String? = nil) -> String {
+        text.replacingOccurrences(of: Self.pageNumberPlaceholder, with: ListLabeler.format(page, as: format ?? "decimal"))
             .replacingOccurrences(of: Self.pageCountPlaceholder, with: String(count))
     }
 }

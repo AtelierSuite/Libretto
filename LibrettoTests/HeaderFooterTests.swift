@@ -24,6 +24,23 @@ struct HeaderFooterTests {
         #expect(reread.header?.alignment == .center)
     }
 
+    @Test("Page numbers keep the section's format, read and written as w:pgNumType")
+    func pageNumberFormat() throws {
+        var document = try Fixtures.document()
+        document.pageSetup.pageNumberFormat = "upperRoman"
+        let parts = try Fixtures.written(document)
+        #expect(Fixtures.text(parts, "word/document.xml").contains("<w:pgNumType w:fmt=\"upperRoman\"/>"))
+
+        var reread = try DOCXReader.document(fromParts: parts)
+        #expect(reread.pageSetup.pageNumberFormat == "upperRoman")
+        let texts = WordDocumentHeaderFooter(document: reread)
+        #expect(texts.section(forPage: 3).pageNumberFormat == "upperRoman")
+        #expect(texts.header(forPage: 3)?.resolved(page: 4, of: 9, format: "upperRoman") == "Page IV")
+
+        reread.pageSetup.pageNumberFormat = nil
+        #expect(!Fixtures.text(try Fixtures.written(reread), "word/document.xml").contains("pgNumType"))
+    }
+
     @Test("A first-page footer gets a part, a relationship and a reference of its own")
     func addsFirstPageFooter() throws {
         var document = try Fixtures.document()

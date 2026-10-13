@@ -858,6 +858,7 @@ enum PageSetupReader {
             setup.columns = max(1, value(columns, "num") ?? 1)
             setup.columnSpacing = value(columns, "space") ?? setup.columnSpacing
         }
+        setup.pageNumberFormat = sectPr.firstChild(named: "pgNumType")?.attribute("fmt").flatMap { $0 == "decimal" ? nil : $0 }
         setup.originalHeaderFooters = setup.headerFooters
         return setup
     }

@@ -193,6 +193,8 @@ struct WordDocumentHeaderFooter: Equatable {
         /// Points from the page's top and bottom edges.
         var headerDistance: CGFloat = 35
         var footerDistance: CGFloat = 35
+        /// How the page number shows, such as `lowerRoman`; `nil` for 1, 2, 3.
+        var pageNumberFormat: String?
     }
 
     var sections: [Section] = [Section()]
@@ -212,7 +214,8 @@ struct WordDocumentHeaderFooter: Equatable {
             }
             return Section(
                 headers: headers, footers: footers, titlePage: setup.headerFooters.titlePage,
-                headerDistance: CGFloat(setup.headerDistance) / 20, footerDistance: CGFloat(setup.footerDistance) / 20
+                headerDistance: CGFloat(setup.headerDistance) / 20, footerDistance: CGFloat(setup.footerDistance) / 20,
+                pageNumberFormat: setup.pageNumberFormat
             )
         }
         if sections.isEmpty { sections = [Section()] }
@@ -315,7 +318,9 @@ final class PageBackgroundView: UIView {
                 continue
             }
             label.isHidden = false
-            label.attributedText = HeaderFooterDrawing.attributed(text, page: page, of: count, color: .secondaryLabel)
+            label.attributedText = HeaderFooterDrawing.attributed(
+                text, page: page, of: count, format: section.pageNumberFormat, color: .secondaryLabel
+            )
             let width = shape.contentWidth
             let size = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
             let height = min(size.height, isFooter ? shape.margins.bottom : shape.margins.top)

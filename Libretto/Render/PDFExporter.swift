@@ -77,7 +77,7 @@ enum HeaderFooterDrawing {
         return (header, footer)
     }
 
-    static func attributed(_ text: HeaderFooterText, page: Int, of count: Int, color: UIColor)
+    static func attributed(_ text: HeaderFooterText, page: Int, of count: Int, format: String? = nil, color: UIColor)
         -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         switch text.alignment {
@@ -86,20 +86,21 @@ enum HeaderFooterDrawing {
         default: style.alignment = .natural
         }
         // Tabs in headers usually push text to the centre and right tab stops Word's styles define.
-        let resolved = text.resolved(page: page + 1, of: count).replacingOccurrences(of: "\t", with: "    ")
+        let resolved = text.resolved(page: page + 1, of: count, format: format).replacingOccurrences(of: "\t", with: "    ")
         return NSAttributedString(
             string: resolved, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style]
         )
     }
 
     static func draw(_ texts: WordDocumentHeaderFooter, page: Int, of count: Int, shape: PageGeometry.Shape, color: UIColor) {
-        let frames = frames(texts.section(forPage: page), shape: shape)
+        let section = texts.section(forPage: page)
+        let frames = frames(section, shape: shape)
         if let header = texts.header(forPage: page) {
-            attributed(header, page: page, of: count, color: color)
+            attributed(header, page: page, of: count, format: section.pageNumberFormat, color: color)
                 .draw(with: frames.header, options: [.usesLineFragmentOrigin], context: nil)
         }
         if let footer = texts.footer(forPage: page) {
-            let text = attributed(footer, page: page, of: count, color: color)
+            let text = attributed(footer, page: page, of: count, format: section.pageNumberFormat, color: color)
             let height = text.boundingRect(
                 with: CGSize(width: frames.footer.width, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin], context: nil

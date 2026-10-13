@@ -301,6 +301,10 @@ enum DOCXPatcher {
             let columns = child("cols", of: sectPr)
             columns.setWordAttribute("num", setup.columns > 1 ? String(setup.columns) : nil)
             columns.setWordAttribute("space", String(setup.columnSpacing))
+            if let numbering = sectPr.firstChild(named: "pgNumType") ?? setup.pageNumberFormat.map({ _ in child("pgNumType", of: sectPr) }) {
+                numbering.setWordAttribute("fmt", setup.pageNumberFormat)
+                if numbering.attributes.isEmpty { sectPr.removeChild(numbering) }
+            }
             let size = child("pgSz", of: sectPr)
             size.setWordAttribute("w", String(setup.width))
             size.setWordAttribute("h", String(setup.height))
