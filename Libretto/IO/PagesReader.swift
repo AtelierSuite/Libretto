@@ -525,6 +525,8 @@ struct PagesConverter {
 
         var blocks: [Block] = []
         var start = 0
+        // The paragraph data in effect, which moves on with the paragraphs.
+        var dataIndex = -1
         while start <= text.count {
             var end = start
             while end < text.count, !Self.paragraphTerminators.contains(text[end]) { end += 1 }
@@ -542,8 +544,9 @@ struct PagesConverter {
                     bodyStyles.add(styleID, (paragraphFormat, baseCharacters))
                 }
             }
+            while dataIndex + 1 < paragraphData.count, paragraphData[dataIndex + 1].index <= start { dataIndex += 1 }
             if let numberingID = listNumberingID {
-                let level = paragraphData.last { $0.index <= start }?.level ?? 0
+                let level = paragraphData.indices.contains(dataIndex) ? paragraphData[dataIndex].level : 0
                 paragraph.properties.list = ListReference(numberingID: numberingID, level: min(level, 8))
                 // The list's own indents apply, as they do in Pages.
                 paragraph.properties.indentLeft = nil
