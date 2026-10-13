@@ -201,6 +201,25 @@ struct PagesTests {
         #expect(styles["Heading1"]?.runStyle.fontSize == 36)
     }
 
+    @Test("Black text stays black when the Normal style takes another colour")
+    func blackText() {
+        var document = WordDocument()
+        document.body = [
+            .paragraph(Paragraph(text: "Grey")), .paragraph(Paragraph(text: "Black")),
+            .paragraph(Paragraph(text: "Heading", styleID: "Heading1")),
+        ]
+        if case .paragraph(var grey) = document.body[0] {
+            grey.inlines[0].format.style.colorHex = "333333"
+            document.body[0] = .paragraph(grey)
+        }
+        var characters = PagesCharacterProperties()
+        characters.colorHex = .some("333333")
+        document.adoptPagesStyles(body: (PagesParagraphProperties(), characters), headings: [:])
+        #expect(document.styles.styles["Normal"]?.runStyle.colorHex == "333333")
+        let colors = document.allParagraphs.map { $0.inlines.first?.format.style.colorHex }
+        #expect(colors == ["333333", "000000", nil])
+    }
+
     @Test("The document saves as a Word document that reads back the same")
     func savesAsWord() throws {
         let saved = try DOCXReader.document(from: DOCXWriter.data(from: Self.document))

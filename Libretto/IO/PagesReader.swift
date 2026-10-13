@@ -1619,11 +1619,40 @@ extension WordDocument {
         headings: [Int: (PagesParagraphProperties, PagesCharacterProperties)]
     ) {
         if let (paragraph, characters) = body {
-            adopt(paragraph, characters, into: styles.defaultParagraphStyleID ?? "Normal", isHeading: false)
+            let id = styles.defaultParagraphStyleID ?? "Normal"
+            adopt(paragraph, characters, into: id, isHeading: false)
+            // Text Pages gives no colour, or black, is black, not the colour Normal now has.
+            if let color = styles.styles[id]?.runStyle.colorHex, color != "000000" {
+                self.body = Self.blackening(self.body, normalStyleID: id)
+            }
         }
         let choices: [ParagraphStyleChoice] = [.heading1, .heading2, .heading3]
         for (level, (paragraph, characters)) in headings where choices.indices.contains(level) {
             adopt(paragraph, characters, into: choices[level].defaultID, isHeading: true)
+        }
+    }
+
+    /// The blocks with the text of Normal paragraphs that has no colour of its own set in black.
+    private static func blackening(_ blocks: [Block], normalStyleID: String) -> [Block] {
+        blocks.map { block in
+            switch block {
+            case .paragraph(var paragraph):
+                // Other styles' paragraphs take their style's colour, as they did in Pages.
+                guard paragraph.properties.styleID == nil || paragraph.properties.styleID == normalStyleID else { return block }
+                for index in paragraph.inlines.indices where paragraph.inlines[index].format.style.colorHex == nil {
+                    paragraph.inlines[index].format.style.colorHex = "000000"
+                }
+                return .paragraph(paragraph)
+            case .table(var table):
+                for row in table.rows.indices {
+                    for column in table.rows[row].cells.indices {
+                        table.rows[row].cells[column].blocks = blackening(table.rows[row].cells[column].blocks, normalStyleID: normalStyleID)
+                    }
+                }
+                return .table(table)
+            case .preserved:
+                return block
+            }
         }
     }
 
