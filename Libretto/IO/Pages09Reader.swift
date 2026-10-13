@@ -123,8 +123,11 @@ enum Pages09Reader {
 
             func parser(_ parser: XMLParser, foundCharacters string: String) {
                 guard let parent = stack.last else { return }
-                if case .text(let previous) = parent.children.last {
-                    parent.children[parent.children.count - 1] = .text(previous + string)
+                if case .text(var previous) = parent.children.last {
+                    // Emptied first, so the text is appended to in place rather than copied.
+                    parent.children[parent.children.count - 1] = .text("")
+                    previous += string
+                    parent.children[parent.children.count - 1] = .text(previous)
                 } else {
                     parent.children.append(.text(string))
                 }
