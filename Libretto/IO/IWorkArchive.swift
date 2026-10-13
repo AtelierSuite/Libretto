@@ -126,9 +126,14 @@ struct IWorkArchive {
 
 /// Snappy's raw block format.
 enum Snappy {
+    private static let maximumExpansion = 32
+
     static func decompress(_ input: ArraySlice<UInt8>, into output: inout [UInt8], name: String) throws {
         var reader = ProtoReader(input)
         let expected = try reader.length()
+        // A copy writes at most 64 bytes for its three, so no block grows more
+        // than about 22 times; a preamble promising more is damage, not data.
+        guard expected <= input.count * maximumExpansion else { throw IWorkError.corrupt(name) }
         let start = output.count
         var position = reader.position
         let end = input.endIndex
@@ -151,7 +156,9 @@ enum Snappy {
                 var literal = tag >> 2
                 if literal >= 60 { literal = try littleEndian(literal - 59) }
                 literal += 1
-                guard position + literal <= end else { throw IWorkError.corrupt(name) }
+                guard position + literal <= end, output.count - start + literal <= expected else {
+                    throw IWorkError.corrupt(name)
+                }
                 output.append(contentsOf: input[position..<position + literal])
                 position += literal
                 continue
@@ -165,7 +172,9 @@ enum Snappy {
                 length = (tag >> 2) + 1
                 distance = try littleEndian(4)
             }
-            guard distance > 0, distance <= output.count - start else { throw IWorkError.corrupt(name) }
+            guard distance > 0, distance <= output.count - start, output.count - start + length <= expected else {
+                throw IWorkError.corrupt(name)
+            }
             // Copies may overlap what they write, so go a byte at a time.
             let from = output.count - distance
             for index in 0..<length { output.append(output[from + index]) }

@@ -364,4 +364,22 @@ struct PagesTests {
         var output: [UInt8] = []
         #expect(throws: IWorkError.self) { try Snappy.decompress(huge[...], into: &output, name: "test") }
     }
+
+    @Test("A Snappy block promising more than it can hold is damage")
+    func snappyBounds() throws {
+        var output: [UInt8] = []
+        // A preamble of 1 GiB before a single literal byte.
+        #expect(throws: IWorkError.self) {
+            try Snappy.decompress([0x80, 0x80, 0x80, 0x80, 0x04, 0x00, 0x41][...], into: &output, name: "test")
+        }
+        // Copies that run past the length the preamble gives.
+        output = []
+        #expect(throws: IWorkError.self) {
+            try Snappy.decompress([0x02, 0x00, 0x41, 0xFE, 0x01, 0x00][...], into: &output, name: "test")
+        }
+        // A literal and a copy that make up exactly the length given.
+        output = []
+        try Snappy.decompress([0x05, 0x00, 0x41, 0x0E, 0x01, 0x00][...], into: &output, name: "test")
+        #expect(output == [0x41, 0x41, 0x41, 0x41, 0x41])
+    }
 }
