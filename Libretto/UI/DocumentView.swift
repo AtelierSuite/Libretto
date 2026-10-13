@@ -10,6 +10,8 @@ struct DocumentView: View {
     @State private var history = DocumentHistory()
     @State private var bottomToolbarInset: CGFloat = 0
     @State private var photo: PhotosPickerItem?
+    /// Whether the document is being saved as a copy somewhere the user picks.
+    @State private var isSavingCopy = false
     /// The mode this window was last in, so it comes back the same way.
     @SceneStorage("viewMode") private var storedMode: String?
     @Environment(\.undoManager) private var undoManager
@@ -86,6 +88,14 @@ struct DocumentView: View {
                     .presentationDetents([.medium])
                     .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
+            }
+            .fileExporter(
+                isPresented: $isSavingCopy, document: document, contentType: .openXMLDocument,
+                defaultFilename: export.name
+            ) { result in
+                if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled {
+                    state.errorMessage = error.localizedDescription
+                }
             }
             .photosPicker(isPresented: $state.isPickingPhoto, selection: $photo, matching: .images)
             .onChange(of: photo) { _, item in
@@ -303,12 +313,11 @@ struct DocumentView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "doc.text"))) {
-                Text("Notice.Imported.Share")
-            }
+            Button("Notice.Imported.Save") { isSavingCopy = true }
             .font(.footnote.weight(.semibold))
             .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
+            .accessibilityIdentifier("saveAsWord")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

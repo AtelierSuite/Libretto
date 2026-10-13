@@ -21,7 +21,7 @@ extension UTType {
 /// back with it, but Libretto never runs them. Plain text and source code open
 /// in the code editor and save back as text, with syntax colouring only for
 /// source code. A Markdown file keeps only the formatting Markdown has. A
-/// Pages document is only read: it is shared or exported to keep changes.
+/// Pages document is only read: it is saved as a Word document to keep changes.
 struct LibrettoDocument: FileDocument {
     static let readableContentTypes: [UTType] = [
         .openXMLDocument, .macroEnabledDocument, .markdownDocument, .pagesDocument, .pagesPackage,

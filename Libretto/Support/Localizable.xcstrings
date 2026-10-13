@@ -7777,66 +7777,66 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages documents open read-only. Share a copy as a Word document to keep your changes."
+            "value": "Pages documents open read-only. Save a copy as a Word document to keep your changes."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pagesの書類は読み出し専用で開きます。変更を残すには、Word書類としてコピーを共有してください。"
+            "value": "Pagesの書類は読み出し専用で開きます。変更を残すには、Word書類としてコピーを保存してください。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages 문서는 읽기 전용으로 열립니다. 변경 사항을 유지하려면 Word 문서로 사본을 공유하십시오."
+            "value": "Pages 문서는 읽기 전용으로 열립니다. 변경 사항을 유지하려면 Word 문서로 사본을 저장하십시오."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages 文稿以只读方式打开。若要保留更改，请将副本共享为 Word 文稿。"
+            "value": "Pages 文稿以只读方式打开。若要保留更改，请将副本存储为 Word 文稿。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages 文件會以唯讀方式開啟。若要保留變更，請將副本分享為 Word 文件。"
+            "value": "Pages 文件會以唯讀方式開啟。若要保留變更，請將副本儲存為 Word 文件。"
           }
         }
       }
     },
-    "Notice.Imported.Share": {
+    "Notice.Imported.Save": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Share a Copy"
+            "value": "Save as Word"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "コピーを共有"
+            "value": "Wordとして保存"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사본 공유"
+            "value": "Word로 저장"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "共享副本"
+            "value": "存储为 Word"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "分享副本"
+            "value": "儲存為 Word"
           }
         }
       }
