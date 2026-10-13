@@ -220,6 +220,17 @@ struct PagesTests {
         #expect(colors == ["333333", "000000", nil])
     }
 
+    @Test("Headings keep with the next paragraph only if Pages' do")
+    func headingKeeps() {
+        var document = WordDocument()
+        var kept = PagesParagraphProperties()
+        kept.keepWithNext = true
+        document.adoptPagesStyles(body: nil, headings: [0: (PagesParagraphProperties(), PagesCharacterProperties()), 1: (kept, PagesCharacterProperties())])
+        #expect(document.styles.styles["Heading1"]?.paragraphProperties.keepNext == nil)
+        #expect(document.styles.styles["Heading1"]?.paragraphProperties.keepLines == nil)
+        #expect(document.styles.styles["Heading2"]?.paragraphProperties.keepNext == true)
+    }
+
     @Test("The document saves as a Word document that reads back the same")
     func savesAsWord() throws {
         let saved = try DOCXReader.document(from: DOCXWriter.data(from: Self.document))

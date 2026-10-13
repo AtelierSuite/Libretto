@@ -1669,6 +1669,11 @@ extension WordDocument {
         style.paragraphProperties.spacingBefore = Int(rounding: (paragraph.spaceBefore ?? 0) * 20)
         style.paragraphProperties.spacingAfter = Int(rounding: (paragraph.spaceAfter ?? 0) * 20)
         style.paragraphProperties.lineSpacing = paragraph.lineSpacing(fontSize: characters.fontSize) ?? LineSpacing(line: 240, rule: .auto)
+        if isHeading {
+            // Word's headings keep with the next paragraph and their lines together; Pages' only if they say so.
+            style.paragraphProperties.keepNext = paragraph.keepWithNext == true ? true : nil
+            style.paragraphProperties.keepLines = paragraph.keepLinesTogether == true ? true : nil
+        }
         styles.styles[id] = style
     }
 }
