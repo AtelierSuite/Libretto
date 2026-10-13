@@ -254,8 +254,9 @@ enum ZipArchive {
     // MARK: - Writing
 
     /// Builds an archive. Entries are written in the order given, which matters
-    /// for OOXML readers that expect `[Content_Types].xml` first.
-    static func archive(entries: [(path: String, data: Data)]) throws -> Data {
+    /// for OOXML readers that expect `[Content_Types].xml` first. Without
+    /// `compressing`, every entry is stored as it is, as iWork packages keep them.
+    static func archive(entries: [(path: String, data: Data)], compressing: Bool = true) throws -> Data {
         var output = Data()
         var directory = Data()
         var count: UInt16 = 0
@@ -267,7 +268,7 @@ enum ZipArchive {
 
             var payload = entry.data
             var method: UInt16 = 0
-            if entry.data.count > 64, let deflated = deflate(entry.data), deflated.count < entry.data.count {
+            if compressing, entry.data.count > 64, let deflated = deflate(entry.data), deflated.count < entry.data.count {
                 payload = deflated
                 method = 8
             }
