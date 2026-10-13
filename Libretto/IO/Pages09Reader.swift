@@ -387,16 +387,45 @@ private struct Pages09Converter {
     private struct TextEffects {
         /// Text Pages does not show, which Libretto leaves out.
         var isHidden: Bool?
+        /// The `w:highlight` colour nearest the colour behind the text; `.some(nil)` for none.
+        var highlight: String??
 
         func overlaid(with other: TextEffects) -> TextEffects {
-            TextEffects(isHidden: other.isHidden ?? isHidden)
+            TextEffects(isHidden: other.isHidden ?? isHidden, highlight: other.highlight ?? highlight)
         }
+    }
+
+    /// The effects a style sets itself.
+    private func ownTextEffects(_ style: Node) -> TextEffects {
+        var effects = TextEffects(isHidden: flag("hidden", in: style))
+        switch value("textBackground", in: style) {
+        case .some(.color(let hex)): effects.highlight = .some(hex.flatMap(Self.highlight))
+        case .some(.null): effects.highlight = .some(nil)
+        default: break
+        }
+        return effects
+    }
+
+    /// The name of the highlight colour Word has nearest `hex`.
+    private static func highlight(_ hex: String) -> String? {
+        func components(_ hex: String) -> [Int] {
+            stride(from: 0, to: 6, by: 2).map { offset -> Int in
+                let start = hex.index(hex.startIndex, offsetBy: offset)
+                return Int(hex[start..<hex.index(start, offsetBy: 2)], radix: 16) ?? 0
+            }
+        }
+        guard hex.count == 6 else { return nil }
+        let color = components(hex)
+        return Typography.highlightColors.min { first, second in
+            func distance(_ other: String) -> Int { zip(color, components(other)).reduce(0) { $0 + ($1.0 - $1.1) * ($1.0 - $1.1) } }
+            return (distance(first.value), first.key) < (distance(second.value), second.key)
+        }?.key
     }
 
     private mutating func textEffects(_ style: Node) -> TextEffects {
         let key = ObjectIdentifier(style)
         if let cached = textEffectStyles[key] { return cached }
-        let effects = chain(style).reduce(TextEffects()) { $0.overlaid(with: TextEffects(isHidden: flag("hidden", in: $1))) }
+        let effects = chain(style).reduce(TextEffects()) { $0.overlaid(with: ownTextEffects($1)) }
         textEffectStyles[key] = effects
         return effects
     }
@@ -404,7 +433,8 @@ private struct Pages09Converter {
     private mutating func appendContent(
         of node: Node, characters: PagesCharacterProperties, effects: TextEffects, link: Hyperlink?, to runs: inout Runs
     ) {
-        let format = RunFormat(style: characters.runStyle)
+        var format = RunFormat(style: characters.runStyle)
+        if let highlight = effects.highlight ?? nil { format.style.highlight = highlight }
         let isHidden = effects.isHidden == true
         for child in node.children {
             switch child {
