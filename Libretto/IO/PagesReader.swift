@@ -95,7 +95,7 @@ enum PagesReader {
 /// How Pages shows a number: a `TSK.FormatStructArchive`, or the number
 /// format of a Pages '09 cell style. Types Libretto does not show, such as
 /// dates, durations and fractions, show the number as it is.
-struct PagesNumberFormat: Equatable {
+struct PagesNumberFormat: Hashable {
     enum Kind {
         case automatic, number, currency, percentage
     }
@@ -144,6 +144,15 @@ struct PagesNumberFormat: Equatable {
 
     func text(_ value: Double, locale: Locale) -> String {
         guard kind != .automatic, value.isFinite else { return PagesConverter.numberText(value) }
+        let (formatter, symbol) = PagesNumberFormatterCache.shared.formatter(for: self, locale: locale)
+        var text = formatter.string(from: NSNumber(value: abs(value))) ?? PagesConverter.numberText(abs(value))
+        if let symbol { text = symbol + " " + text }
+        guard value < 0 else { return text }
+        return bracketsNegatives ? "(\(text))" : "-" + text
+    }
+
+    /// A formatter for numbers in the format, and the currency symbol an accounting format sets apart.
+    fileprivate func formatter(locale: Locale) -> (NumberFormatter, String?) {
         let formatter = NumberFormatter()
         formatter.locale = locale
         formatter.numberStyle = kind == .percentage ? .percent : kind == .currency && !isAccounting ? .currency : .decimal
@@ -151,16 +160,28 @@ struct PagesNumberFormat: Equatable {
         formatter.usesGroupingSeparator = showsThousandsSeparator
         formatter.minimumFractionDigits = decimalPlaces ?? 0
         formatter.maximumFractionDigits = decimalPlaces ?? 15
-        var text = formatter.string(from: NSNumber(value: abs(value))) ?? PagesConverter.numberText(abs(value))
-        if kind == .currency, isAccounting {
-            let symbol = NumberFormatter()
-            symbol.locale = locale
-            symbol.numberStyle = .currency
-            symbol.currencyCode = formatter.currencyCode
-            text = symbol.currencySymbol + " " + text
-        }
-        guard value < 0 else { return text }
-        return bracketsNegatives ? "(\(text))" : "-" + text
+        guard kind == .currency, isAccounting else { return (formatter, nil) }
+        let symbol = NumberFormatter()
+        symbol.locale = locale
+        symbol.numberStyle = .currency
+        symbol.currencyCode = formatter.currencyCode
+        return (formatter, symbol.currencySymbol)
+    }
+}
+
+/// Formatters for the number formats of a document's cells, as making one for every cell is slow.
+private final class PagesNumberFormatterCache: @unchecked Sendable {
+    static let shared = PagesNumberFormatterCache()
+    private let lock = NSLock()
+    private var formatters: [String: [PagesNumberFormat: (NumberFormatter, String?)]] = [:]
+
+    func formatter(for format: PagesNumberFormat, locale: Locale) -> (NumberFormatter, String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let known = formatters[locale.identifier]?[format] { return known }
+        let made = format.formatter(locale: locale)
+        formatters[locale.identifier, default: [:]][format] = made
+        return made
     }
 }
 
@@ -381,6 +402,8 @@ struct PagesConverter {
 
     private var paragraphStyles: [UInt64: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [UInt64: PagesCharacterProperties] = [:]
+    /// The fill each cell style gives, by its identifier.
+    private var cellFills: [UInt64: String??] = [:]
     /// The format of text in a paragraph style and a character style, by their identifiers.
     private var runFormats: [[UInt64?]: RunFormat] = [:]
     /// The list each list style became, by the list style's identifier; `nil` for no list.
@@ -833,7 +856,8 @@ struct PagesConverter {
         let headerRows = Int(model.message.uint(9))
         let headerColumns = Int(model.message.uint(10))
         let footerRows = Int(model.message.uint(11))
-        let regionFills = [19, 20, 21, 18].map { (model.message.reference($0).flatMap(cellFill) ?? nil) }
+        var regionFills: [String?] = []
+        for field in [19, 20, 21, 18] { regionFills.append(model.message.reference(field).flatMap { cellFill($0) } ?? nil) }
         // Each also has a paragraph style, which values are set in unless the cell gives one.
         let regionTextStyles = [25, 26, 27, 24].map { model.message.reference($0) }
         func region(row: Int, column: Int) -> Int {
@@ -1065,7 +1089,7 @@ struct PagesConverter {
     private mutating func cell(
         _ value: CellValue, lists: CellLists, regionFill: String?, regionTextStyle: UInt64?
     ) -> TableCell {
-        let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap(cellFill) ?? regionFill
+        let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap { cellFill($0) } ?? regionFill
         let text: String?
         switch value.type {
         case 3:
@@ -1098,19 +1122,22 @@ struct PagesConverter {
 
     /// The fill of a `TST.CellStyleArchive`, or of the style it is a variation
     /// of: `.some(nil)` for none, and `nil` if neither says.
-    private func cellFill(_ identifier: UInt64) -> String?? {
+    private mutating func cellFill(_ identifier: UInt64) -> String?? {
+        if let known = cellFills[identifier] { return known }
+        var fill: String??
         var next: UInt64? = identifier
         var depth = 0
         while let current = next, let style = archive[current], depth < 32 {
             // An empty fill takes away the one the style it varies has.
-            if let fill = style.message.message(11)?.message(1) {
-                guard let color = fill.message(1), color.float(6) != 0 else { return .some(nil) }
-                return .some(Self.hex(color))
+            if let own = style.message.message(11)?.message(1) {
+                if let color = own.message(1), color.float(6) != 0 { fill = .some(Self.hex(color)) } else { fill = .some(nil) }
+                break
             }
             next = style.message.message(1)?.reference(3)
             depth += 1
         }
-        return nil
+        cellFills[identifier] = .some(fill)
+        return fill
     }
 
     /// A number as Pages shows it with no format: as many places as it has.
