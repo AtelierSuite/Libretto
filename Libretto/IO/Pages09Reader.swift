@@ -163,6 +163,9 @@ private struct Pages09Converter {
     private var paragraphStyles: [ObjectIdentifier: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [ObjectIdentifier: PagesCharacterProperties] = [:]
     private var lists: [ObjectIdentifier: Int?] = [:]
+    /// The list style each paragraph style gives, and what each cell style says, worked out once.
+    private var listStyles: [ObjectIdentifier: Node?] = [:]
+    private var cellStyles: [ObjectIdentifier: CellStyle] = [:]
     private var bodyStyles = PagesStyleTally<ObjectIdentifier?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     /// The text of the body's footnotes, in order, and the next not yet referred to.
@@ -325,9 +328,7 @@ private struct Pages09Converter {
         // A table cell's style can come from a heading's, which its text is not.
         if ownStyle == nil, baseStyle != nil { paragraphFormat.outlineLevel = nil }
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
-        let listStyle = style.flatMap { inheritedValue("listStyle", from: $0) }.flatMap { value -> Node? in
-            if case .node(let node) = value { node } else { nil }
-        }
+        let listStyle = style.flatMap { listStyle(of: $0) }
         var numberingID = listStyle.flatMap { list(for: $0) }
         if let listStyle, let listID = numberingID {
             let level = min(node.attributes["list-level"].flatMap(Int.init).map { max($0, 1) - 1 } ?? 0, 8)
@@ -548,7 +549,9 @@ private struct Pages09Converter {
             let column = position % columnCount
             position += 1
             guard !covered[row][column] else { continue }
-            cells[row][column] = TableCell(blocks: cellBlocks(element), shadingHex: cellFill(element))
+            cells[row][column] = TableCell(
+                blocks: cellBlocks(element), shadingHex: element.attributes["s"].flatMap(styleNode).flatMap { cellStyle($0).fill }
+            )
             let columnSpan = min(max(element.attributes["col-span"].flatMap(Int.init) ?? 1, 1), columnCount - column)
             let rowSpan = min(max(element.attributes["row-span"].flatMap(Int.init) ?? 1, 1), rowCount - row)
             guard columnSpan * rowSpan > 1 else { continue }
@@ -593,7 +596,7 @@ private struct Pages09Converter {
     /// the paragraph style its cell style gives.
     private mutating func cellBlocks(_ cell: Node) -> [Block] {
         let style = cell.attributes["s"].flatMap(styleNode)
-        let textStyle = style.flatMap(cellParagraphStyle)
+        let textStyle = style.flatMap { cellStyle($0).paragraphStyle }
         if let body = cell.descendants(where: { $0.name == "text-body" }).first {
             // Tables already set in the paragraph this table is in follow that paragraph, not a cell's.
             let outerTables = pendingTables
@@ -614,7 +617,7 @@ private struct Pages09Converter {
 
     /// The value a cell shows, as text, in its style's formats.
     private mutating func value(of cell: Node, style: Node?) -> String? {
-        let format = style.flatMap(numberFormat)
+        let format = style.flatMap { cellStyle($0).numberFormat }
         func number(_ value: String) -> String? {
             Double(value).map { format?.text($0, locale: Self.locale) ?? PagesConverter.numberText($0) }
         }
@@ -667,11 +670,32 @@ private struct Pages09Converter {
         return (seconds < 0 ? "-" : "") + parts.joined(separator: " ")
     }
 
-    /// The colour a cell's style fills it with; `nil` for none.
-    private func cellFill(_ cell: Node) -> String? {
-        guard let style = cell.attributes["s"].flatMap(styleNode),
-              case .color(let hex) = inheritedValue("fill", from: style) else { return nil }
-        return hex
+    /// What a cell style says of its cells: the colour it fills them with, `nil` for none,
+    /// the paragraph style it sets their text in, and the format it shows numbers in.
+    private struct CellStyle {
+        var fill: String?
+        var paragraphStyle: Node?
+        var numberFormat: PagesNumberFormat?
+    }
+
+    private mutating func cellStyle(_ style: Node) -> CellStyle {
+        let key = ObjectIdentifier(style)
+        if let cached = cellStyles[key] { return cached }
+        var fill: String?
+        if case .color(let hex) = inheritedValue("fill", from: style) { fill = hex }
+        let result = CellStyle(fill: fill, paragraphStyle: cellParagraphStyle(style), numberFormat: numberFormat(style))
+        cellStyles[key] = result
+        return result
+    }
+
+    /// The list style a paragraph style puts its paragraphs in.
+    private mutating func listStyle(of style: Node) -> Node? {
+        let key = ObjectIdentifier(style)
+        if let cached = listStyles[key] { return cached }
+        var result: Node?
+        if case .node(let node) = inheritedValue("listStyle", from: style) { result = node }
+        listStyles[key] = .some(result)
+        return result
     }
 
     /// The paragraph style a cell style sets text in: its own, or its layout
