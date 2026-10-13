@@ -566,7 +566,11 @@ private struct Pages09Converter {
         let style = cell.attributes["s"].flatMap(styleNode)
         let textStyle = style.flatMap(cellParagraphStyle)
         if let body = cell.descendants(where: { $0.name == "text-body" }).first {
+            // Tables already set in the paragraph this table is in follow that paragraph, not a cell's.
+            let outerTables = pendingTables
+            pendingTables = []
             var blocks = self.blocks(in: body, recordsStyles: false, baseStyle: textStyle)
+            pendingTables = outerTables
             // The text ends with an empty paragraph, which the cell does not show.
             while blocks.count > 1, case .paragraph(let last) = blocks.last, last.inlines.isEmpty { blocks.removeLast() }
             if !blocks.isEmpty { return blocks }
