@@ -474,8 +474,11 @@ private struct Pages09Converter {
     /// The first data file found in an element, as a picture at the size it is shown.
     private mutating func image(in node: Node) -> InlineImage? {
         let files = self.files
-        let data = node.descendants { $0.name == "data" && $0.attributes["path"] != nil }.lazy.compactMap { data -> Data? in
-            let path = data.attributes["path"]!
+        let byID = self.byID
+        // A picture placed again refers to the data its first placement holds.
+        let data = node.descendants { $0.name == "data" || $0.name == "data-ref" }.lazy.compactMap { data -> Data? in
+            let source = data.name == "data-ref" ? data.attributes["IDREF"].flatMap { byID[$0] } : data
+            guard let path = source?.attributes["path"] else { return nil }
             return files[path] ?? files.first { $0.key.hasSuffix("/" + path) }?.value
         }.first
         guard let data, let (bytes, fileExtension, contentType) = PagesConverter.wordImage(data) else { return nil }

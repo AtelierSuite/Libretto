@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import Libretto
 
 /// Reads a document in the XML Pages '09 saved, built here in the shape of
@@ -346,6 +347,27 @@ struct Pages09Tests {
             ["<sf:du sf:du=\"5400\"/>", "<sf:du sf:s=\"minutes\" sf:du=\"3725\"/>", menu], styles: styles
         )
         #expect(Self.cellTexts(document) == ["1h 30m 0s", "62m 5s", "High"])
+    }
+
+    @Test("A picture placed twice shows both times, the second referring to the first's data")
+    func reusedPicture() throws {
+        let png = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).pngData { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sf:text-storage sf:kind="body"><sf:attachments>\
+            <sf:attachment sfa:ID="A"><sf:media><sf:data sfa:ID="D" sf:path="red.png"/></sf:media></sf:attachment>\
+            <sf:attachment sfa:ID="B"><sf:media><sf:data-ref sfa:IDREF="D"/></sf:media></sf:attachment></sf:attachments>\
+            <sf:text-body><sf:p>One<sf:attachment-ref sfa:IDREF="A"/></sf:p><sf:p>Two<sf:attachment-ref sfa:IDREF="B"/></sf:p>\
+            </sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8), "red.png": png])
+        let images = document.allParagraphs.map { $0.inlines.filter { if case .image = $0.content { true } else { false } }.count }
+        #expect(images == [1, 1])
+        #expect(!document.unsupportedFeatures.features.contains(.shapes))
     }
 
     @Test("A cell's text leaves out the empty paragraph it ends with")
