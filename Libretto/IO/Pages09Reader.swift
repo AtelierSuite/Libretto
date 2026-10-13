@@ -28,22 +28,24 @@ enum Pages09Reader {
     /// A gzip member: a ten-byte header, optional fields the flags name, raw
     /// DEFLATE, then the CRC and the length, modulo 2³², of what it inflates to.
     static func gunzip(_ data: Data) -> Data? {
-        let bytes = [UInt8](data)
-        guard bytes.count >= 18, bytes[0] == 0x1F, bytes[1] == 0x8B, bytes[2] == 8 else { return nil }
-        let flags = bytes[3]
+        // Read in place, by offsets from the start, and inflate a slice of the input rather than a copy.
+        let count = data.count
+        func byte(_ offset: Int) -> UInt8 { data[data.startIndex + offset] }
+        guard count >= 18, byte(0) == 0x1F, byte(1) == 0x8B, byte(2) == 8 else { return nil }
+        let flags = byte(3)
         var offset = 10
         if flags & 0x04 != 0 {
-            guard offset + 2 <= bytes.count else { return nil }
-            offset += 2 + (Int(bytes[offset]) | Int(bytes[offset + 1]) << 8)
+            guard offset + 2 <= count else { return nil }
+            offset += 2 + (Int(byte(offset)) | Int(byte(offset + 1)) << 8)
         }
         for flag: UInt8 in [0x08, 0x10] where flags & flag != 0 {
-            while offset < bytes.count, bytes[offset] != 0 { offset += 1 }
+            while offset < count, byte(offset) != 0 { offset += 1 }
             offset += 1
         }
         if flags & 0x02 != 0 { offset += 2 }
-        guard offset < bytes.count - 8 else { return nil }
-        let size = bytes[(bytes.count - 4)...].reversed().reduce(0) { $0 << 8 | Int($1) }
-        return ZipArchive.inflate(Data(bytes[offset..<(bytes.count - 8)]), expectedSize: size)
+        guard offset < count - 8 else { return nil }
+        let size = (count - 4..<count).reversed().reduce(0) { $0 << 8 | Int(byte($1)) }
+        return ZipArchive.inflate(data[(data.startIndex + offset)..<(data.startIndex + count - 8)], expectedSize: size)
     }
 
     /// An element, its attributes by local name, and its text and elements in order.
