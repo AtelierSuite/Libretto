@@ -273,6 +273,31 @@ struct Pages09Tests {
         #expect(tables.map { $0.rows.flatMap(\.cells).map(\.plainText) } == [["First"], ["Second"]])
     }
 
+    @Test("Numbers that are not finite, or too large to measure with, are left out rather than trapping")
+    func outlandishNumbers() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:slprint-info sl:page-width="inf" sl:page-height="1e300"><sf:page-margins sf:top="nan"/></sl:slprint-info>\
+            <sl:stylesheet><sf:styles><sf:paragraphstyle sf:ident="odd"><sf:property-map>\
+            <sf:fontSize><sf:number sfa:number="1e300"/></sf:fontSize>\
+            <sf:superscript><sf:number sfa:number="1e30"/></sf:superscript>\
+            <sf:alignment><sf:number sfa:number="nan"/></sf:alignment>\
+            <sf:lineSpacing><sf:linespacing sfa:mode="exact" sfa:amount="-inf"/></sf:lineSpacing>\
+            <sf:fontColor><sf:color sfa:r="nan" sfa:g="inf" sfa:b="0" sfa:a="1"/></sf:fontColor>\
+            </sf:property-map></sf:paragraphstyle></sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:attachments><sf:attachment sfa:ID="T"><sf:tabular-info><sf:tabular-model>\
+            <sf:grid><sf:columns><sf:grid-column sf:width="1e308"/><sf:grid-column sf:width="1e308"/></sf:columns>\
+            <sf:rows><sf:grid-row/></sf:rows><sf:datasource><sf:t sf:col-span="2"><sf:ct sfa:s="Wide"/></sf:t><sf:s/>\
+            </sf:datasource></sf:grid></sf:tabular-model></sf:tabular-info></sf:attachment></sf:attachments>\
+            <sf:text-body><sf:p sf:style="odd" sf:list-level="-9223372036854775808">Text<sf:attachment-ref sfa:IDREF="T"/></sf:p>\
+            </sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.allParagraphs.map(\.plainText) == ["Text", "Wide", ""])
+        #expect(document.pageSetup.width == WordDocument().pageSetup.width)
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)

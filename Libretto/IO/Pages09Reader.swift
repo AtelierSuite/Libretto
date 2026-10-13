@@ -229,7 +229,7 @@ private struct Pages09Converter {
             }
             let items = page.elements.map { item -> (node: Node, x: Double, y: Double) in
                 let position = item.first("geometry")?.first("position")?.attributes
-                return (item, position?["x"].flatMap(Double.init) ?? 0, position?["y"].flatMap(Double.init) ?? 0)
+                return (item, position?["x"].flatMap(Self.measure) ?? 0, position?["y"].flatMap(Self.measure) ?? 0)
             }
             for item in items.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
                 switch item.node.name {
@@ -267,7 +267,7 @@ private struct Pages09Converter {
     private mutating func readPageSetup() {
         guard let info = root.first("slprint-info") else { return }
         func twips(_ value: String?) -> Int? {
-            value.flatMap(Double.init).map { Int(($0 * 20).rounded()) }
+            value.flatMap(Self.measure).map { Int(($0 * 20).rounded()) }
         }
         var setup = document.pageSetup
         if let width = twips(info.attributes["page-width"]), let height = twips(info.attributes["page-height"]),
@@ -323,7 +323,7 @@ private struct Pages09Converter {
         }
         let numberingID = listStyle.flatMap { list(for: $0) }
         if let numberingID {
-            let level = node.attributes["list-level"].flatMap(Int.init).map { max($0 - 1, 0) } ?? 0
+            let level = node.attributes["list-level"].flatMap(Int.init).map { max($0, 1) - 1 } ?? 0
             paragraph.properties.list = ListReference(numberingID: numberingID, level: min(level, 8))
             paragraph.properties.indentLeft = nil
             paragraph.properties.indentFirstLine = nil
@@ -479,8 +479,8 @@ private struct Pages09Converter {
         guard let data, let (bytes, fileExtension, contentType) = PagesConverter.wordImage(data) else { return nil }
         let size = (node.descendants { $0.name == "geometry" }.first?.first("size")
             ?? node.descendants { $0.name == "size" || $0.name == "naturalSize" }.first)?.attributes
-        let width = size?["w"].flatMap(Double.init) ?? 100
-        let height = size?["h"].flatMap(Double.init) ?? 100
+        let width = size?["w"].flatMap(Self.measure) ?? 100
+        let height = size?["h"].flatMap(Self.measure) ?? 100
         let rid = document.package.unusedRelationshipID()
         document.package.addedMedia[rid] = DocumentPackage.AddedMedia(
             path: "word/media/pages-\(rid).\(fileExtension)", data: bytes,
@@ -496,7 +496,7 @@ private struct Pages09Converter {
         guard let model = node.descendants(where: { $0.name == "tabular-model" }).first,
               let grid = model.first("grid"), let source = grid.first("datasource") else { return nil }
         let widths = (grid.first("columns")?.elements ?? []).filter { $0.name == "grid-column" }
-            .map { $0.attributes["width"].flatMap(Double.init) ?? 100 }
+            .map { max($0.attributes["width"].flatMap(Self.measure) ?? 100, 0) }
         let columnCount = widths.count
         let rowCount = (grid.first("rows")?.elements ?? []).filter { $0.name == "grid-row" }.count
         guard rowCount > 0, columnCount > 0, rowCount * columnCount <= 100_000 else { return nil }
@@ -682,11 +682,11 @@ private struct Pages09Converter {
         guard let property = style.first("property-map")?.first(name), let content = property.elements.first else { return nil }
         switch content.name {
         case "null": return .null
-        case "number": return content.attributes["number"].flatMap(Double.init).map(Value.number)
+        case "number": return content.attributes["number"].flatMap(Self.measure).map(Value.number)
         case "string": return .string(content.attributes["string"] ?? "")
         case "color": return .color(Self.hex(content))
         case "linespacing":
-            guard let amount = content.attributes["amount"].flatMap(Double.init) else { return .lineSpacing(nil) }
+            guard let amount = content.attributes["amount"].flatMap(Self.measure) else { return .lineSpacing(nil) }
             switch content.attributes["mode"] ?? "relative" {
             case "relative": return .lineSpacing(LineSpacing(line: Int((amount * 240).rounded()), rule: .auto))
             case "exact": return .lineSpacing(LineSpacing(line: Int((amount * 20).rounded()), rule: .exact))
@@ -698,6 +698,13 @@ private struct Pages09Converter {
 
     private func inheritedValue(_ name: String, from style: Node) -> Value? {
         chain(style).reversed().lazy.compactMap { self.value(name, in: $0) }.first
+    }
+
+    /// A number from the XML, if it is one that measures something: finite,
+    /// and small enough to convert to twips and the like without overflowing.
+    static func measure(_ text: String) -> Double? {
+        guard let value = Double(text), value.isFinite, abs(value) <= 1_000_000_000 else { return nil }
+        return value
     }
 
     /// What Pages sets text in when no style says: 12-point Helvetica.
@@ -800,9 +807,9 @@ private struct Pages09Converter {
     /// Six-digit sRGB for an `sf:color`, RGB or grey; `nil` for one that is transparent.
     private static func hex(_ color: Node) -> String? {
         let attributes = color.attributes
-        if let alpha = attributes["a"].flatMap(Double.init), alpha == 0 { return nil }
-        let white = attributes["w"].flatMap(Double.init)
-        var components = white.map { [$0] } ?? ["r", "g", "b"].map { attributes[$0].flatMap(Double.init) ?? 0 }
+        if let alpha = attributes["a"].flatMap(Self.measure), alpha == 0 { return nil }
+        let white = attributes["w"].flatMap(Self.measure)
+        var components = white.map { [$0] } ?? ["r", "g", "b"].map { attributes[$0].flatMap(Self.measure) ?? 0 }
         // Calibrated colours are in Apple's generic profiles, which Word's sRGB shows darker.
         if attributes["type"]?.contains("calibrated") == true,
            let space = white == nil ? genericRGB : genericGray, let sRGB,
