@@ -363,12 +363,16 @@ private struct Pages09Converter {
         var inlines: [Inline] = []
 
         mutating func append(_ inline: Inline) {
-            if case .text(let text) = inline.content, let last = inlines.last, case .text(let previous) = last.content,
-               last.format == inline.format, last.hyperlink == inline.hyperlink {
-                inlines[inlines.count - 1].content = .text(previous + text)
-            } else {
+            let index = inlines.count - 1
+            guard case .text(let text) = inline.content, index >= 0, inlines[index].format == inline.format,
+                  inlines[index].hyperlink == inline.hyperlink, case .text(var previous) = inlines[index].content else {
                 inlines.append(inline)
+                return
             }
+            // Emptied first, so the text is appended to in place rather than copied.
+            inlines[index].content = .text("")
+            previous += text
+            inlines[index].content = .text(previous)
         }
     }
 
