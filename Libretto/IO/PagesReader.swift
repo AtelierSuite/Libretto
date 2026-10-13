@@ -413,6 +413,10 @@ struct PagesConverter {
     private var numberingInUse: [UInt64: Int] = [:]
     /// The link each hyperlink field became, by its identifier; `nil` for none.
     private var links: [UInt64: Hyperlink?] = [:]
+    /// The tracked change each `TSWP.ChangeArchive` became, by its identifier.
+    private var revisions: [UInt64: Revision] = [:]
+    /// The comment each highlight became, by its identifier; `nil` for none.
+    private var comments: [UInt64: String?] = [:]
     /// How deep in text storages the conversion is: one in the body, more in its tables.
     private var storageDepth = 0
     /// The formatting of the body's first plain paragraph, and of its first
@@ -561,6 +565,11 @@ struct PagesConverter {
         let attachments = AttributeTable(storage.message(9))
         let footnotes = AttributeTable(storage.message(16))
         let smartFields = AttributeTable(storage.message(11))
+        // Text Pages has tracked as inserted or deleted, and ranges that are commented on.
+        let insertions = AttributeTable(storage.message(21))
+        let deletions = AttributeTable(storage.message(22))
+        let highlights = AttributeTable(storage.message(23))
+        var openComment: (highlight: UInt64, id: String)?
 
         var blocks: [Block] = []
         var start = 0
@@ -602,14 +611,37 @@ struct PagesConverter {
             var pending: [UInt16] = []
             var pendingFormat = RunFormat()
             var pendingLink: Hyperlink?
+            var pendingRevision: Revision?
             func flush() {
                 guard !pending.isEmpty else { return }
                 paragraph.inlines.append(Inline(
-                    .text(String(decoding: pending, as: UTF16.self)), format: pendingFormat, hyperlink: pendingLink
+                    .text(String(decoding: pending, as: UTF16.self)), format: pendingFormat, hyperlink: pendingLink,
+                    revision: pendingRevision
                 ))
                 pending = []
             }
-            for index in start..<end {
+            for index in start...min(end, text.count) {
+                // A comment's range ends before the first character it leaves out, and starts at its first.
+                let highlight = index < text.count ? highlights.object(at: index) : nil
+                if highlight != openComment?.highlight, index < end || highlight == nil {
+                    flush()
+                    if let open = openComment {
+                        paragraph.inlines += CommentAnchors.end(open.id, referenceStyleID: nil)
+                        openComment = nil
+                    }
+                    if index < end, let highlight, let id = comment(highlight) {
+                        paragraph.inlines.append(CommentAnchors.start(id))
+                        openComment = (highlight, id)
+                    }
+                }
+                let revision = (deletions.object(at: index) ?? insertions.object(at: index)).flatMap { change in
+                    trackedChange(change, kind: deletions.object(at: index) != nil ? .deletion : .insertion)
+                }
+                guard index < end else {
+                    // A paragraph mark Pages tracks as deleted joins its paragraph to the next once the change is accepted.
+                    if index < text.count, let revision { paragraph.markRevision = revision }
+                    break
+                }
                 let unit = text[index]
                 let characterStyleID = characterStyles.object(at: index)
                 let format: RunFormat
@@ -621,25 +653,30 @@ struct PagesConverter {
                     runFormats[[styleID, characterStyleID]] = format
                 }
                 let link = smartFields.object(at: index).flatMap { hyperlink($0) }
-                if format != pendingFormat || link != pendingLink { flush(); pendingFormat = format; pendingLink = link }
+                if format != pendingFormat || link != pendingLink || revision != pendingRevision {
+                    flush()
+                    pendingFormat = format
+                    pendingLink = link
+                    pendingRevision = revision
+                }
                 switch unit {
                 case 0x09:
                     flush()
-                    paragraph.inlines.append(Inline(.tab, format: format, hyperlink: link))
+                    paragraph.inlines.append(Inline(.tab, format: format, hyperlink: link, revision: revision))
                 case 0x2028:
                     flush()
-                    paragraph.inlines.append(Inline(.lineBreak, format: format, hyperlink: link))
+                    paragraph.inlines.append(Inline(.lineBreak, format: format, hyperlink: link, revision: revision))
                 case 0x000E:
                     flush()
                     if let reference = footnote(footnotes.object(at: index)) {
                         var noteFormat = format
                         noteFormat.style.verticalAlignment = .superscript
-                        paragraph.inlines.append(Inline(.note(reference), format: noteFormat))
+                        paragraph.inlines.append(Inline(.note(reference), format: noteFormat, revision: revision))
                     }
                 case 0xFFFC:
                     flush()
                     switch attachment(attachments.object(at: index)) {
-                    case .image(let image): paragraph.inlines.append(Inline(.image(image), format: format))
+                    case .image(let image): paragraph.inlines.append(Inline(.image(image), format: format, revision: revision))
                     case .table(let table): tables.append(.table(table))
                     case nil: break
                     }
@@ -715,6 +752,57 @@ struct PagesConverter {
         )
         links[identifier] = link
         return link
+    }
+
+    // MARK: Changes and comments
+
+    /// A tracked change from a `TSWP.ChangeArchive`, by the author of its
+    /// `TSWP.ChangeSessionArchive`, at its date, made the first time it is met.
+    private mutating func trackedChange(_ identifier: UInt64, kind: Revision.Kind) -> Revision {
+        if let known = revisions[identifier], known.kind == kind { return known }
+        let change = archive[identifier]?.message
+        let author = archive[change.flatMap { archive[$0.reference(3)]?.message.reference(1) }]?.message.string(1)
+        let revision = Revision(
+            kind: kind, author: author.flatMap { $0.isEmpty ? nil : $0 } ?? "Pages",
+            date: change?.message(2)?.float(1).flatMap(Self.isoDate)
+        )
+        revisions[identifier] = revision
+        return revision
+    }
+
+    /// The comment a `TSWP.HighlightArchive` holds, made the first time it is
+    /// met, with its replies: its `TSD.CommentStorageArchive`'s text, author
+    /// and date. `nil` for a highlight with no comment.
+    private mutating func comment(_ identifier: UInt64) -> String? {
+        if let known = comments[identifier] { return known }
+        var id: String?
+        if let storage = archive[archive[identifier]?.message.reference(1)]?.message, storage.has(1) {
+            let comment = makeComment(storage, parentParaID: nil)
+            id = comment.id
+            for reply in storage.messages(4).compactMap({ archive[$0.optionalUInt(1)]?.message }) {
+                _ = makeComment(reply, parentParaID: comment.paraID)
+            }
+        }
+        comments[identifier] = .some(id)
+        return id
+    }
+
+    private mutating func makeComment(_ storage: ProtoMessage, parentParaID: String?) -> Comment {
+        let author = archive[storage.reference(3)]?.message.string(1) ?? ""
+        let comment = Comment(
+            id: document.unusedCommentID(), author: author,
+            initials: author.isEmpty ? nil : author.split(separator: " ").compactMap(\.first).map(String.init).joined(),
+            date: storage.message(2)?.float(1).flatMap(Self.isoDate), text: storage.string(1) ?? "",
+            paraID: document.unusedCommentParaID(), parentParaID: parentParaID
+        )
+        document.comments.append(comment)
+        return comment
+    }
+
+    /// A `TSP.Date`'s seconds since 2001 as ISO 8601, as Word dates changes and comments.
+    private static func isoDate(_ seconds: Double) -> String? {
+        guard seconds.isFinite, abs(seconds) < 1e11 else { return nil }
+        return ISO8601DateFormatter().string(from: Date(timeIntervalSinceReferenceDate: seconds))
     }
 
     private mutating func paragraphStyle(_ identifier: UInt64) -> (PagesParagraphProperties, PagesCharacterProperties) {
