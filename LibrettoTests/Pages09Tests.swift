@@ -182,6 +182,13 @@ struct Pages09Tests {
         #expect(Self.document.pageSetup.pageNumberFormat == nil)
     }
 
+    @Test("A cell's text leaves out the empty paragraph it ends with")
+    func cellText() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(table.rows[0].cells.map(\.plainText) == ["Item", "Number", "Currency", "Percent", "Sum"])
+        #expect(table.rows[0].cells.allSatisfy { $0.blocks.count == 1 })
+    }
+
     @Test("A package's gzipped index reads the same")
     func package() throws {
         let document = try PagesReader.document(fromFiles: ["index.xml.gz": Self.gzip(Data(Self.index.utf8))])

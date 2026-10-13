@@ -553,7 +553,9 @@ private struct Pages09Converter {
     /// What a cell shows: its text's paragraphs, or its value as text.
     private mutating func cellBlocks(_ cell: Node) -> [Block] {
         if let body = cell.descendants(where: { $0.name == "text-body" }).first {
-            let blocks = self.blocks(in: body, recordsStyles: false)
+            var blocks = self.blocks(in: body, recordsStyles: false)
+            // The text ends with an empty paragraph, which the cell does not show.
+            while blocks.count > 1, case .paragraph(let last) = blocks.last, last.inlines.isEmpty { blocks.removeLast() }
             if !blocks.isEmpty { return blocks }
         }
         let text: String?
