@@ -361,6 +361,7 @@ struct PagesParagraphProperties {
         properties.keepLines = keepLinesTogether == true ? true : nil
         properties.keepNext = keepWithNext == true ? true : nil
         properties.pageBreakBefore = pageBreakBefore == true ? true : nil
+        properties.widowControl = widowControl
         if let fillHex, let hex = fillHex { properties.shadingHex = hex }
         if let outlineLevel, let level = outlineLevel {
             properties.outlineLevel = level

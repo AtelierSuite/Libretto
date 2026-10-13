@@ -88,6 +88,7 @@ struct PagesTests {
         #expect(indented.spacingBefore == 240)
         #expect(indented.spacingAfter == 240)
         #expect(indented.lineSpacing == LineSpacing(line: 360, rule: .auto))
+        #expect(indented.widowControl == true)
     }
 
     @Test("Lists keep their kind and levels")
