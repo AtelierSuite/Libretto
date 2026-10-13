@@ -416,6 +416,11 @@ struct PagesConverter {
     /// heading of each level, which become the Normal and heading styles.
     private var bodyStyles = PagesStyleTally<UInt64?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
+    /// Whether the body's text is being read, whose section breaks end sections.
+    private var readingBody = false
+    /// The body's paragraphs that end a section, by their index among the
+    /// blocks, with the index of the section break in the text.
+    private var sectionBreaks: [(block: Int, character: Int)] = []
     /// The document's language and region, which numbers and dates in tables are written for.
     private let locale: Locale
     /// Formatters for dates in tables, by the pattern they show.
@@ -430,12 +435,15 @@ struct PagesConverter {
     mutating func convert(_ root: ProtoMessage) -> WordDocument {
         readPageSetup(root)
         let storage = archive[root.reference(4)].flatMap { $0.type == PagesReader.Types.storage ? $0.message : nil }
+        readingBody = true
         var blocks = storage.map { self.blocks(from: $0) } ?? []
+        readingBody = false
         let floating = archive[root.reference(3)]?.message.messages(1).filter { !$0.messages(4).isEmpty } ?? []
         if !floating.isEmpty {
             if blocks.allSatisfy(Self.isBlank) {
                 // A page layout document has no body text, only a break between each page and the
                 // next: its pages are what is placed on them.
+                sectionBreaks = []
                 blocks = floatingBlocks(floating)
             } else {
                 // Objects placed on a page of a word-processing document have no place in its text.
@@ -448,7 +456,7 @@ struct PagesConverter {
         }
         document.body = blocks
         adoptStyles()
-        if let storage { readHeadersAndFooters(storage) }
+        if let storage { readSections(storage) }
         return document
     }
 
@@ -631,12 +639,19 @@ struct PagesConverter {
                 }
             }
             flush()
-            if end < text.count, text[end] == 0x05 || text[end] == 0x04 {
+            // A section break in the body ends a section, which is given its page once the text is read.
+            let endsSection = readingBody && storageDepth == 1 && end < text.count && text[end] == 0x04
+            if end < text.count, text[end] == 0x05 || text[end] == 0x04, !endsSection {
                 paragraph.inlines.append(Inline(.pageBreak))
             }
             // A paragraph that only held a table becomes the table.
             if tables.isEmpty || !paragraph.inlines.isEmpty { blocks.append(.paragraph(paragraph)) }
             blocks += tables
+            if endsSection {
+                // A section ends with a paragraph, which a table cannot be.
+                if case .paragraph = blocks.last {} else { blocks.append(.paragraph(Paragraph())) }
+                sectionBreaks.append((blocks.count - 1, end))
+            }
             start = end + 1
         }
         return blocks
@@ -1209,10 +1224,37 @@ struct PagesConverter {
 
     // MARK: Headers and footers
 
-    /// The headers and footers of the body's first section, from its page masters.
-    private mutating func readHeadersAndFooters(_ body: ProtoMessage) {
-        guard let sectionID = AttributeTable(body.message(17)).object(at: 0),
-              let section = archive[sectionID], section.type == PagesReader.Types.section else { return }
+    /// Gives each of the body's sections its page: the paragraph that ends
+    /// at its section break, or, for the last, the document.
+    private mutating func readSections(_ body: ProtoMessage) {
+        let sections = AttributeTable(body.message(17))
+        var previous = document.pageSetup
+        for (block, character) in sectionBreaks {
+            guard case .paragraph(var paragraph) = document.body[block] else { continue }
+            previous = pageSetup(of: sections.object(at: character), previous: previous)
+            paragraph.section = previous
+            document.body[block] = .paragraph(paragraph)
+        }
+        document.pageSetup = pageSetup(of: sections.object(at: Int.max), previous: previous)
+    }
+
+    /// The page of a `TP.SectionArchive`: the document's, which Pages gives
+    /// every section, with the section's headers and footers, from its page
+    /// masters, or the section before's, if it carries them on; and where
+    /// its page numbers start.
+    private mutating func pageSetup(of sectionID: UInt64?, previous: PageSetup) -> PageSetup {
+        var setup = previous
+        guard let section = archive[sectionID], section.type == PagesReader.Types.section else { return setup }
+        // The writer keeps what it does not model of a section, such as where its page numbers start, as it was read.
+        setup.preservedXML = setup.preservedXML?.replacing(#/<w:pgNumType\b[^>]*\/>/#, with: "")
+        if section.message.bool(21) == true, let start = section.message.optionalUInt(22) {
+            setup.preservedXML = (setup.preservedXML ?? "<w:sectPr></w:sectPr>").replacingOccurrences(
+                of: "</w:sectPr>", with: "<w:pgNumType w:start=\"\(Int(clamping: start))\"/></w:sectPr>"
+            )
+        }
+        guard section.message.bool(17) != true else { return setup }
+        setup.headerFooters = HeaderFooterReferences()
+        setup.pageNumberFormat = nil
         let masters: [(HeaderFooterKind, Int)] = [(.default, 25), (.first, 23), (.even, 24)]
         let firstPageDiffers = section.message.bool(18) == true
         let evenPagesDiffer = section.message.bool(19) == true
@@ -1223,19 +1265,23 @@ struct PagesConverter {
             else { continue }
             for isFooter in [false, true] {
                 let slots = master.message.messages(isFooter ? 2 : 1).compactMap { $0.optionalUInt(1) }
-                let contentWidth = document.pageSetup.width - document.pageSetup.marginLeft - document.pageSetup.marginRight
-                guard let text = headerFooter(slots: slots, isFooter: isFooter, contentWidth: contentWidth) else { continue }
+                let contentWidth = setup.width - setup.marginLeft - setup.marginRight
+                guard let text = headerFooter(
+                    slots: slots, isFooter: isFooter, contentWidth: contentWidth, pageNumberFormat: &setup.pageNumberFormat
+                ) else { continue }
                 let id = document.unusedHeaderFooterID(isFooter: isFooter)
                 document.headerFooters[id] = text
                 if isFooter {
-                    document.pageSetup.headerFooters.footers[kind] = id
+                    setup.headerFooters.footers[kind] = id
                 } else {
-                    document.pageSetup.headerFooters.headers[kind] = id
+                    setup.headerFooters.headers[kind] = id
                 }
             }
         }
-        document.pageSetup.headerFooters.titlePage = firstPageDiffers
-        document.evenAndOddHeaders = evenPagesDiffer
+        setup.headerFooters.titlePage = firstPageDiffers
+        // Word gives even pages headers of their own in the whole document or none of it.
+        if evenPagesDiffer { document.evenAndOddHeaders = true }
+        return setup
     }
 
     /// A header or footer from its left, centre and right parts. One part
@@ -1243,7 +1289,9 @@ struct PagesConverter {
     /// set apart by tabs, to tab stops at the centre and right of the line,
     /// as Word sets out its own. The text takes the format the first part
     /// starts in, as a header's text is in one format.
-    private mutating func headerFooter(slots: [UInt64], isFooter: Bool, contentWidth: Int) -> HeaderFooterText? {
+    private mutating func headerFooter(
+        slots: [UInt64], isFooter: Bool, contentWidth: Int, pageNumberFormat: inout String?
+    ) -> HeaderFooterText? {
         let alignments: [ParagraphAlignment] = [.leading, .center, .trailing]
         var parts: [(slot: Int, alignment: ParagraphAlignment, text: String)] = []
         var format: RunFormat?
@@ -1261,7 +1309,7 @@ struct PagesConverter {
                 guard let field = archive[object], field.type == PagesReader.Types.pageNumber,
                       field.message.message(1)?.uint(2) != 1,
                       let format = field.message.string(4).flatMap(Self.pageNumberFormat) else { continue }
-                document.pageSetup.pageNumberFormat = format
+                pageNumberFormat = format
             }
             let styleID = AttributeTable(storage.message.message(5)).inheritedObject(at: 0)
             let own = styleID.flatMap { paragraphStyle($0).0.alignment }
