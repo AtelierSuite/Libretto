@@ -1017,6 +1017,12 @@ struct PagesConverter {
             guard let storage = archive[identifier], storage.type == PagesReader.Types.storage else { continue }
             let text = plainText(of: storage.message)
             guard !text.isEmpty else { continue }
+            for object in AttributeTable(storage.message.message(9)).objects {
+                guard let field = archive[object], field.type == PagesReader.Types.pageNumber,
+                      field.message.message(1)?.uint(2) != 1,
+                      let format = field.message.string(4).flatMap(Self.pageNumberFormat) else { continue }
+                document.pageSetup.pageNumberFormat = format
+            }
             let styleID = AttributeTable(storage.message.message(5)).inheritedObject(at: 0)
             let own = styleID.flatMap { paragraphStyle($0).0.alignment }
             switch own {
@@ -1036,6 +1042,18 @@ struct PagesConverter {
     }
 
     // MARK: Helpers
+
+    /// The list format Word numbers pages in for a page number's format in
+    /// Pages; `nil` for 1, 2, 3.
+    static func pageNumberFormat(_ format: String) -> String? {
+        switch format {
+        case "lower-roman": "lowerRoman"
+        case "upper-roman": "upperRoman"
+        case "lower-alpha": "lowerLetter"
+        case "upper-alpha": "upperLetter"
+        default: nil
+        }
+    }
 
     /// Six-digit RGB for a `TSP.Color`.
     static func hex(_ color: ProtoMessage) -> String? {
@@ -1099,6 +1117,9 @@ private struct AttributeTable {
     init(_ message: ProtoMessage?) {
         entries = (message?.messages(1) ?? []).map { (Int($0.uint(1)), $0.reference(2)) }
     }
+
+    /// Every object the table refers to, in order.
+    var objects: [UInt64] { entries.compactMap(\.object) }
 
     /// The object in effect at `index`; an entry with none means none.
     func object(at index: Int) -> UInt64? {

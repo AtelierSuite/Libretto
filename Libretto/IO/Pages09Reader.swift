@@ -777,6 +777,10 @@ private struct Pages09Converter {
                 guard kind == .default, let storage = part.first("text-storage") else { continue }
                 let text = plainText(storage)
                 guard !text.isEmpty else { continue }
+                for number in storage.descendants(where: { $0.name == "page-number" }) {
+                    guard let format = number.attributes["format"].flatMap(PagesConverter.pageNumberFormat) else { continue }
+                    document.pageSetup.pageNumberFormat = format
+                }
                 let firstParagraph = storage.descendants { $0.name == "p" }.first
                 var alignment: Int?
                 if let style = firstParagraph?.attributes["style"].flatMap(styleNode) { alignment = paragraphStyle(style).0.alignment }

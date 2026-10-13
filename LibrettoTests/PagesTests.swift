@@ -208,6 +208,21 @@ struct PagesTests {
         #expect(Self.fields.footer?.text == "Page {PAGE} of {NUMPAGES}")
     }
 
+    /// `Formats.pages`: Pages made it from a Word document with a table and
+    /// a footer numbering pages in capital roman numerals, then gave the
+    /// table's columns number, currency and percentage formats and formulas,
+    /// its header row a fill and white text, and one cell Georgia.
+    private static let formats = try! PagesReader.document(from: Data(
+        contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Formats.pages")
+    ))
+
+    @Test("A page number's format becomes the section's")
+    func pageNumberFormat() {
+        #expect(Self.formats.footer?.text == "Page {PAGE}")
+        #expect(Self.formats.pageSetup.pageNumberFormat == "upperRoman")
+        #expect(Self.fields.pageSetup.pageNumberFormat == nil)
+    }
+
     @Test("Merged cells span their columns and rows")
     func mergedCells() throws {
         let table = try #require(Self.fields.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)

@@ -170,6 +170,18 @@ struct Pages09Tests {
         #expect(unstyled.styles.styles["Normal"]?.runStyle.fontSize == 24)
     }
 
+    /// `Formats09.pages`: `Formats.pages` as Pages exported it for Pages '09.
+    private static let formats = try! PagesReader.document(from: Data(
+        contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Formats09.pages")
+    ))
+
+    @Test("A page number's format becomes the section's")
+    func pageNumberFormat() {
+        #expect(Self.formats.footer?.text == "Page {PAGE}")
+        #expect(Self.formats.pageSetup.pageNumberFormat == "upperRoman")
+        #expect(Self.document.pageSetup.pageNumberFormat == nil)
+    }
+
     @Test("A package's gzipped index reads the same")
     func package() throws {
         let document = try PagesReader.document(fromFiles: ["index.xml.gz": Self.gzip(Data(Self.index.utf8))])
