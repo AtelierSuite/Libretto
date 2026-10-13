@@ -801,7 +801,7 @@ private struct Pages09Converter {
         case "null": return .null
         case "number": return content.attributes["number"].flatMap(Self.measure).map(Value.number)
         case "string": return .string(content.attributes["string"] ?? "")
-        case "color": return .color(Self.hex(content))
+        case "color": return .color(color(content))
         case "linespacing":
             // Pages writes the amount as `sf:amt`.
             guard let amount = (content.attributes["amt"] ?? content.attributes["amount"]).flatMap(Self.measure) else {
@@ -922,6 +922,22 @@ private struct Pages09Converter {
         guard case .number(let type) = inheritedValue("outlineStyleType", from: style), type != 0,
               case .number(let level) = inheritedValue("outlineLevel", from: style), level >= 0, level < 9 else { return nil }
         return Int(level)
+    }
+
+    /// Colours already converted, by their attributes.
+    private final class ColorCache {
+        var hexes: [String: String?] = [:]
+    }
+
+    private let colors = ColorCache()
+
+    /// `hex(_:)` for an `sf:color`, converted once for each colour the document uses.
+    private func color(_ node: Node) -> String? {
+        let key = ["type", "r", "g", "b", "w", "a"].map { node.attributes[$0] ?? "" }.joined(separator: " ")
+        if let known = colors.hexes[key] { return known }
+        let hex = Self.hex(node)
+        colors.hexes[key] = .some(hex)
+        return hex
     }
 
     /// Six-digit sRGB for an `sf:color`, RGB or grey; `nil` for one that is transparent.
