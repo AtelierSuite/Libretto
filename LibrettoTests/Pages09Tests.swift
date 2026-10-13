@@ -641,6 +641,23 @@ struct Pages09Tests {
         }
     }
 
+    @Test("A password-protected package saved as a folder is recognised by its encrypted files")
+    func passwordProtectedFolder() {
+        // As the ZIP `Locked09.pages` holds them, but in a folder, where nothing marks them encrypted.
+        let encrypted = Data((0..<256).map { UInt8(($0 * 167 + 89) & 0xFF) })
+        #expect {
+            try PagesReader.document(fromFiles: ["index.xml.gz": encrypted, "buildVersionHistory.plist": Data(encrypted.reversed())])
+        } throws: { error in
+            if case IWorkError.passwordProtected = error { true } else { false }
+        }
+        // A damaged index beside a readable history is damaged, not protected.
+        #expect {
+            try PagesReader.document(fromFiles: ["index.xml.gz": encrypted, "buildVersionHistory.plist": Data("<?xml".utf8)])
+        } throws: { error in
+            if case IWorkError.corrupt = error { true } else { false }
+        }
+    }
+
     /// A gzip member holding `data` in one stored DEFLATE block.
     private static func gzip(_ data: Data) -> Data {
         var output = Data([0x1F, 0x8B, 8, 0, 0, 0, 0, 0, 0, 0xFF, 0x01])

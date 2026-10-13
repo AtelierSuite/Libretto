@@ -12,10 +12,29 @@ import Foundation
 enum Pages09Reader {
     /// The document's XML, if the package is one of these.
     static func index(in files: [String: Data]) throws -> Data? {
-        if let index = files["index.xml"] { return index }
+        if let index = files["index.xml"] {
+            if isEncrypted(index, files: files) { throw IWorkError.passwordProtected }
+            return index
+        }
         guard let compressed = files["index.xml.gz"] else { return nil }
-        guard let index = gunzip(compressed) else { throw IWorkError.corrupt("index.xml.gz") }
+        guard let index = gunzip(compressed) else {
+            if isEncrypted(compressed, files: files) { throw IWorkError.passwordProtected }
+            throw IWorkError.corrupt("index.xml.gz")
+        }
         return index
+    }
+
+    /// Whether an index is encrypted, as a password-protected package's
+    /// files are: neither XML nor gzip, and the build history alongside it
+    /// no property list either.
+    private static func isEncrypted(_ index: Data, files: [String: Data]) -> Bool {
+        guard let history = files["buildVersionHistory.plist"] else { return false }
+        func starts(_ data: Data, with prefixes: [String]) -> Bool {
+            let head = data.prefix(16)
+            return prefixes.contains { head.starts(with: Data($0.utf8)) }
+        }
+        let isIndex = starts(index, with: ["<", "\u{FEFF}", " ", "\n", "\r", "\t"]) || index.prefix(2) == Data([0x1F, 0x8B])
+        return !isIndex && !starts(history, with: ["<", "bplist", "\u{FEFF}", " ", "\n"])
     }
 
     static func document(fromIndex index: Data, files: [String: Data]) throws -> WordDocument {
