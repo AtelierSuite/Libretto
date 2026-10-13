@@ -558,12 +558,17 @@ private struct Pages09Converter {
             while blocks.count > 1, case .paragraph(let last) = blocks.last, last.inlines.isEmpty { blocks.removeLast() }
             if !blocks.isEmpty { return blocks }
         }
+        let style = cell.attributes["s"].flatMap(styleNode)
+        let format = style.flatMap(numberFormat)
+        func number(_ value: String) -> String? {
+            Double(value).map { format?.text($0, locale: Self.locale) ?? PagesConverter.numberText($0) }
+        }
         let text: String?
         switch cell.name {
         case "t":
             text = cell.first("ct")?.attributes["s"]
         case "n":
-            text = cell.attributes["v"].flatMap(Double.init).map(PagesConverter.numberText)
+            text = cell.attributes["v"].flatMap(number)
         case "b":
             text = cell.attributes["v"].map { $0 == "1" || $0 == "true" ? "TRUE" : "FALSE" }
         case "d":
@@ -573,10 +578,30 @@ private struct Pages09Converter {
         default:
             // A formula's result, or nothing, for a cell that is empty or covered.
             let result = cell.descendants { $0.attributes["v"] != nil || $0.attributes["s"] != nil }.first
-            text = result.flatMap { $0.attributes["v"].map { Double($0).map(PagesConverter.numberText) ?? $0 } ?? $0.attributes["s"] }
+            text = result.flatMap { $0.attributes["v"].map { number($0) ?? $0 } ?? $0.attributes["s"] }
         }
         guard let text, !text.isEmpty else { return [] }
         return [.paragraph(Paragraph(text: text))]
+    }
+
+    /// Pages '09 keeps no language for the document; numbers are written as in the US.
+    private static let locale = Locale(identifier: "en_US")
+
+    /// The format a cell style shows numbers in, which Pages applies with
+    /// the places it gives; `nil` for none.
+    private func numberFormat(_ style: Node) -> PagesNumberFormat? {
+        guard case .number(let type) = inheritedValue("SFTCellStylePropertyFormatType", from: style) else { return nil }
+        var format = PagesNumberFormat(kind: PagesNumberFormat.kind(Int(type)))
+        guard format.kind != .automatic else { return nil }
+        if case .node(let node) = inheritedValue("SFTCellStylePropertyNumberFormat", from: style) {
+            let attributes = node.attributes
+            format.decimalPlaces = attributes["format-decimal-places"].flatMap(Int.init)
+            format.currencyCode = attributes["format-currency-code"]
+            format.showsThousandsSeparator = attributes["format-show-thousands-separator"] == "true"
+            format.bracketsNegatives = ["2", "3"].contains(attributes["format-negative-style"])
+            format.isAccounting = attributes["format-use-accounting-style"] == "true"
+        }
+        return format
     }
 
     // MARK: Styles

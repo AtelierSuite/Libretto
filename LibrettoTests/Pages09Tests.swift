@@ -189,6 +189,18 @@ struct Pages09Tests {
         #expect(table.rows[0].cells.allSatisfy { $0.blocks.count == 1 })
     }
 
+    @Test("Numbers show in their cells' formats, formulas their results")
+    func numberFormats() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        // Pages shows a Pages '09 format with the places it gives, as here.
+        #expect(table.rows.map { $0.cells.map(\.plainText) } == [
+            ["Item", "Number", "Currency", "Percent", "Sum"],
+            ["A", "1234.5", "$1234.50", "25.00%", "2469.0"],
+            ["B", "98765.0", "$99.00", "12.50%", "98864.0"],
+            ["Total", "99999.5", "$1333.50", "37.50%", "101333.0"],
+        ])
+    }
+
     @Test("A package's gzipped index reads the same")
     func package() throws {
         let document = try PagesReader.document(fromFiles: ["index.xml.gz": Self.gzip(Data(Self.index.utf8))])
