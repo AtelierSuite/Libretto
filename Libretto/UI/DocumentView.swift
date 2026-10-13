@@ -12,6 +12,11 @@ struct DocumentView: View {
     @State private var photo: PhotosPickerItem?
     /// Whether the document is being saved as a copy somewhere the user picks.
     @State private var isSavingCopy = false
+    /// The document as it was opened or last saved as a copy, for a document
+    /// that cannot be saved where it is. `nil` for one that saves itself.
+    @State private var keptDocument: WordDocument?
+    /// Whether there are changes that only a copy would keep.
+    @State private var hasUnsavedChanges = false
     /// The mode this window was last in, so it comes back the same way.
     @SceneStorage("viewMode") private var storedMode: String?
     @Environment(\.undoManager) private var undoManager
@@ -52,11 +57,13 @@ struct DocumentView: View {
                     state.viewMode = horizontalSizeClass == .compact ? .mobile : .page
                 }
                 attachHistory()
+                if keptDocument == nil, document.document.importedFormat != nil { keptDocument = document.document }
             }
             .onChange(of: undoManager) { _, _ in attachHistory() }
             .onChange(of: document.document) { old, new in
                 history.record(from: old, to: new, scope: state.pendingScope)
                 state.pendingScope = .other
+                if let keptDocument { hasUnsavedChanges = new != keptDocument }
             }
             .toolbar { navigationToolbar }
             .sheet(item: $state.presentedPanel) { panel in
@@ -93,8 +100,14 @@ struct DocumentView: View {
                 isPresented: $isSavingCopy, document: document, contentType: .openXMLDocument,
                 defaultFilename: export.name
             ) { result in
-                if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled {
-                    state.errorMessage = error.localizedDescription
+                switch result {
+                case .success:
+                    if keptDocument != nil {
+                        keptDocument = document.document
+                        hasUnsavedChanges = false
+                    }
+                case .failure(let error):
+                    if (error as? CocoaError)?.code != .userCancelled { state.errorMessage = error.localizedDescription }
                 }
             }
             .photosPicker(isPresented: $state.isPickingPhoto, selection: $photo, matching: .images)
@@ -305,12 +318,23 @@ struct DocumentView: View {
     }
 
     /// Says a converted document cannot be saved where it came from, and
-    /// offers the way to keep what is done to it.
+    /// offers the way to keep what is done to it. Once it has been changed,
+    /// says those changes are not saved, as nothing else will.
     private var importedNotice: some View {
         HStack(spacing: 12) {
-            Label("Notice.Imported.Message", systemImage: "lock.doc")
+            Group {
+                if hasUnsavedChanges {
+                    Label {
+                        Text("Notice.Imported.Unsaved").foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                } else {
+                    Label("Notice.Imported.Message", systemImage: "lock.doc")
+                        .foregroundStyle(.secondary)
+                }
+            }
                 .font(.footnote)
-                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button("Notice.Imported.Save") { isSavingCopy = true }

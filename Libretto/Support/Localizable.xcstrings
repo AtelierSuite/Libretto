@@ -7841,6 +7841,41 @@
         }
       }
     },
+    "Notice.Imported.Unsaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your changes aren’t saved. Save a copy as a Word document to keep them."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更は保存されていません。変更を残すには、Word書類としてコピーを保存してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경 사항이 저장되지 않았습니다. 변경 사항을 유지하려면 Word 문서로 사본을 저장하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改尚未存储。若要保留更改，请将副本存储为 Word 文稿。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "變更尚未儲存。若要保留變更，請將副本儲存為 Word 文件。"
+          }
+        }
+      }
+    },
     "Notice.UnsupportedFeatures.ImportedMessage": {
       "extractionState": "manual",
       "localizations": {
