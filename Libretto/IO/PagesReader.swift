@@ -381,6 +381,8 @@ struct PagesConverter {
 
     private var paragraphStyles: [UInt64: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [UInt64: PagesCharacterProperties] = [:]
+    /// The format of text in a paragraph style and a character style, by their identifiers.
+    private var runFormats: [[UInt64?]: RunFormat] = [:]
     /// The list each list style became, by the list style's identifier; `nil` for no list.
     private var lists: [UInt64: Int?] = [:]
     /// The link each hyperlink field became, by its identifier; `nil` for none.
@@ -561,9 +563,15 @@ struct PagesConverter {
             }
             for index in start..<end {
                 let unit = text[index]
-                var characters = PagesCharacterProperties()
-                if let styleID = characterStyles.object(at: index) { characters = characterStyle(styleID) }
-                let format = RunFormat(style: baseCharacters.overlaid(with: characters).runStyle)
+                let characterStyleID = characterStyles.object(at: index)
+                let format: RunFormat
+                if let known = runFormats[[styleID, characterStyleID]] {
+                    format = known
+                } else {
+                    let characters = characterStyleID.map { characterStyle($0) } ?? PagesCharacterProperties()
+                    format = RunFormat(style: baseCharacters.overlaid(with: characters).runStyle)
+                    runFormats[[styleID, characterStyleID]] = format
+                }
                 let link = smartFields.object(at: index).flatMap { hyperlink($0) }
                 if format != pendingFormat || link != pendingLink { flush(); pendingFormat = format; pendingLink = link }
                 switch unit {
@@ -1203,14 +1211,9 @@ struct PagesConverter {
         return components.map { String(format: "%02X", Int((min(max($0, 0), 1) * 255).rounded())) }.joined()
     }
 
-    /// A font's family name, as Word names fonts, from the PostScript name Pages records.
     /// Whether the typeface a PostScript name names is bold or italic.
     static func fontTraits(_ postScriptName: String) -> (isBold: Bool, isItalic: Bool) {
-        let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
-        if CTFontCopyPostScriptName(font) as String == postScriptName {
-            let traits = CTFontGetSymbolicTraits(font)
-            return (traits.contains(.traitBold), traits.contains(.traitItalic))
-        }
+        if let font = PagesFontCache.shared.installed(postScriptName) { return (font.isBold, font.isItalic) }
         // Not installed: go by the style the name ends with.
         guard let dash = postScriptName.lastIndex(of: "-") else { return (false, false) }
         let style = postScriptName[postScriptName.index(after: dash)...].lowercased()
@@ -1220,11 +1223,9 @@ struct PagesConverter {
         )
     }
 
+    /// A font's family name, as Word names fonts, from the PostScript name Pages records.
     static func familyName(_ postScriptName: String) -> String {
-        let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
-        if CTFontCopyPostScriptName(font) as String == postScriptName {
-            return CTFontCopyFamilyName(font) as String
-        }
+        if let font = PagesFontCache.shared.installed(postScriptName) { return font.family }
         // Not installed: take the name apart as PostScript names are usually put together.
         var family = postScriptName.split(separator: "-").first.map(String.init) ?? postScriptName
         for suffix in ["PSMT", "MT", "PS"] where family.hasSuffix(suffix) && family.count > suffix.count {
@@ -1237,6 +1238,29 @@ struct PagesConverter {
             spaced.append(character)
         }
         return spaced
+    }
+}
+
+/// What the installed fonts are, by PostScript name, as looking a font up
+/// for every run of text is slow.
+private final class PagesFontCache: @unchecked Sendable {
+    static let shared = PagesFontCache()
+    private let lock = NSLock()
+    private var fonts: [String: (family: String, isBold: Bool, isItalic: Bool)?] = [:]
+
+    /// The family and traits of the font a PostScript name names; `nil` if it is not installed.
+    func installed(_ postScriptName: String) -> (family: String, isBold: Bool, isItalic: Bool)? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let known = fonts[postScriptName] { return known }
+        let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
+        var result: (family: String, isBold: Bool, isItalic: Bool)?
+        if CTFontCopyPostScriptName(font) as String == postScriptName {
+            let traits = CTFontGetSymbolicTraits(font)
+            result = (CTFontCopyFamilyName(font) as String, traits.contains(.traitBold), traits.contains(.traitItalic))
+        }
+        fonts[postScriptName] = .some(result)
+        return result
     }
 }
 
