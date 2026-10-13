@@ -164,8 +164,9 @@ private struct Pages09Converter {
     private var lists: [ObjectIdentifier: Int?] = [:]
     private var bodyStyles = PagesStyleTally<ObjectIdentifier?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
-    /// The text of the body's footnotes not yet referred to, in order.
+    /// The text of the body's footnotes, in order, and the next not yet referred to.
     private var footnotes: [String] = []
+    private var nextFootnote = 0
     /// Tables set in the paragraph being read, which follow it.
     private var pendingTables: [Table] = []
     /// Formatters for the date formats cells are shown in, by format.
@@ -405,7 +406,10 @@ private struct Pages09Converter {
                 case "footnote":
                     // The text is the reference's own, or the next of the body's footnotes.
                     var text = plainText(element)
-                    if text.isEmpty, !footnotes.isEmpty { text = footnotes.removeFirst() }
+                    if text.isEmpty, nextFootnote < footnotes.count {
+                        text = footnotes[nextFootnote]
+                        nextFootnote += 1
+                    }
                     guard !text.isEmpty else { continue }
                     let id = document.unusedNoteID(.footnote)
                     document.notes.append(Note(kind: .footnote, id: id, text: text))
