@@ -30,8 +30,12 @@ struct WordDocument: Equatable, Sendable {
     var trackRevisions = false
     var originalTrackRevisions = false
     /// Footnotes and endnotes, from their parts, separators left out; and as read.
-    var notes: [Note] = []
+    var notes: [Note] = [] {
+        didSet { noteIDs.update(for: notes) }
+    }
     var originalNotes: [Note] = []
+    /// The highest note IDs in use, kept as notes are added rather than found afresh each time.
+    private var noteIDs = NoteIDs()
     /// How footnotes and endnotes are numbered, from the settings' `w:footnotePr` and `w:endnotePr`.
     var footnoteFormat = "decimal"
     var endnoteFormat = "lowerRoman"
@@ -895,8 +899,29 @@ struct Note: Equatable, Sendable, Identifiable {
 extension WordDocument {
     /// A note ID of `kind` not yet in use.
     func unusedNoteID(_ kind: NoteKind) -> String {
-        String(max(0, notes.filter { $0.kind == kind }.compactMap { Int($0.id) }.max() ?? 0) + 1)
+        String(noteIDs.highest[kind, default: 0] + 1)
     }
+}
+
+/// The highest numeric ID of each kind of note, counted once and then only
+/// for the notes appended since. Not part of a document's equality.
+private struct NoteIDs: Equatable, Sendable {
+    private(set) var highest: [NoteKind: Int] = [:]
+    private var count = 0
+    private var lastKey: String?
+
+    mutating func update(for notes: [Note]) {
+        // Appending leaves the notes already counted where they were; anything else counts them all again.
+        let appended = notes.count > count && (count == 0 || notes[count - 1].key == lastKey)
+        if !appended { self = NoteIDs() }
+        for note in notes[count...] {
+            if let id = Int(note.id) { highest[note.kind] = max(highest[note.kind, default: 0], id) }
+        }
+        count = notes.count
+        lastKey = notes.last?.key
+    }
+
+    static func == (_: NoteIDs, _: NoteIDs) -> Bool { true }
 }
 
 /// Numbers notes as Word does: footnotes and endnotes each counted from one,

@@ -18,6 +18,25 @@ struct NoteTests {
         return (controller, { latest })
     }
 
+    @Test("A new note's ID follows the highest of its kind, however the notes changed")
+    func unusedIDs() {
+        var document = WordDocument()
+        #expect(document.unusedNoteID(.footnote) == "1")
+        document.notes += [Note(kind: .footnote, id: "2", text: ""), Note(kind: .endnote, id: "7", text: "")]
+        document.notes.append(Note(kind: .footnote, id: "5", text: ""))
+        #expect(document.unusedNoteID(.footnote) == "6")
+        #expect(document.unusedNoteID(.endnote) == "8")
+        document.notes.removeAll { $0.id == "5" }
+        #expect(document.unusedNoteID(.footnote) == "3")
+        document.notes.insert(Note(kind: .footnote, id: "9", text: ""), at: 0)
+        #expect(document.unusedNoteID(.footnote) == "10")
+        document.notes[0].id = "4"
+        #expect(document.unusedNoteID(.footnote) == "5")
+        document.notes = [Note(kind: .footnote, id: "x", text: "")]
+        #expect(document.unusedNoteID(.footnote) == "1")
+        #expect(document.unusedNoteID(.endnote) == "1")
+    }
+
     @Test("Notes in a file are read, numbered in the order the text refers to them")
     func reads() throws {
         var parts = Fixtures.parts(body: """
