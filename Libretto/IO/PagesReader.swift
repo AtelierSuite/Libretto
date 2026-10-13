@@ -1125,6 +1125,8 @@ struct PagesConverter {
             }
         case 6:
             text = (value.double ?? value.decimal).map { $0 != 0 ? "TRUE" : "FALSE" }
+        case 7:
+            text = (value.double ?? value.seconds ?? value.decimal).map(Self.durationText)
         default:
             text = nil
         }
@@ -1179,6 +1181,24 @@ struct PagesConverter {
         }
         cellFills[identifier] = .some(fill)
         return fill
+    }
+
+    /// A duration, kept in seconds, as Pages shows one by default: each unit
+    /// from weeks to seconds it has, such as 1h 30m.
+    static func durationText(_ seconds: Double) -> String {
+        guard seconds.isFinite, abs(seconds) < 1e15 else { return numberText(seconds) }
+        let units: [(String, Double)] = [("w", 604_800), ("d", 86400), ("h", 3600), ("m", 60)]
+        var remaining = abs(seconds)
+        var parts: [String] = []
+        for (name, length) in units where remaining >= length {
+            let count = (remaining / length).rounded(.down)
+            parts.append(numberText(count) + name)
+            remaining -= count * length
+        }
+        // Seconds to the thousandth, as Pages keeps them.
+        remaining = (remaining * 1000).rounded() / 1000
+        if remaining > 0 || parts.isEmpty { parts.append(numberText(remaining) + "s") }
+        return (seconds < 0 ? "-" : "") + parts.joined(separator: " ")
     }
 
     /// A number as Pages shows it with no format: as many places as it has.

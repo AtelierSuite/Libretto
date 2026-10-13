@@ -281,6 +281,15 @@ struct PagesTests {
         #expect(PagesConverter.dateText(midnight, pattern: "d MMMM y", locale: locale, formatters: &formatters) == "1 January 2024")
     }
 
+    @Test("Durations show each unit they have")
+    func durations() {
+        #expect(PagesConverter.durationText(5400) == "1h 30m")
+        #expect(PagesConverter.durationText(90061) == "1d 1h 1m 1s")
+        #expect(PagesConverter.durationText(1_209_600) == "2w")
+        #expect(PagesConverter.durationText(0) == "0s")
+        #expect(PagesConverter.durationText(-2.5) == "-2.5s")
+    }
+
     @Test("Merged cells span their columns and rows")
     func mergedCells() throws {
         let table = try #require(Self.fields.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
