@@ -503,6 +503,23 @@ struct Pages09Tests {
         #expect(document.allParagraphs.map(\.properties.borders) == [ParagraphBorders(top: line), nil])
     }
 
+    @Test("The body's layout sets the page's text columns")
+    func columns() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles><sf:layoutstyle sf:ident="two"><sf:property-map><sf:columns>\
+            <sf:columns sf:equal-columns="true"><sf:column sf:index="0" sf:width="200" sf:spacing="18"/>\
+            <sf:column sf:index="1" sf:width="200"/></sf:columns></sf:columns></sf:property-map></sf:layoutstyle>\
+            </sf:styles></sl:stylesheet><sf:text-storage sf:kind="body"><sf:text-body><sf:section><sf:layout sf:style="two">\
+            <sf:p>Text</sf:p></sf:layout></sf:section></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.pageSetup.columns == 2)
+        #expect(document.pageSetup.columnSpacing == 360)
+        #expect(Self.formats.pageSetup.columns == 1)
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)

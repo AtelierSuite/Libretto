@@ -198,6 +198,7 @@ private struct Pages09Converter {
 
     mutating func convert() -> WordDocument {
         readPageSetup()
+        readColumns()
         var blocks: [Block] = []
         if let notes = root.first("text-storage")?.first("footnotes")?.first("text-storage")?.first("text-body") {
             footnotes = footnoteTexts(notes)
@@ -298,6 +299,21 @@ private struct Pages09Converter {
             setup.footerDistance = twips(margins["footer"]) ?? setup.footerDistance
         }
         document.pageSetup = setup
+    }
+
+    /// The text columns of the body's first layout, from its layout style's
+    /// `sf:columns`: one `sf:column` for each, with the space after it.
+    private mutating func readColumns() {
+        guard let layout = root.first("text-storage")?.first("text-body")?.descendants(where: { $0.name == "layout" }).first,
+              let style = layout.attributes["style"].flatMap(styleNode),
+              case .node(let columns) = inheritedValue("columns", from: style) else { return }
+        let each = columns.descendants { $0.name == "column" }
+        let count = columns.attributes["count"].flatMap(Int.init) ?? each.count
+        guard count > 1, count <= 45 else { return }
+        document.pageSetup.columns = count
+        if let spacing = each.first?.attributes["spacing"].flatMap(Self.measure), spacing >= 0 {
+            document.pageSetup.columnSpacing = Int((spacing * 20).rounded())
+        }
     }
 
     // MARK: Text
