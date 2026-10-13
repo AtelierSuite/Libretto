@@ -67,7 +67,8 @@ enum Pages09Reader {
         }
 
         func first(_ name: String) -> Node? {
-            elements.first { $0.name == name }
+            for case .element(let node) in children where node.name == name { return node }
+            return nil
         }
 
         /// Every element below this one, depth first, in document order.
