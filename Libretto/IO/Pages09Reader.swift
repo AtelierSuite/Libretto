@@ -323,10 +323,22 @@ private struct Pages09Converter {
         let listStyle = style.flatMap { inheritedValue("listStyle", from: $0) }.flatMap { value -> Node? in
             if case .node(let node) = value { node } else { nil }
         }
-        let numberingID = listStyle.flatMap { list(for: $0) }
-        if let numberingID {
-            let level = node.attributes["list-level"].flatMap(Int.init).map { max($0, 1) - 1 } ?? 0
-            paragraph.properties.list = ListReference(numberingID: numberingID, level: min(level, 8))
+        var numberingID = listStyle.flatMap { list(for: $0) }
+        if let listStyle, let listID = numberingID {
+            let level = min(node.attributes["list-level"].flatMap(Int.init).map { max($0, 1) - 1 } ?? 0, 8)
+            // A list started over numbers from where the paragraph's style says, or else its level's first
+            // number, and the paragraphs after it in the list carry on from there.
+            if node.attributes["restart-list"] == "true" {
+                var start = document.numbering.level(level, of: listID)?.start ?? 1
+                if let style, case .number(let first) = inheritedValue("firstTopicNumber", from: style) {
+                    start = min(max(Int(first), 0), 32767)
+                }
+                if let restarted = document.numbering.restartList(listID, level: level, at: start) {
+                    lists[ObjectIdentifier(listStyle)] = restarted
+                    numberingID = restarted
+                }
+            }
+            paragraph.properties.list = ListReference(numberingID: numberingID ?? listID, level: level)
             paragraph.properties.indentLeft = nil
             paragraph.properties.indentFirstLine = nil
         }
@@ -920,7 +932,9 @@ private struct Pages09Converter {
             if isNumbered(label), let text = label?.first("text-label") {
                 let format = formats[numbered.firstIndex(of: text.attributes["type"]!)!]
                 let pattern = (text.attributes["format"] ?? "%L.").replacingOccurrences(of: "%L", with: "%\(level + 1)")
-                return (level, NumberingDefinitions.ListLevel(format: format, text: pattern, indentLeft: indent, hanging: 360))
+                var listLevel = NumberingDefinitions.ListLevel(format: format, text: pattern, indentLeft: indent, hanging: 360)
+                if let first = text.attributes["first"].flatMap(Int.init), (0...32767).contains(first) { listLevel.start = first }
+                return (level, listLevel)
             }
             let bullet = label?.first("text-label")?.attributes["format"].flatMap { $0.isEmpty || $0.contains("%") ? nil : $0 }
                 ?? standardBullets[level % 3]

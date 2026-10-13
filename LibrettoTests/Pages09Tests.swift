@@ -370,6 +370,34 @@ struct Pages09Tests {
         #expect(!document.unsupportedFeatures.features.contains(.shapes))
     }
 
+    @Test("A list numbers from its first number, and starts over where a paragraph restarts it")
+    func listStart() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles>\
+            <sf:liststyle sf:ident="numbered" sfa:ID="L"><sf:property-map><sf:listLabelTypes><sf:array>\
+            <sf:list-label-typeinfo sf:type="text"><sf:text-label sf:type="decimal" sf:format="%L." sf:first="5"/>\
+            </sf:list-label-typeinfo></sf:array></sf:listLabelTypes></sf:property-map></sf:liststyle>\
+            <sf:paragraphstyle sf:ident="item"><sf:property-map><sf:listStyle><sf:liststyle-ref sfa:IDREF="L"/></sf:listStyle>\
+            </sf:property-map></sf:paragraphstyle>\
+            <sf:paragraphstyle sf:ident="from-three" sf:parent-ident="item"><sf:property-map>\
+            <sf:firstTopicNumber><sf:number sfa:number="3"/></sf:firstTopicNumber></sf:property-map></sf:paragraphstyle>\
+            </sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:p sf:style="item">One</sf:p><sf:p sf:style="item">Two</sf:p>\
+            <sf:p sf:style="from-three" sf:restart-list="true">Three</sf:p><sf:p sf:style="item">Four</sf:p>\
+            </sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        let ids = document.allParagraphs.compactMap(\.properties.list?.numberingID)
+        #expect(ids.count == 4)
+        #expect(document.numbering.level(0, of: ids[0])?.start == 5)
+        #expect(ids[0] == ids[1])
+        #expect(ids[2] != ids[1])
+        #expect(ids[3] == ids[2])
+        #expect(document.numbering.overrides[ids[2]] == [0: 3])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
