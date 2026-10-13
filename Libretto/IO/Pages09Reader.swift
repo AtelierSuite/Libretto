@@ -713,6 +713,7 @@ private struct Pages09Converter {
             paragraph = paragraph.overlaid(with: paragraphProperties(node))
             characters = characters.overlaid(with: characterProperties(node))
         }
+        paragraph.outlineLevel = .some(headingLevel(style))
         paragraphStyles[key] = (paragraph, characters)
         return (paragraph, characters)
     }
@@ -771,10 +772,25 @@ private struct Pages09Converter {
         case .some(.null): properties.fillHex = .some(nil)
         default: break
         }
-        if let level = number("outlineLevel", in: style) {
-            properties.outlineLevel = .some(level >= 0 && level < 9 ? Int(level) : nil)
-        }
         return properties
+    }
+
+    /// The heading level a paragraph style sets text at, zero for the top;
+    /// `nil` for text that is not a heading. Pages '09 gives captions,
+    /// labels and table cells an outline level too, and its own headings
+    /// levels that need not match their names, so a heading is a style named
+    /// "Heading" and a number, or first so named, or one with an outline style.
+    private func headingLevel(_ style: Node) -> Int? {
+        for node in chain(style).reversed() {
+            for label in [node.attributes["name"], node.attributes["ident"]].compactMap({ $0 }) {
+                guard let last = label.last, let number = last.wholeNumberValue, (1...9).contains(number),
+                      label.dropLast().hasSuffix("Heading ") else { continue }
+                return number - 1
+            }
+        }
+        guard case .number(let type) = inheritedValue("outlineStyleType", from: style), type != 0,
+              case .number(let level) = inheritedValue("outlineLevel", from: style), level >= 0, level < 9 else { return nil }
+        return Int(level)
     }
 
     /// Six-digit sRGB for an `sf:color`, RGB or grey; `nil` for one that is transparent.

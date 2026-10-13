@@ -222,6 +222,34 @@ struct Pages09Tests {
         #expect(document.headerFooters.count == 3)
     }
 
+    @Test("Headings are the styles named so, whatever outline level Pages gives them or captions")
+    func headings() throws {
+        // As in `Formats09.pages`: a caption at outline level 0, Heading 3 at 0 too, and Heading 1 renamed.
+        func style(_ ident: String, _ name: String, level: Int?, outlined: Bool = false) -> String {
+            let outline = level.map { "<sf:outlineLevel><sf:number sfa:number=\"\($0)\"/></sf:outlineLevel>" } ?? ""
+            let type = outlined ? "<sf:outlineStyleType><sf:number sfa:number=\"2\"/></sf:outlineStyleType>" : ""
+            return """
+                <sf:paragraphstyle sf:ident="\(ident)" sf:name="\(name)"><sf:property-map>\(outline)\(type)\
+                </sf:property-map></sf:paragraphstyle>
+                """
+        }
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles>\(style("text-25-paragraphstyle", "Caption", level: 0))\
+            \(style("text-11-paragraphstyle-Heading 1", "Heading", level: 0, outlined: true))\
+            \(style("text-13-paragraphstyle-Heading 3", "Heading 3", level: 0, outlined: true))\
+            \(style("custom", "Chapter", level: 1, outlined: true))</sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:p sf:style="text-25-paragraphstyle">Figure 1</sf:p>\
+            <sf:p sf:style="text-11-paragraphstyle-Heading 1">Title</sf:p>\
+            <sf:p sf:style="text-13-paragraphstyle-Heading 3">Detail</sf:p>\
+            <sf:p sf:style="custom">Chapter</sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.allParagraphs.map(\.properties.outlineLevel) == [nil, 0, 2, 1])
+        #expect(document.allParagraphs.map(\.properties.styleID) == [nil, "Heading1", "Heading3", "Heading2"])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
