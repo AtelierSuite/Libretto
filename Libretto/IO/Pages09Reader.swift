@@ -165,6 +165,8 @@ private struct Pages09Converter {
     private var footnotes: [String] = []
     /// Tables set in the paragraph being read, which follow it.
     private var pendingTables: [Table] = []
+    /// Formatters for the date formats cells are shown in, by format.
+    private var dateFormatters: [String: DateFormatter] = [:]
 
     init(root: Node, files: [String: Data]) {
         self.root = root
@@ -588,9 +590,7 @@ private struct Pages09Converter {
         case "b":
             text = cell.attributes["v"].map { $0 == "1" || $0 == "true" ? "TRUE" : "FALSE" }
         case "d":
-            text = cell.attributes["cell-date"].map { value in
-                (try? Date(value, strategy: .iso8601)).map { $0.formatted(date: .numeric, time: .omitted) } ?? value
-            }
+            text = cell.attributes["cell-date"].map { value in Self.date(value).map { dateText($0, style: style) } ?? value }
         default:
             // A formula's result, or nothing, for a cell that is empty or covered.
             let result = cell.descendants { $0.attributes["v"] != nil || $0.attributes["s"] != nil }.first
@@ -624,6 +624,36 @@ private struct Pages09Converter {
 
     /// Pages '09 keeps no language for the document; numbers are written as in the US.
     private static let locale = Locale(identifier: "en_US")
+
+    /// The date and time a cell holds, as written, whether or not a time
+    /// zone follows: the time on the clock, wherever the document is opened.
+    private static func date(_ value: String) -> Date? {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        for (length, format) in [(19, "yyyy-MM-dd'T'HH:mm:ss"), (16, "yyyy-MM-dd'T'HH:mm"), (10, "yyyy-MM-dd")] {
+            parser.dateFormat = format
+            if value.count >= length, let date = parser.date(from: String(value.prefix(length))) { return date }
+        }
+        return nil
+    }
+
+    /// A date as a cell style's date format shows it, in the locale numbers are in.
+    private mutating func dateText(_ date: Date, style: Node?) -> String {
+        var format = "M/d/yy"
+        if let style, case .node(let node) = inheritedValue("SFTCellStylePropertyDateTimeFormat", from: style),
+           let own = node.attributes["fmt"], !own.isEmpty {
+            format = own
+        }
+        if dateFormatters[format] == nil {
+            let formatter = DateFormatter()
+            formatter.locale = Self.locale
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = format
+            dateFormatters[format] = formatter
+        }
+        return dateFormatters[format]!.string(from: date)
+    }
 
     /// The format a cell style shows numbers in, which Pages applies with
     /// the places it gives; `nil` for none.

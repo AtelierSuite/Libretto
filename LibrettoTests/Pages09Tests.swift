@@ -298,6 +298,39 @@ struct Pages09Tests {
         #expect(document.pageSetup.width == WordDocument().pageSetup.width)
     }
 
+    /// A one-row table of `cells`, its cell styles from `styles`, as a document.
+    private static func tableDocument(_ cells: [String], styles: String = "") throws -> WordDocument {
+        let columns = String(repeating: "<sf:grid-column sf:width=\"100\"/>", count: cells.count)
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles>\(styles)</sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:attachments><sf:attachment sfa:ID="T"><sf:tabular-info><sf:tabular-model>\
+            <sf:grid><sf:columns>\(columns)</sf:columns><sf:rows><sf:grid-row/></sf:rows><sf:datasource>\
+            \(cells.joined())</sf:datasource></sf:grid></sf:tabular-model></sf:tabular-info></sf:attachment></sf:attachments>\
+            <sf:text-body><sf:p><sf:attachment-ref sfa:IDREF="T"/></sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        return try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+    }
+
+    private static func cellTexts(_ document: WordDocument) -> [String] {
+        document.body.compactMap { if case .table(let table) = $0 { table } else { nil } }.first?.rows.first?.cells.map(\.plainText) ?? []
+    }
+
+    @Test("Dates show as written, with a time zone or without, in their cell style's format")
+    func dates() throws {
+        let styles = """
+            <sf:cell-style sf:ident="dated"><sf:property-map><sf:SFTCellStylePropertyDateTimeFormat>\
+            <sf:date-format sf:fmt="MMM d, y h:mm a"/></sf:SFTCellStylePropertyDateTimeFormat></sf:property-map></sf:cell-style>
+            """
+        let document = try Self.tableDocument([
+            "<sf:d sf:cell-date=\"2010-05-12T23:30:00\"/>",
+            "<sf:d sf:s=\"dated\" sf:cell-date=\"2010-05-12T23:30:00+0000\"/>",
+            "<sf:d sf:cell-date=\"2009-12-31T00:00:00Z\"/>",
+        ], styles: styles)
+        #expect(Self.cellTexts(document) == ["5/12/10", "May 12, 2010 11:30 PM", "12/31/09"])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
