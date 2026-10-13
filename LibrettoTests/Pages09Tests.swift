@@ -105,7 +105,7 @@ struct Pages09Tests {
         #expect(heading.properties.styleID == "Heading1")
         #expect(heading.inlines.first?.format.style.isBold == true)
         #expect(heading.inlines.first?.format.style.fontSize == 48)
-        #expect(heading.inlines.first?.format.style.colorHex == "336699")
+        #expect(heading.inlines.first?.format.style.colorHex == "407AAA")
         #expect(heading.inlines.first?.format.style.fontName == "Georgia")
 
         let body = paragraphs[1]
@@ -115,7 +115,7 @@ struct Pages09Tests {
         let linked = try #require(body.inlines.first { $0.plainText == "linked" })
         #expect(linked.format.style.isItalic == true)
         #expect(linked.format.style.underline == true)
-        #expect(linked.format.style.colorHex == "808080")
+        #expect(linked.format.style.colorHex == "929292")
         #expect(linked.hyperlink?.url == URL(string: "https://example.com/"))
         #expect(body.inlines.filter { $0.hyperlink != nil }.count == 1)
 
@@ -218,11 +218,12 @@ struct Pages09Tests {
     @Test("Cells are filled as their cell styles say, a style with no fill taking away its parent's")
     func cellFills() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
-        #expect(table.rows[0].cells.allSatisfy { $0.shadingHex == "367DA2" })
+        // In sRGB, as Pages itself keeps the colour in `Formats.pages`.
+        #expect(table.rows[0].cells.allSatisfy { $0.shadingHex == "4390B2" })
         #expect(table.rows.dropFirst().allSatisfy { $0.cells.allSatisfy { $0.shadingHex == nil } })
         let saved = try DOCXReader.document(from: DOCXWriter.data(from: Self.formats))
         let savedTable = try #require(saved.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
-        #expect(savedTable.rows[0].cells.first?.shadingHex == "367DA2")
+        #expect(savedTable.rows[0].cells.first?.shadingHex == "4390B2")
     }
 
     @Test("A package's gzipped index reads the same")

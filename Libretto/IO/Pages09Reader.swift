@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Reads a document from Pages '09 and before, whose package holds the whole
@@ -772,18 +773,26 @@ private struct Pages09Converter {
         return properties
     }
 
-    /// Six-digit RGB for an `sf:color`, calibrated RGB or grey; `nil` for one that is transparent.
+    /// Six-digit sRGB for an `sf:color`, RGB or grey; `nil` for one that is transparent.
     private static func hex(_ color: Node) -> String? {
         let attributes = color.attributes
         if let alpha = attributes["a"].flatMap(Double.init), alpha == 0 { return nil }
-        let components: [Double]
-        if let white = attributes["w"].flatMap(Double.init) {
-            components = [white, white, white]
-        } else {
-            components = ["r", "g", "b"].map { attributes[$0].flatMap(Double.init) ?? 0 }
+        let white = attributes["w"].flatMap(Double.init)
+        var components = white.map { [$0] } ?? ["r", "g", "b"].map { attributes[$0].flatMap(Double.init) ?? 0 }
+        // Calibrated colours are in Apple's generic profiles, which Word's sRGB shows darker.
+        if attributes["type"]?.contains("calibrated") == true,
+           let space = white == nil ? genericRGB : genericGray, let sRGB,
+           let converted = CGColor(colorSpace: space, components: components.map { CGFloat($0) } + [1])?
+               .converted(to: sRGB, intent: .defaultIntent, options: nil)?.components {
+            components = converted.prefix(3).map { Double($0) }
         }
+        if components.count == 1 { components = Array(repeating: components[0], count: 3) }
         return components.map { String(format: "%02X", Int((min(max($0, 0), 1) * 255).rounded())) }.joined()
     }
+
+    private static let genericRGB = CGColorSpace(name: "kCGColorSpaceGenericRGB" as CFString)
+    private static let genericGray = CGColorSpace(name: "kCGColorSpaceGenericGray" as CFString)
+    private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)
 
     // MARK: Lists
 
