@@ -331,6 +331,23 @@ struct Pages09Tests {
         #expect(Self.cellTexts(document) == ["5/12/10", "May 12, 2010 11:30 PM", "12/31/09"])
     }
 
+    @Test("Durations show in their units, and a pop-up menu its chosen item")
+    func durationsAndMenus() throws {
+        let styles = """
+            <sf:cell-style sf:ident="minutes"><sf:property-map><sf:SFTCellStylePropertyDurationFormat>\
+            <sf:duration-format sf:fmt="mmm sss"/></sf:SFTCellStylePropertyDurationFormat></sf:property-map></sf:cell-style>
+            """
+        let menu = """
+            <sf:pm><sf:menu-choices><sf:t sfa:ID="first"><sf:ct sfa:s="Low"/></sf:t>\
+            <sf:t sfa:ID="second"><sf:ct sfa:s="High"/></sf:t></sf:menu-choices>\
+            <sf:proxied-cell-ref sfa:IDREF="second"/></sf:pm>
+            """
+        let document = try Self.tableDocument(
+            ["<sf:du sf:du=\"5400\"/>", "<sf:du sf:s=\"minutes\" sf:du=\"3725\"/>", menu], styles: styles
+        )
+        #expect(Self.cellTexts(document) == ["1h 30m 0s", "62m 5s", "High"])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)

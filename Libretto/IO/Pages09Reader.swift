@@ -577,31 +577,67 @@ private struct Pages09Converter {
             while blocks.count > 1, case .paragraph(let last) = blocks.last, last.inlines.isEmpty { blocks.removeLast() }
             if !blocks.isEmpty { return blocks }
         }
-        let format = style.flatMap(numberFormat)
-        func number(_ value: String) -> String? {
-            Double(value).map { format?.text($0, locale: Self.locale) ?? PagesConverter.numberText($0) }
-        }
-        let text: String?
-        switch cell.name {
-        case "t":
-            text = cell.first("ct")?.attributes["s"]
-        case "n":
-            text = cell.attributes["v"].flatMap(number)
-        case "b":
-            text = cell.attributes["v"].map { $0 == "1" || $0 == "true" ? "TRUE" : "FALSE" }
-        case "d":
-            text = cell.attributes["cell-date"].map { value in Self.date(value).map { dateText($0, style: style) } ?? value }
-        default:
-            // A formula's result, or nothing, for a cell that is empty or covered.
-            let result = cell.descendants { $0.attributes["v"] != nil || $0.attributes["s"] != nil }.first
-            text = result.flatMap { $0.attributes["v"].map { number($0) ?? $0 } ?? $0.attributes["s"] }
-        }
-        guard let text, !text.isEmpty else { return [] }
+        guard let text = value(of: cell, style: style), !text.isEmpty else { return [] }
         var (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), Self.defaultCharacters)
         paragraphFormat.outlineLevel = nil
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
         paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
         return [.paragraph(paragraph)]
+    }
+
+    /// The value a cell shows, as text, in its style's formats.
+    private mutating func value(of cell: Node, style: Node?) -> String? {
+        let format = style.flatMap(numberFormat)
+        func number(_ value: String) -> String? {
+            Double(value).map { format?.text($0, locale: Self.locale) ?? PagesConverter.numberText($0) }
+        }
+        switch cell.name {
+        case "t":
+            return cell.first("ct")?.attributes["s"]
+        case "n":
+            return cell.attributes["v"].flatMap(number)
+        case "b":
+            return cell.attributes["v"].map { $0 == "1" || $0 == "true" ? "TRUE" : "FALSE" }
+        case "d":
+            return cell.attributes["cell-date"].map { value in Self.date(value).map { dateText($0, style: style) } ?? value }
+        case "du":
+            return cell.attributes["du"].flatMap(Self.measure).map { durationText($0, style: style) }
+        case "pm":
+            // A pop-up menu shows the choice its proxied cell refers to, among its menu's.
+            if let chosen = cell.descendants(where: { $0.name == "proxied-cell-ref" }).first?.attributes["IDREF"]
+                .flatMap({ byID[$0] }), chosen.name != "pm" {
+                return value(of: chosen, style: style)
+            }
+            return cell.first("menu-choices")?.elements.first.flatMap { value(of: $0, style: style) }
+        default:
+            // A formula's result, or nothing, for a cell that is empty or covered.
+            let result = cell.descendants { $0.attributes["v"] != nil || $0.attributes["s"] != nil }.first
+            return result.flatMap { $0.attributes["v"].map { number($0) ?? $0 } ?? $0.attributes["s"] }
+        }
+    }
+
+    /// A duration in seconds, in the units its cell style's duration format
+    /// names, such as `hhh mmm sss`, each with its letter: `1h 30m 0s`.
+    private func durationText(_ seconds: Double, style: Node?) -> String {
+        var format = "hhh mmm sss"
+        if let style, case .node(let node) = inheritedValue("SFTCellStylePropertyDurationFormat", from: style),
+           let own = node.attributes["fmt"], !own.isEmpty {
+            format = own
+        }
+        let units: [(Character, Double)] = [("w", 604_800), ("d", 86_400), ("h", 3_600), ("m", 60), ("s", 1)]
+        let shown = units.filter { format.contains($0.0) }
+        guard !shown.isEmpty else { return PagesConverter.numberText(seconds) }
+        var remaining = abs(seconds).rounded()
+        var parts: [String] = []
+        for (index, (letter, length)) in shown.enumerated() {
+            let isLast = index == shown.count - 1
+            let count = isLast ? remaining / length : (remaining / length).rounded(.down)
+            remaining -= count * length
+            // Larger units with nothing in them are left out.
+            if count == 0, parts.isEmpty, !isLast { continue }
+            parts.append(PagesConverter.numberText(count) + String(letter))
+        }
+        return (seconds < 0 ? "-" : "") + parts.joined(separator: " ")
     }
 
     /// The colour a cell's style fills it with; `nil` for none.
