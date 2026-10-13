@@ -767,7 +767,10 @@ private struct Pages09Converter {
         case "string": return .string(content.attributes["string"] ?? "")
         case "color": return .color(Self.hex(content))
         case "linespacing":
-            guard let amount = content.attributes["amount"].flatMap(Self.measure) else { return .lineSpacing(nil) }
+            // Pages writes the amount as `sf:amt`.
+            guard let amount = (content.attributes["amt"] ?? content.attributes["amount"]).flatMap(Self.measure) else {
+                return .lineSpacing(nil)
+            }
             switch content.attributes["mode"] ?? "relative" {
             case "relative": return .lineSpacing(LineSpacing(line: Int((amount * 240).rounded()), rule: .auto))
             case "exact": return .lineSpacing(LineSpacing(line: Int((amount * 20).rounded()), rule: .exact))

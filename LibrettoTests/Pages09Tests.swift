@@ -398,6 +398,20 @@ struct Pages09Tests {
         #expect(document.numbering.overrides[ids[2]] == [0: 3])
     }
 
+    @Test("Line spacing takes the amount Pages writes as sf:amt")
+    func lineSpacingAmount() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles><sf:paragraphstyle sf:ident="spaced"><sf:property-map><sf:lineSpacing>\
+            <sf:linespacing sf:amt="1.2" sf:mode="relative"/></sf:lineSpacing></sf:property-map></sf:paragraphstyle>\
+            </sf:styles></sl:stylesheet><sf:text-storage sf:kind="body"><sf:text-body>\
+            <sf:p sf:style="spaced">Text</sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.allParagraphs.first?.properties.lineSpacing == LineSpacing(line: 288, rule: .auto))
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
