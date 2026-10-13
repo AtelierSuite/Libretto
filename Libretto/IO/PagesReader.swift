@@ -134,9 +134,9 @@ struct PagesNumberFormat: Hashable {
 
     /// From a `TSK.FormatStructArchive`, whose 253 places means as many as the number has.
     init(_ format: ProtoMessage) {
-        let places = format.optionalUInt(2).map(Int.init)
+        let places = format.optionalUInt(2).map { Int(clamping: $0) }
         self.init(
-            kind: Self.kind(Int(format.uint(1))), decimalPlaces: places == 253 ? nil : places,
+            kind: Self.kind(Int(clamping: format.uint(1))), decimalPlaces: places == 253 ? nil : places,
             currencyCode: format.string(3), showsThousandsSeparator: format.bool(5) == true,
             bracketsNegatives: [2, 3].contains(format.uint(4)), isAccounting: format.bool(6) == true
         )
@@ -213,10 +213,10 @@ struct PagesCharacterProperties {
         } else if let color = message.message(7) {
             colorHex = .some(PagesConverter.hex(color))
         }
-        verticalPosition = message.optionalUInt(10).map(Int.init)
-        underline = message.optionalUInt(11).map(Int.init)
-        strikethrough = message.optionalUInt(12).map(Int.init)
-        capitalization = message.optionalUInt(13).map(Int.init)
+        verticalPosition = message.optionalUInt(10).map { Int(clamping: $0) }
+        underline = message.optionalUInt(11).map { Int(clamping: $0) }
+        strikethrough = message.optionalUInt(12).map { Int(clamping: $0) }
+        capitalization = message.optionalUInt(13).map { Int(clamping: $0) }
         baselineShift = message.float(14)
     }
 
@@ -238,7 +238,7 @@ struct PagesCharacterProperties {
     var runStyle: RunStyle {
         var style = RunStyle()
         style.fontName = fontName.map(PagesConverter.familyName)
-        style.fontSize = fontSize.map { Int(($0 * 2).rounded()) }
+        style.fontSize = fontSize.map { Int(rounding: $0 * 2) }
         // A bold or italic typeface, such as Helvetica-Bold, is bold or italic itself.
         let traits = fontName.map(PagesConverter.fontTraits) ?? (isBold: false, isItalic: false)
         style.isBold = isBold == true || traits.isBold ? true : nil
@@ -266,7 +266,7 @@ struct PagesCharacterProperties {
         default: break
         }
         if let baselineShift, baselineShift != 0, style.verticalAlignment == nil {
-            style.position = Int((baselineShift * 2).rounded())
+            style.position = Int(rounding: baselineShift * 2)
         }
         return style
     }
@@ -293,7 +293,7 @@ struct PagesParagraphProperties {
     init() {}
 
     init(_ message: ProtoMessage) {
-        alignment = message.optionalUInt(1).map(Int.init)
+        alignment = message.optionalUInt(1).map { Int(clamping: $0) }
         if message.bool(5) == true {
             fillHex = .some(nil)
         } else if let fill = message.message(6) {
@@ -305,9 +305,9 @@ struct PagesParagraphProperties {
         leftIndent = message.float(11)
         if let spacing = message.message(13), let amount = spacing.float(2) {
             switch spacing.uint(1) {
-            case 0: lineSpacing = LineSpacing(line: Int((amount * 240).rounded()), rule: .auto)
-            case 1, 4: lineSpacing = LineSpacing(line: Int((amount * 20).rounded()), rule: .atLeast)
-            case 2: lineSpacing = LineSpacing(line: Int((amount * 20).rounded()), rule: .exact)
+            case 0: lineSpacing = LineSpacing(line: Int(rounding: amount * 240), rule: .auto)
+            case 1, 4: lineSpacing = LineSpacing(line: Int(rounding: amount * 20), rule: .atLeast)
+            case 2: lineSpacing = LineSpacing(line: Int(rounding: amount * 20), rule: .exact)
             default: break
             }
         }
@@ -348,7 +348,7 @@ struct PagesParagraphProperties {
         default: break
         }
         func twips(_ points: Double?) -> Int? {
-            points.map { Int(($0 * 20).rounded()) }
+            points.map { Int(rounding: $0 * 20) }
         }
         let left = leftIndent ?? 0
         if left != 0 { properties.indentLeft = twips(left) }
@@ -511,7 +511,7 @@ struct PagesConverter {
 
     private mutating func readPageSetup(_ root: ProtoMessage) {
         func twips(_ field: Int) -> Int? {
-            root.float(field).map { Int(($0 * 20).rounded()) }
+            root.float(field).map { Int(rounding: $0 * 20) }
         }
         var setup = document.pageSetup
         if let width = twips(30), let height = twips(31), width > 0, height > 0 {
@@ -539,7 +539,7 @@ struct PagesConverter {
         defer { storageDepth -= 1 }
         let text = Array(storage.strings(3).joined().utf16)
         let paragraphStyles = AttributeTable(storage.message(5))
-        let paragraphData = storage.message(6)?.messages(1).map { (index: Int($0.uint(1)), level: Int($0.uint(2))) } ?? []
+        let paragraphData = storage.message(6)?.messages(1).map { (index: Int(clamping: $0.uint(1)), level: Int(clamping: $0.uint(2))) } ?? []
         let listStyles = AttributeTable(storage.message(7))
         let characterStyles = AttributeTable(storage.message(8))
         let attachments = AttributeTable(storage.message(9))
@@ -835,15 +835,16 @@ struct PagesConverter {
     /// A `TST.TableInfoArchive`'s table, with each cell's text.
     private mutating func table(_ info: ProtoMessage) -> Table? {
         guard let model = archive[info.reference(2)], model.type == PagesReader.Types.tableModel else { return nil }
-        let rowCount = Int(model.message.uint(6))
-        let columnCount = Int(model.message.uint(7))
-        guard rowCount > 0, columnCount > 0, rowCount * columnCount <= 100_000,
+        let rowCount = Int(clamping: model.message.uint(6))
+        let columnCount = Int(clamping: model.message.uint(7))
+        let cellCount = rowCount.multipliedReportingOverflow(by: columnCount)
+        guard rowCount > 0, columnCount > 0, !cellCount.overflow, cellCount.partialValue <= 100_000,
               let store = model.message.message(4) else { return nil }
 
         let defaultWidth = model.message.float(17) ?? 100
         var widths = Array(repeating: defaultWidth, count: columnCount)
         for header in archive[store.reference(2)]?.message.messages(2) ?? [] {
-            let index = Int(header.uint(1))
+            let index = Int(clamping: header.uint(1))
             if widths.indices.contains(index), let size = header.float(2), size > 0 { widths[index] = size }
         }
 
@@ -853,9 +854,9 @@ struct PagesConverter {
             formats: dataList(store.reference(22)), formatsBefore2019: dataList(store.reference(11))
         )
         // Header rows and columns, footer rows and the body each have a cell style, whose fill a cell's own replaces.
-        let headerRows = Int(model.message.uint(9))
-        let headerColumns = Int(model.message.uint(10))
-        let footerRows = Int(model.message.uint(11))
+        let headerRows = Int(clamping: model.message.uint(9))
+        let headerColumns = Int(clamping: model.message.uint(10))
+        let footerRows = Int(clamping: model.message.uint(11))
         var regionFills: [String?] = []
         for field in [19, 20, 21, 18] { regionFills.append(model.message.reference(field).flatMap { cellFill($0) } ?? nil) }
         // Each also has a paragraph style, which values are set in unless the cell gives one.
@@ -871,15 +872,15 @@ struct PagesConverter {
             (0..<columnCount).map { column in TableCell(blocks: [], shadingHex: regionFill(row: row, column: column)) }
         }
         let tileStorage = store.message(3)
-        let tileSize = Int(tileStorage?.optionalUInt(2) ?? 256)
+        let tileSize = Int(clamping: tileStorage?.optionalUInt(2) ?? 256)
         for tileEntry in tileStorage?.messages(1) ?? [] {
-            guard let tile = archive[tileEntry.reference(2)]?.message else { continue }
-            let firstRow = Int(tileEntry.uint(1)) * tileSize
+            let firstRow = Int(clamping: tileEntry.uint(1)).multipliedReportingOverflow(by: tileSize)
+            guard !firstRow.overflow, let tile = archive[tileEntry.reference(2)]?.message else { continue }
             for rowInfo in tile.messages(5) {
-                let row = firstRow + Int(rowInfo.uint(1))
+                let position = firstRow.partialValue.addingReportingOverflow(Int(clamping: rowInfo.uint(1)))
                 // Pages has written both formats since 2019; older files have only the first.
                 let isNew = rowInfo.has(7)
-                guard row < rowCount, let buffer = rowInfo.bytes(isNew ? 6 : 3), let offsets = rowInfo.bytes(isNew ? 7 : 4)
+                guard !position.overflow, case let row = position.partialValue, row < rowCount, let buffer = rowInfo.bytes(isNew ? 6 : 3), let offsets = rowInfo.bytes(isNew ? 7 : 4)
                 else { continue }
                 // Wide rows count their offsets in fours.
                 let scale = rowInfo.bool(8) == true ? 4 : 1
@@ -899,7 +900,7 @@ struct PagesConverter {
             }
         }
 
-        let grid = widths.map { Int(($0 * 20).rounded()) }
+        let grid = widths.map { Int(rounding: $0 * 20) }
         var spans = Array(repeating: Array(repeating: 1, count: columnCount), count: rowCount)
         var covered = Array(repeating: Array(repeating: false, count: columnCount), count: rowCount)
         var merges = Array(repeating: Array(repeating: TableCell.VerticalMerge?.none, count: columnCount), count: rowCount)
@@ -962,11 +963,15 @@ struct PagesConverter {
         for formula in model.message(47)?.message(2)?.messages(3) ?? [] {
             for node in formula.message(2)?.message(1)?.messages(1) ?? [] {
                 guard let range = node.message(40), let columns = range.message(3), let rows = range.message(4) else { continue }
-                func span(_ message: ProtoMessage) -> Range<Int> {
-                    let first = Int(message.uint(1))
-                    return first..<(Int(message.optionalUInt(2) ?? UInt64(first)) + 1)
+                // A damaged range, ending before it starts, merges nothing.
+                func span(_ message: ProtoMessage) -> Range<Int>? {
+                    let first = message.uint(1)
+                    let last = message.optionalUInt(2) ?? first
+                    guard first <= last, last < UInt64(Int.max) else { return nil }
+                    return Int(first)..<(Int(last) + 1)
                 }
-                regions.append((span(rows), span(columns)))
+                guard let rowSpan = span(rows), let columnSpan = span(columns) else { continue }
+                regions.append((rowSpan, columnSpan))
             }
         }
         // Before, a map of ranges, each corner and size packed as row and column halves.
@@ -1238,7 +1243,7 @@ struct PagesConverter {
         default:
             return nil
         }
-        return components.map { String(format: "%02X", Int((min(max($0, 0), 1) * 255).rounded())) }.joined()
+        return components.map { String(format: "%02X", Int(rounding: min(max($0, 0), 1) * 255)) }.joined()
     }
 
     /// Whether the typeface a PostScript name names is bold or italic.
@@ -1271,6 +1276,15 @@ struct PagesConverter {
     }
 }
 
+private extension Int {
+    /// A measurement from a file, rounded to a whole number: none for one
+    /// that is not a number, and one out of range held in it, so a damaged
+    /// file cannot trap.
+    init(rounding value: Double) {
+        self = value.isFinite ? Int(Swift.min(Swift.max(value.rounded(), -1e15), 1e15)) : 0
+    }
+}
+
 /// What the installed fonts are, by PostScript name, as looking a font up
 /// for every run of text is slow.
 private final class PagesFontCache: @unchecked Sendable {
@@ -1299,7 +1313,7 @@ private struct AttributeTable {
     private let entries: [(index: Int, object: UInt64?)]
 
     init(_ message: ProtoMessage?) {
-        entries = (message?.messages(1) ?? []).map { (Int($0.uint(1)), $0.reference(2)) }
+        entries = (message?.messages(1) ?? []).map { (Int(clamping: $0.uint(1)), $0.reference(2)) }
     }
 
     /// Every object the table refers to, in order.
@@ -1354,8 +1368,8 @@ extension WordDocument {
         // A heading's own colour is replaced even by black, which the body leaves automatic.
         if let colorHex = run.colorHex ?? (isHeading ? "000000" : nil) { style.runStyle.colorHex = colorHex }
         // Pages leaves out spacing it has none of.
-        style.paragraphProperties.spacingBefore = Int(((paragraph.spaceBefore ?? 0) * 20).rounded())
-        style.paragraphProperties.spacingAfter = Int(((paragraph.spaceAfter ?? 0) * 20).rounded())
+        style.paragraphProperties.spacingBefore = Int(rounding: (paragraph.spaceBefore ?? 0) * 20)
+        style.paragraphProperties.spacingAfter = Int(rounding: (paragraph.spaceAfter ?? 0) * 20)
         style.paragraphProperties.lineSpacing = paragraph.lineSpacing ?? LineSpacing(line: 240, rule: .auto)
         styles.styles[id] = style
     }
