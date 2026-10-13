@@ -57,7 +57,12 @@ struct IWorkArchive {
             throw IWorkError.notAnIWorkDocument
         }
         for path in archives {
-            try read(Self.decompress(files[path]!, name: path))
+            do {
+                objects.merge(try Self.objects(in: Self.decompress(files[path]!, name: path))) { first, _ in first }
+            } catch where !Self.essentialArchives.contains(path) {
+                // The rest only add to the document, so a damaged one is left out.
+                continue
+            }
         }
         if let metadata = objects.values.first(where: { $0.type == Self.packageMetadataType }) {
             for info in metadata.message.messages(4) {
@@ -66,6 +71,9 @@ struct IWorkArchive {
             }
         }
     }
+
+    /// The archives the document's text and styles are in, without which there is nothing to read.
+    private static let essentialArchives: Set = ["Index/Document.iwa", "Index/DocumentStylesheet.iwa"]
 
     /// `TSP.PackageMetadata`, which lists the data files.
     private static let packageMetadataType: UInt32 = 11006
@@ -92,7 +100,8 @@ struct IWorkArchive {
         }.map { (String($0.key.dropFirst(5)), $0.value) }
     }
 
-    private mutating func read(_ bytes: [UInt8]) throws {
+    private static func objects(in bytes: [UInt8]) throws -> [UInt64: Object] {
+        var objects: [UInt64: Object] = [:]
         var reader = ProtoReader(bytes[...])
         while !reader.isAtEnd {
             let header = try ProtoMessage(reader.take(reader.length()))
@@ -104,6 +113,7 @@ struct IWorkArchive {
                 objects[identifier] = Object(type: UInt32(truncatingIfNeeded: info.uint(1)), message: try ProtoMessage(body))
             }
         }
+        return objects
     }
 
     /// Joins an archive's chunks, each a zero byte, a three-byte little-endian

@@ -350,6 +350,17 @@ struct PagesTests {
         #expect(throws: IWorkError.self) { try PagesReader.document(fromFiles: damaged) }
     }
 
+    @Test("A damaged archive the text does not need is left out")
+    func damagedExtras() throws {
+        var files = try ZipArchive.entries(in: Self.data)
+        files["Index/ViewState.iwa"] = Data([0, 9, 0, 0, 1, 2, 3])
+        #expect(try PagesReader.document(fromFiles: files).allParagraphs.map(\.plainText)
+            == Self.document.allParagraphs.map(\.plainText))
+        // The table's model is in the calculation engine's archive; without it the rest still reads.
+        files["Index/CalculationEngine.iwa"] = Data([1, 2, 3])
+        #expect(try PagesReader.document(fromFiles: files).allParagraphs.map(\.plainText).contains("Final paragraph."))
+    }
+
     @Test("Lengths too large for an integer are damage, not a crash")
     func hugeLengths() {
         // A ten-byte varint of 2^64 - 1, as an object's header length and as a field's.
