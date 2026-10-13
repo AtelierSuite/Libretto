@@ -317,6 +317,19 @@ struct PagesTests {
         #expect(document.allParagraphs[0].inlines.last?.content == .pageBreak)
     }
 
+    @Test("A password-protected document is recognised")
+    func passwordProtected() throws {
+        // `Locked.pages`: a document Pages saved with a password.
+        let data = try Data(
+            contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Locked.pages")
+        )
+        #expect {
+            try PagesReader.document(from: data)
+        } throws: { error in
+            if case IWorkError.passwordProtected = error { true } else { false }
+        }
+    }
+
     @Test("Files that are not Pages documents are turned away")
     func rejects() throws {
         let docx = try ZipArchive.archive(entries: [(path: "word/document.xml", data: Data("<w:document/>".utf8))])

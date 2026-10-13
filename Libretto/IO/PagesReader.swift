@@ -30,6 +30,9 @@ enum PagesReader {
     /// Reads a document saved as a package, by its files' paths within it.
     static func document(fromFiles files: [String: Data]) throws -> WordDocument {
         let files = try unwrapped(files)
+        // Pages since 2013 keeps a password-protected document's archives
+        // encrypted, with the password's verifier alongside.
+        if files.keys.contains(where: { $0.hasPrefix(".iwpv") }) { throw IWorkError.passwordProtected }
         if let index = try Pages09Reader.index(in: files) {
             return try Pages09Reader.document(fromIndex: index, files: files)
         }
