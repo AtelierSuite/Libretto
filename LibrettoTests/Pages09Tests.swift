@@ -161,6 +161,9 @@ struct Pages09Tests {
         #expect(setup.marginTop == 1130)
         #expect(Self.document.header?.text == "Page {PAGE} of {NUMPAGES}")
         #expect(Self.document.header?.alignment == .center)
+        // Set in its style's font, which Word gives the header's runs.
+        #expect(Self.document.header?.runPropertiesXML?.contains("w:ascii=\"Georgia\"") == true)
+        #expect(Self.document.header?.runPropertiesXML?.contains("<w:sz w:val=\"24\"/>") == true)
         #expect(Self.document.styles.styles["Normal"]?.runStyle.fontName == "Georgia")
         // A style that names no font is in Pages' own, 12-point Helvetica.
         let unstyled = try PagesReader.document(fromFiles: ["index.xml": Data("""

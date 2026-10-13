@@ -1168,13 +1168,24 @@ private struct Pages09Converter {
         }
         let firstParagraph = storage.descendants { $0.name == "p" }.first
         var alignment: Int?
-        if let style = firstParagraph?.attributes["style"].flatMap(styleNode) { alignment = paragraphStyle(style).0.alignment }
+        var characters = Self.defaultCharacters
+        if let style = firstParagraph?.attributes["style"].flatMap(styleNode) {
+            let (paragraph, styleCharacters) = paragraphStyle(style)
+            alignment = paragraph.alignment
+            characters = styleCharacters
+        }
+        // The text is set as its first styled span is, which Word applies to the whole of it.
+        if let span = firstParagraph?.descendants(where: { $0.name == "span" && $0.attributes["style"] != nil }).first,
+           let style = span.attributes["style"].flatMap(styleNode) {
+            characters = characters.overlaid(with: characterStyle(style))
+        }
         var headerFooter = HeaderFooterText(text: text, isFooter: isFooter)
         switch alignment {
         case 1: headerFooter.alignment = .trailing
         case 2: headerFooter.alignment = .center
         default: break
         }
+        headerFooter.runPropertiesXML = DOCXPatcher.runPropertiesXML(for: RunFormat(style: characters.runStyle))
         headerFooter.isEdited = true
         let id = document.unusedHeaderFooterID(isFooter: isFooter)
         document.headerFooters[id] = headerFooter
