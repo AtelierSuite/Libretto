@@ -67,8 +67,9 @@ enum ZipArchive {
 
     // MARK: - Reading
 
-    /// Reads every entry into a path-keyed table.
-    static func entries(in data: Data) throws -> [String: Data] {
+    /// Reads every entry, or every one `including` keeps, into a path-keyed
+    /// table. Entries left out are never inflated.
+    static func entries(in data: Data, including: (String) -> Bool = { _ in true }) throws -> [String: Data] {
         let bytes = [UInt8](data)
         guard !bytes.starts(with: compoundFileSignature) else { throw ZipError.protectedOrLegacyDocument }
         guard let directoryStart = locateCentralDirectory(bytes) else { throw ZipError.notAnArchive }
@@ -82,7 +83,7 @@ enum ZipArchive {
             // encrypted; decompressing them anyway would yield noise.
             guard record.flags & 1 == 0 else { throw ZipError.encryptedEntry(record.name) }
 
-            if !record.name.hasSuffix("/") {
+            if !record.name.hasSuffix("/"), including(record.name) {
                 result[record.name] = try extract(bytes, record: record)
             }
             offset += record.length

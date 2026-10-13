@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum IWorkError: LocalizedError {
     case notAnIWorkDocument
@@ -70,6 +71,22 @@ struct IWorkArchive {
                 if let name { dataFileNames[info.uint(1)] = name }
             }
         }
+    }
+
+    /// Whether the readers use a package's file: not its previews and
+    /// thumbnails, nor the films and sound in its `Data` folder, which can be
+    /// large and are left out anyway.
+    static func isRead(_ path: String) -> Bool {
+        let components = path.split(separator: "/")
+        // The package may be in a folder of its own.
+        let inner = components.first?.hasSuffix(".pages") == true ? components.dropFirst() : components[...]
+        guard let first = inner.first else { return true }
+        if inner.count == 1 { return !first.hasPrefix("preview") }
+        if first == "QuickLook" { return false }
+        if first == "Data", let type = UTType(filenameExtension: (path as NSString).pathExtension) {
+            return !type.conforms(to: .audiovisualContent)
+        }
+        return true
     }
 
     /// The archives the document's text and styles are in, without which there is nothing to read.

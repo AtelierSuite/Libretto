@@ -350,6 +350,23 @@ struct PagesTests {
         #expect(throws: IWorkError.self) { try PagesReader.document(fromFiles: damaged) }
     }
 
+    @Test("Previews, thumbnails, films and sound are not read from the package")
+    func unreadFiles() throws {
+        #expect(!IWorkArchive.isRead("preview.jpg"))
+        #expect(!IWorkArchive.isRead("Report.pages/preview-micro.jpg"))
+        #expect(!IWorkArchive.isRead("QuickLook/Thumbnail.jpg"))
+        #expect(!IWorkArchive.isRead("Data/clip-42.mov"))
+        #expect(!IWorkArchive.isRead("Data/sound-43.m4a"))
+        #expect(IWorkArchive.isRead("Data/red-31.png"))
+        #expect(IWorkArchive.isRead("Index/Document.iwa"))
+        #expect(IWorkArchive.isRead("index.xml.gz"))
+
+        let zip = try ZipArchive.archive(entries: [
+            (path: "Index/Document.iwa", data: Data([1])), (path: "preview.jpg", data: Data(count: 100)),
+        ])
+        #expect(try ZipArchive.entries(in: zip, including: IWorkArchive.isRead).keys.sorted() == ["Index/Document.iwa"])
+    }
+
     @Test("A damaged archive the text does not need is left out")
     func damagedExtras() throws {
         var files = try ZipArchive.entries(in: Self.data)

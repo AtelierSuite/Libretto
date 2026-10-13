@@ -75,14 +75,14 @@ struct LibrettoDocument: FileDocument {
         }
     }
 
-    /// A package's files, by their paths within it.
+    /// A package's files, by their paths within it, leaving out those the readers have no use for.
     private static func files(in wrapper: FileWrapper, under prefix: String = "") -> [String: Data] {
         guard wrapper.isDirectory else { return [:] }
         var files: [String: Data] = [:]
         for (name, child) in wrapper.fileWrappers ?? [:] {
             if child.isDirectory {
                 files.merge(Self.files(in: child, under: prefix + name + "/")) { first, _ in first }
-            } else if let contents = child.regularFileContents {
+            } else if IWorkArchive.isRead(prefix + name), let contents = child.regularFileContents {
                 files[prefix + name] = contents
             }
         }
