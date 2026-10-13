@@ -140,6 +140,8 @@ struct PagesTests {
         #expect(Self.document.footer?.text == "Footer text")
         #expect(Self.document.header?.alignment == .center)
         #expect(Self.document.footer?.alignment == .leading)
+        // Headers keep the font their text is set in.
+        #expect(Self.document.header?.runPropertiesXML?.contains("Helvetica") == true)
     }
 
     @Test("The body and heading styles take the document's own look")

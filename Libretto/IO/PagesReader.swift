@@ -1223,7 +1223,8 @@ struct PagesConverter {
             else { continue }
             for isFooter in [false, true] {
                 let slots = master.message.messages(isFooter ? 2 : 1).compactMap { $0.optionalUInt(1) }
-                guard let text = headerFooter(slots: slots, isFooter: isFooter) else { continue }
+                let contentWidth = document.pageSetup.width - document.pageSetup.marginLeft - document.pageSetup.marginRight
+                guard let text = headerFooter(slots: slots, isFooter: isFooter, contentWidth: contentWidth) else { continue }
                 let id = document.unusedHeaderFooterID(isFooter: isFooter)
                 document.headerFooters[id] = text
                 if isFooter {
@@ -1237,15 +1238,25 @@ struct PagesConverter {
         document.evenAndOddHeaders = evenPagesDiffer
     }
 
-    /// A header or footer from its left, centre and right parts, each aligned
-    /// as its text is, or else as where it sits.
-    private mutating func headerFooter(slots: [UInt64], isFooter: Bool) -> HeaderFooterText? {
+    /// A header or footer from its left, centre and right parts. One part
+    /// alone is aligned as its text is, or else as where it sits; several are
+    /// set apart by tabs, to tab stops at the centre and right of the line,
+    /// as Word sets out its own. The text takes the format the first part
+    /// starts in, as a header's text is in one format.
+    private mutating func headerFooter(slots: [UInt64], isFooter: Bool, contentWidth: Int) -> HeaderFooterText? {
         let alignments: [ParagraphAlignment] = [.leading, .center, .trailing]
-        var parts: [(ParagraphAlignment, String)] = []
+        var parts: [(slot: Int, alignment: ParagraphAlignment, text: String)] = []
+        var format: RunFormat?
         for (index, identifier) in slots.prefix(3).enumerated() {
             guard let storage = archive[identifier], storage.type == PagesReader.Types.storage else { continue }
             let text = plainText(of: storage.message)
             guard !text.isEmpty else { continue }
+            if format == nil {
+                let styleID = AttributeTable(storage.message.message(5)).inheritedObject(at: 0)
+                let base = styleID.map { paragraphStyle($0).1 } ?? PagesCharacterProperties()
+                let characters = AttributeTable(storage.message.message(8)).object(at: 0).map { characterStyle($0) }
+                format = RunFormat(style: base.overlaid(with: characters ?? PagesCharacterProperties()).runStyle)
+            }
             for object in AttributeTable(storage.message.message(9)).objects {
                 guard let field = archive[object], field.type == PagesReader.Types.pageNumber,
                       field.message.message(1)?.uint(2) != 1,
@@ -1255,17 +1266,26 @@ struct PagesConverter {
             let styleID = AttributeTable(storage.message.message(5)).inheritedObject(at: 0)
             let own = styleID.flatMap { paragraphStyle($0).0.alignment }
             switch own {
-            case 0, 3: parts.append((.leading, text))
-            case 1: parts.append((.trailing, text))
-            case 2: parts.append((.center, text))
-            default: parts.append((alignments[index], text))
+            case 0, 3: parts.append((index, .leading, text))
+            case 1: parts.append((index, .trailing, text))
+            case 2: parts.append((index, .center, text))
+            default: parts.append((index, alignments[index], text))
             }
         }
-        guard !parts.isEmpty else { return nil }
-        let alignment = parts.count == 1 ? parts[0].0 : .leading
-        var text = HeaderFooterText(
-            text: parts.map(\.1).joined(separator: "\t"), alignment: alignment, isFooter: isFooter
-        )
+        guard let first = parts.first, let last = parts.last else { return nil }
+        var text: HeaderFooterText
+        if parts.count == 1 {
+            text = HeaderFooterText(text: first.text, alignment: first.alignment, isFooter: isFooter)
+        } else {
+            // Each part in its place: one left empty still takes its tab, so the next is not drawn into its place.
+            let placed = (0...last.slot).map { slot in parts.first { $0.slot == slot }?.text ?? "" }
+            text = HeaderFooterText(text: placed.joined(separator: "\t"), alignment: .leading, isFooter: isFooter)
+            text.paragraphPropertiesXML = """
+                <w:pPr><w:tabs><w:tab w:val="center" w:pos="\(contentWidth / 2)"/>\
+                <w:tab w:val="right" w:pos="\(contentWidth)"/></w:tabs></w:pPr>
+                """
+        }
+        text.runPropertiesXML = format.flatMap { DOCXPatcher.runPropertiesXML(for: $0) }
         text.isEdited = true
         return text
     }
