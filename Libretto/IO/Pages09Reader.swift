@@ -837,37 +837,70 @@ private struct Pages09Converter {
 
     // MARK: Headers and footers
 
+    /// The headers and footers of the body's first section, from the page
+    /// masters its section style gives for its first, odd and even pages.
     private mutating func readHeadersAndFooters() {
+        var parts: [Bool: [String: Node]] = [:]
         for isFooter in [false, true] {
-            let group = root.first(isFooter ? "footers" : "headers")
-            for part in group?.elements ?? [] {
-                let name = part.attributes["name"] ?? ""
-                let kind: HeaderFooterKind = name.contains("First") ? .first : name.contains("Even") ? .even : .default
-                guard kind == .default, let storage = part.first("text-storage") else { continue }
-                let text = plainText(storage)
-                guard !text.isEmpty else { continue }
-                for number in storage.descendants(where: { $0.name == "page-number" }) {
-                    guard let format = number.attributes["format"].flatMap(PagesConverter.pageNumberFormat) else { continue }
-                    document.pageSetup.pageNumberFormat = format
-                }
-                let firstParagraph = storage.descendants { $0.name == "p" }.first
-                var alignment: Int?
-                if let style = firstParagraph?.attributes["style"].flatMap(styleNode) { alignment = paragraphStyle(style).0.alignment }
-                var headerFooter = HeaderFooterText(text: text, isFooter: isFooter)
-                switch alignment {
-                case 1: headerFooter.alignment = .trailing
-                case 2: headerFooter.alignment = .center
-                default: break
-                }
-                headerFooter.isEdited = true
-                let id = document.unusedHeaderFooterID(isFooter: isFooter)
-                document.headerFooters[id] = headerFooter
-                if isFooter {
-                    document.pageSetup.headerFooters.footers[.default] = id
-                } else {
-                    document.pageSetup.headerFooters.headers[.default] = id
-                }
+            for part in root.first(isFooter ? "footers" : "headers")?.elements ?? [] {
+                guard let name = part.attributes["name"], parts[isFooter]?[name] == nil else { continue }
+                parts[isFooter, default: [:]][name] = part
             }
+        }
+        let section = root.first("text-storage")?.first("text-body")?.descendants { $0.name == "section" }.first
+        guard let style = section?.attributes["style"].flatMap(styleNode) else {
+            // With no section style, the document's own odd-page parts are every page's.
+            for isFooter in [false, true] {
+                let name = isFooter ? "SFWPDefaultOddFooterIdentifier" : "SFWPDefaultOddHeaderIdentifier"
+                if let part = parts[isFooter]?[name] { addHeaderFooter(part, kind: .default, isFooter: isFooter) }
+            }
+            return
+        }
+        func differs(_ name: String) -> Bool {
+            if case .number(let number) = inheritedValue(name, from: style) { number != 0 } else { false }
+        }
+        let firstPageDiffers = differs("pageMasterFirstPageDifferent")
+        let evenPagesDiffer = differs("pageMasterLeftRightPagesDifferent")
+        let masters: [(HeaderFooterKind, String)] = [(.default, "oddPageMaster"), (.first, "firstPageMaster"), (.even, "evenPageMaster")]
+        for (kind, property) in masters {
+            if kind == .first, !firstPageDiffers { continue }
+            if kind == .even, !evenPagesDiffer { continue }
+            guard case .node(let master) = inheritedValue(property, from: style) else { continue }
+            for isFooter in [false, true] {
+                guard let name = master.attributes[isFooter ? "footer" : "header"],
+                      let part = parts[isFooter]?[name] else { continue }
+                addHeaderFooter(part, kind: kind, isFooter: isFooter)
+            }
+        }
+        document.pageSetup.headerFooters.titlePage = firstPageDiffers
+        document.evenAndOddHeaders = evenPagesDiffer
+    }
+
+    /// A header or footer part's text, shown on the pages of `kind`; nothing if it is empty.
+    private mutating func addHeaderFooter(_ part: Node, kind: HeaderFooterKind, isFooter: Bool) {
+        guard let storage = part.first("text-storage") else { return }
+        let text = plainText(storage)
+        guard !text.isEmpty else { return }
+        for number in storage.descendants(where: { $0.name == "page-number" }) {
+            guard let format = number.attributes["format"].flatMap(PagesConverter.pageNumberFormat) else { continue }
+            document.pageSetup.pageNumberFormat = format
+        }
+        let firstParagraph = storage.descendants { $0.name == "p" }.first
+        var alignment: Int?
+        if let style = firstParagraph?.attributes["style"].flatMap(styleNode) { alignment = paragraphStyle(style).0.alignment }
+        var headerFooter = HeaderFooterText(text: text, isFooter: isFooter)
+        switch alignment {
+        case 1: headerFooter.alignment = .trailing
+        case 2: headerFooter.alignment = .center
+        default: break
+        }
+        headerFooter.isEdited = true
+        let id = document.unusedHeaderFooterID(isFooter: isFooter)
+        document.headerFooters[id] = headerFooter
+        if isFooter {
+            document.pageSetup.headerFooters.footers[kind] = id
+        } else {
+            document.pageSetup.headerFooters.headers[kind] = id
         }
     }
 }

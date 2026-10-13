@@ -182,6 +182,46 @@ struct Pages09Tests {
         #expect(Self.document.pageSetup.pageNumberFormat == nil)
     }
 
+    @Test("Headers and footers come from the page masters of the section's style, and only those")
+    func pageMasters() throws {
+        // `Formats09.pages` has a footer only on its odd page master, and empty parts besides.
+        #expect(Self.formats.headerFooters.values.map(\.text) == ["Page {PAGE}"])
+        #expect(Self.formats.pageSetup.headerFooters.titlePage == false)
+        #expect(Self.formats.evenAndOddHeaders == false)
+
+        func part(_ kind: String, _ name: String, _ text: String) -> String {
+            """
+            <sf:\(kind) sf:name="\(name)"><sf:text-storage sf:kind="header"><sf:text-body>\
+            <sf:p>\(text)</sf:p></sf:text-body></sf:text-storage></sf:\(kind)>
+            """
+        }
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles><sf:sectionstyle sf:ident="section-style-0"><sf:property-map>\
+            <sf:pageMasterFirstPageDifferent><sf:number sfa:number="1"/></sf:pageMasterFirstPageDifferent>\
+            <sf:pageMasterLeftRightPagesDifferent><sf:number sfa:number="0"/></sf:pageMasterLeftRightPagesDifferent>\
+            <sf:firstPageMaster><sf:pagemaster sl:header="s-first-page-header" sl:footer="s-first-page-footer"/></sf:firstPageMaster>\
+            <sf:oddPageMaster><sf:pagemaster sl:header="s-odd-header" sl:footer="s-odd-footer"/></sf:oddPageMaster>\
+            <sf:evenPageMaster><sf:pagemaster sl:header="s-even-header" sl:footer="s-even-footer"/></sf:evenPageMaster>\
+            </sf:property-map></sf:sectionstyle></sf:styles></sl:stylesheet>\
+            <sf:headers>\(part("header", "s-first-page-header", "Title page"))\(part("header", "s-odd-header", "Odd"))\
+            \(part("header", "s-even-header", "Even"))</sf:headers>\
+            <sf:footers>\(part("footer", "s-odd-footer", "Footer"))</sf:footers>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:section sf:style="section-style-0"><sf:layout>\
+            <sf:p>Text</sf:p></sf:layout></sf:section></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        let setup = document.pageSetup
+        #expect(document.header?.text == "Odd")
+        #expect(document.headerFooter(.first, isFooter: false, in: setup)?.text == "Title page")
+        #expect(document.headerFooter(.even, isFooter: false, in: setup) == nil)
+        #expect(document.footer?.text == "Footer")
+        #expect(setup.headerFooters.titlePage)
+        #expect(!document.evenAndOddHeaders)
+        #expect(document.headerFooters.count == 3)
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
