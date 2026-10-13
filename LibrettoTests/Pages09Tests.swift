@@ -215,6 +215,16 @@ struct Pages09Tests {
         #expect(style(1, 2)?.colorHex == nil)
     }
 
+    @Test("Cells are filled as their cell styles say, a style with no fill taking away its parent's")
+    func cellFills() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(table.rows[0].cells.allSatisfy { $0.shadingHex == "367DA2" })
+        #expect(table.rows.dropFirst().allSatisfy { $0.cells.allSatisfy { $0.shadingHex == nil } })
+        let saved = try DOCXReader.document(from: DOCXWriter.data(from: Self.formats))
+        let savedTable = try #require(saved.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(savedTable.rows[0].cells.first?.shadingHex == "367DA2")
+    }
+
     @Test("A package's gzipped index reads the same")
     func package() throws {
         let document = try PagesReader.document(fromFiles: ["index.xml.gz": Self.gzip(Data(Self.index.utf8))])

@@ -515,7 +515,7 @@ private struct Pages09Converter {
             let column = position % columnCount
             position += 1
             guard !covered[row][column] else { continue }
-            cells[row][column] = TableCell(blocks: cellBlocks(element))
+            cells[row][column] = TableCell(blocks: cellBlocks(element), shadingHex: cellFill(element))
             let columnSpan = min(max(element.attributes["col-span"].flatMap(Int.init) ?? 1, 1), columnCount - column)
             let rowSpan = min(max(element.attributes["row-span"].flatMap(Int.init) ?? 1, 1), rowCount - row)
             guard columnSpan * rowSpan > 1 else { continue }
@@ -538,7 +538,12 @@ private struct Pages09Converter {
                     var cell = cell
                     cell.gridSpan = spans[row][column]
                     cell.verticalMerge = merges[row][column]
-                    if cell.verticalMerge == .continue { cell.blocks = [] }
+                    if cell.verticalMerge == .continue {
+                        // A cell merged into the one above shows that one's fill.
+                        cell.blocks = []
+                        let origin = (0..<row).last { merges[$0][column] == .restart }
+                        cell.shadingHex = origin.flatMap { cells[$0][column].shadingHex }
+                    }
                     if cell.blocks.isEmpty { cell.blocks = [.paragraph(Paragraph())] }
                     cell.preservedPropertiesXML = PagesConverter.cellPropertiesXML(
                         cell, width: gridColumns[column..<(column + cell.gridSpan)].reduce(0, +)
@@ -588,6 +593,13 @@ private struct Pages09Converter {
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
         paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
         return [.paragraph(paragraph)]
+    }
+
+    /// The colour a cell's style fills it with; `nil` for none.
+    private func cellFill(_ cell: Node) -> String? {
+        guard let style = cell.attributes["s"].flatMap(styleNode),
+              case .color(let hex) = inheritedValue("fill", from: style) else { return nil }
+        return hex
     }
 
     /// The paragraph style a cell style sets text in: its own, or its layout
