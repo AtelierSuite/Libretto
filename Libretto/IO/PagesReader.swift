@@ -18,7 +18,7 @@ enum PagesReader {
     static func document(from data: Data) throws -> WordDocument {
         let files: [String: Data]
         do {
-            files = try ZipArchive.entries(in: data)
+            files = try ZipArchive.entries(in: data, including: IWorkArchive.isRead)
         } catch ZipError.unsupportedCompression {
             // Pages '09 stores a password-protected document's files encrypted,
             // under a compression method of its own.
