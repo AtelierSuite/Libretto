@@ -2,16 +2,19 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
+    // Each is declared in the Info.plist. Should one go missing, it stays a type of its own,
+    // never a broader one like `.data` that every file, and every save, would match.
+
     /// The Office Open XML document type, declared by the system.
-    static let openXMLDocument = UTType("org.openxmlformats.wordprocessingml.document") ?? .data
+    static let openXMLDocument = UTType(importedAs: "org.openxmlformats.wordprocessingml.document")
     /// The `.docm` document, which may carry macros. It does not conform to
     /// the plain document type, so it is asked about in its own right.
-    static let macroEnabledDocument = UTType("org.openxmlformats.wordprocessingml.document.macroenabled") ?? .data
+    static let macroEnabledDocument = UTType(importedAs: "org.openxmlformats.wordprocessingml.document.macroenabled")
     /// Markdown, declared by the app. It conforms to plain text, so it is asked about first.
-    static let markdownDocument = UTType("net.daringfireball.markdown") ?? .plainText
+    static let markdownDocument = UTType(importedAs: "net.daringfireball.markdown", conformingTo: .plainText)
     /// A Pages document saved as a single file, and as a package.
-    static let pagesDocument = UTType("com.apple.iwork.pages.sffpages") ?? .data
-    static let pagesPackage = UTType("com.apple.iwork.pages.pages") ?? .package
+    static let pagesDocument = UTType(importedAs: "com.apple.iwork.pages.sffpages")
+    static let pagesPackage = UTType(importedAs: "com.apple.iwork.pages.pages", conformingTo: .package)
 }
 
 /// The app's document: a word-processing document, loaded from `.docx` or
