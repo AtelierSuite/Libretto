@@ -234,6 +234,15 @@ struct PagesTests {
         ])
     }
 
+    @Test("A header row's fill and white text come across")
+    func headerRow() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        #expect(table.rows[0].isHeader)
+        #expect(table.rows[0].cells.allSatisfy { $0.shadingHex == "4390B2" })
+        #expect(table.rows[0].cells.allSatisfy { $0.blocks.first?.paragraphs.first?.inlines.first?.format.style.colorHex == "FFFFFF" })
+        #expect(table.rows.dropFirst().allSatisfy { $0.cells.allSatisfy { $0.shadingHex == nil } })
+    }
+
     @Test("Numbers are set in their cells' text style, as text is")
     func numberFonts() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
