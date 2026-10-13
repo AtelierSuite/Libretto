@@ -125,6 +125,17 @@ struct PagesTests {
         ])
     }
 
+    @Test("A gap between lines makes the lines as tall as their text and the gap")
+    func lineGap() throws {
+        let spacing = Self.message([(1, 3), (2, Float(6))])
+        let properties = PagesParagraphProperties(try ProtoMessage(Self.message([(13, spacing)])[...]))
+        #expect(properties.lineSpacing(fontSize: 10) == LineSpacing(line: 360, rule: .atLeast))
+        // A style that sets spacing of its own replaces the gap.
+        var relative = PagesParagraphProperties()
+        relative.lineSpacing = LineSpacing(line: 480, rule: .auto)
+        #expect(properties.overlaid(with: relative).lineSpacing(fontSize: 10) == LineSpacing(line: 480, rule: .auto))
+    }
+
     @Test("Lists keep their kind and levels")
     func lists() throws {
         let bullet = try #require(paragraph(startingWith: "First bullet").properties.list)

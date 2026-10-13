@@ -281,6 +281,9 @@ struct PagesParagraphProperties {
     var spaceBefore: Double?
     var spaceAfter: Double?
     var lineSpacing: LineSpacing?
+    /// Points between one line and the next, which Word has no way to say:
+    /// the line is made as tall as its text and the gap.
+    var lineGap: Double?
     var keepLinesTogether: Bool?
     var keepWithNext: Bool?
     var pageBreakBefore: Bool?
@@ -309,6 +312,7 @@ struct PagesParagraphProperties {
             case 0: lineSpacing = LineSpacing(line: Int(rounding: amount * 240), rule: .auto)
             case 1, 4: lineSpacing = LineSpacing(line: Int(rounding: amount * 20), rule: .atLeast)
             case 2: lineSpacing = LineSpacing(line: Int(rounding: amount * 20), rule: .exact)
+            case 3: lineGap = amount
             default: break
             }
         }
@@ -343,7 +347,10 @@ struct PagesParagraphProperties {
         result.rightIndent = other.rightIndent ?? rightIndent
         result.spaceBefore = other.spaceBefore ?? spaceBefore
         result.spaceAfter = other.spaceAfter ?? spaceAfter
-        result.lineSpacing = other.lineSpacing ?? lineSpacing
+        if other.lineSpacing != nil || other.lineGap != nil {
+            result.lineSpacing = other.lineSpacing
+            result.lineGap = other.lineGap
+        }
         result.keepLinesTogether = other.keepLinesTogether ?? keepLinesTogether
         result.keepWithNext = other.keepWithNext ?? keepWithNext
         result.pageBreakBefore = other.pageBreakBefore ?? pageBreakBefore
@@ -352,6 +359,13 @@ struct PagesParagraphProperties {
         result.fillHex = other.fillHex ?? fillHex
         result.outlineLevel = other.outlineLevel ?? outlineLevel
         return result
+    }
+
+    /// The spacing of lines of text at a size, in points; a gap between
+    /// lines is added to a line as tall as the text, as fonts usually make it.
+    func lineSpacing(fontSize: Double?) -> LineSpacing? {
+        guard let lineGap else { return lineSpacing }
+        return LineSpacing(line: Int(rounding: ((fontSize ?? 12) * 1.2 + lineGap) * 20), rule: .atLeast)
     }
 
     var paragraphProperties: ParagraphProperties {
@@ -372,7 +386,7 @@ struct PagesParagraphProperties {
         if let firstLineIndent, firstLineIndent != left { properties.indentFirstLine = twips(firstLineIndent - left) }
         properties.spacingBefore = twips(spaceBefore)
         properties.spacingAfter = twips(spaceAfter)
-        properties.lineSpacing = lineSpacing
+        properties.lineSpacing = lineSpacing(fontSize: nil)
         properties.keepLines = keepLinesTogether == true ? true : nil
         properties.keepNext = keepWithNext == true ? true : nil
         properties.pageBreakBefore = pageBreakBefore == true ? true : nil
@@ -601,6 +615,7 @@ struct PagesConverter {
             var baseCharacters = PagesCharacterProperties()
             if let styleID { (paragraphFormat, baseCharacters) = paragraphStyle(styleID) }
             var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+            paragraph.properties.lineSpacing = paragraphFormat.lineSpacing(fontSize: baseCharacters.fontSize)
             let listStyleID = listStyles.inheritedObject(at: start)
             var listNumberingID = listStyleID.flatMap { list(for: $0) }
             if storageDepth == 1 {
@@ -1278,6 +1293,7 @@ struct PagesConverter {
         let textStyle = value.textStyleKey.flatMap { lists.styles[$0]?.reference(4) } ?? regionTextStyle
         let (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), PagesCharacterProperties())
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+        paragraph.properties.lineSpacing = paragraphFormat.lineSpacing(fontSize: characters.fontSize)
         paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
         return TableCell(blocks: [.paragraph(paragraph)], shadingHex: shading)
     }
@@ -1623,7 +1639,7 @@ extension WordDocument {
         // Pages leaves out spacing it has none of.
         style.paragraphProperties.spacingBefore = Int(rounding: (paragraph.spaceBefore ?? 0) * 20)
         style.paragraphProperties.spacingAfter = Int(rounding: (paragraph.spaceAfter ?? 0) * 20)
-        style.paragraphProperties.lineSpacing = paragraph.lineSpacing ?? LineSpacing(line: 240, rule: .auto)
+        style.paragraphProperties.lineSpacing = paragraph.lineSpacing(fontSize: characters.fontSize) ?? LineSpacing(line: 240, rule: .auto)
         styles.styles[id] = style
     }
 }
