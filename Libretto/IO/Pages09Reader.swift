@@ -165,6 +165,7 @@ private struct Pages09Converter {
     private var paragraphStyles: [ObjectIdentifier: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
     private var characterStyles: [ObjectIdentifier: PagesCharacterProperties] = [:]
     private var textEffectStyles: [ObjectIdentifier: TextEffects] = [:]
+    private var paragraphExtraStyles: [ObjectIdentifier: ParagraphExtras] = [:]
     private var lists: [ObjectIdentifier: Int?] = [:]
     /// The list style each paragraph style gives, and what each cell style says, worked out once.
     private var listStyles: [ObjectIdentifier: Node?] = [:]
@@ -330,7 +331,7 @@ private struct Pages09Converter {
         if let style { (paragraphFormat, baseCharacters) = paragraphStyle(style) }
         // A table cell's style can come from a heading's, which its text is not.
         if ownStyle == nil, baseStyle != nil { paragraphFormat.outlineLevel = nil }
-        var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+        var paragraph = Paragraph(properties: wordProperties(paragraphFormat, style: style))
         let listStyle = style.flatMap { listStyle(of: $0) }
         var numberingID = listStyle.flatMap { list(for: $0) }
         if let listStyle, let listID = numberingID {
@@ -669,7 +670,7 @@ private struct Pages09Converter {
         guard let text = value(of: cell, style: style), !text.isEmpty else { return [] }
         var (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), Self.defaultCharacters)
         paragraphFormat.outlineLevel = nil
-        var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+        var paragraph = Paragraph(properties: wordProperties(paragraphFormat, style: textStyle))
         paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
         return [.paragraph(paragraph)]
     }
@@ -906,6 +907,39 @@ private struct Pages09Converter {
         paragraph.outlineLevel = .some(headingLevel(style))
         paragraphStyles[key] = (paragraph, characters)
         return (paragraph, characters)
+    }
+
+    /// Paragraph formatting `PagesParagraphProperties` does not carry; `nil` inherits.
+    private struct ParagraphExtras {
+        var tabStops: [TabStop]?
+    }
+
+    private mutating func paragraphExtras(_ style: Node) -> ParagraphExtras {
+        let key = ObjectIdentifier(style)
+        if let cached = paragraphExtraStyles[key] { return cached }
+        var extras = ParagraphExtras()
+        if case .node(let tabs) = inheritedValue("tabs", from: style) {
+            extras.tabStops = tabs.elements.filter { $0.name == "tabstop" }.compactMap { stop -> TabStop? in
+                guard let position = stop.attributes["pos"].flatMap(Self.measure), position >= 0 else { return nil }
+                let alignments: [String: TabStop.Alignment] = ["left": .left, "center": .center, "right": .right, "decimal": .decimal]
+                let leaders = [".": "dot", "-": "hyphen", "_": "underscore", "\u{00B7}": "middleDot"]
+                return TabStop(
+                    position: Int((position * 20).rounded()), alignment: alignments[stop.attributes["align"] ?? ""] ?? .left,
+                    leader: stop.attributes["leader"].flatMap { leaders[$0.trimmingCharacters(in: .whitespaces)] }
+                )
+            }
+        }
+        paragraphExtraStyles[key] = extras
+        return extras
+    }
+
+    /// Word's paragraph properties for a paragraph in `style`, formatted as `format` says.
+    private mutating func wordProperties(_ format: PagesParagraphProperties, style: Node?) -> ParagraphProperties {
+        var properties = format.paragraphProperties
+        guard let style else { return properties }
+        let extras = paragraphExtras(style)
+        if let tabStops = extras.tabStops, !tabStops.isEmpty { properties.tabStops = tabStops }
+        return properties
     }
 
     private mutating func characterStyle(_ style: Node) -> PagesCharacterProperties {

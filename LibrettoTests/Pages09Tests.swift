@@ -461,6 +461,23 @@ struct Pages09Tests {
         #expect(document.allParagraphs.first?.inlines.map(\.format.style.highlight) == [nil, "yellow"])
     }
 
+    @Test("A style's tab stops come across, with their alignment and leaders")
+    func tabStops() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles><sf:paragraphstyle sf:ident="tabbed"><sf:property-map><sf:tabs><sf:tabs>\
+            <sf:tabstop sf:pos="57.5" sf:align="left" sf:leader=" "/><sf:tabstop sf:pos="451" sf:align="right" sf:leader="."/>\
+            </sf:tabs></sf:tabs></sf:property-map></sf:paragraphstyle></sf:styles></sl:stylesheet>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:p sf:style="tabbed">Name<sf:tab/>Page</sf:p>\
+            </sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.allParagraphs.first?.properties.tabStops == [
+            TabStop(position: 1150, alignment: .left), TabStop(position: 9020, alignment: .right, leader: "dot"),
+        ])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
