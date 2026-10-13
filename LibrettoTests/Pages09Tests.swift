@@ -201,6 +201,20 @@ struct Pages09Tests {
         ])
     }
 
+    @Test("Cells' text is in the font and colour of their cell styles")
+    func cellFonts() throws {
+        let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
+        func style(_ row: Int, _ column: Int) -> RunStyle? {
+            table.rows[row].cells[column].blocks.first?.paragraphs.first?.inlines.first?.format.style
+        }
+        #expect(style(0, 0)?.fontName == "Times New Roman")
+        #expect(style(0, 0)?.colorHex == "FFFFFF")
+        #expect(style(1, 0)?.fontName == "Georgia")
+        #expect(style(1, 0)?.fontSize == 28)
+        #expect(style(1, 2)?.fontName == "Times New Roman")
+        #expect(style(1, 2)?.colorHex == nil)
+    }
+
     @Test("A package's gzipped index reads the same")
     func package() throws {
         let document = try PagesReader.document(fromFiles: ["index.xml.gz": Self.gzip(Data(Self.index.utf8))])

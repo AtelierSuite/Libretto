@@ -288,27 +288,28 @@ private struct Pages09Converter {
     // MARK: Text
 
     /// The blocks of a text body, through its sections and layouts: its
-    /// paragraphs, and the tables set in them.
-    private mutating func blocks(in container: Node, recordsStyles: Bool) -> [Block] {
+    /// paragraphs, and the tables set in them. Paragraphs that name no
+    /// style are in `baseStyle`, if there is one.
+    private mutating func blocks(in container: Node, recordsStyles: Bool, baseStyle: Node? = nil) -> [Block] {
         var result: [Block] = []
         for node in container.elements {
             switch node.name {
             case "p":
-                let paragraph = paragraph(node, recordsStyles: recordsStyles)
+                let paragraph = paragraph(node, recordsStyles: recordsStyles, baseStyle: baseStyle)
                 let tables = pendingTables
                 pendingTables = []
                 // A paragraph that only held a table becomes the table.
                 if tables.isEmpty || !paragraph.inlines.isEmpty { result.append(.paragraph(paragraph)) }
                 result += tables.map(Block.table)
-            case "section", "layout", "text-body": result += blocks(in: node, recordsStyles: recordsStyles)
+            case "section", "layout", "text-body": result += blocks(in: node, recordsStyles: recordsStyles, baseStyle: baseStyle)
             default: break
             }
         }
         return result
     }
 
-    private mutating func paragraph(_ node: Node, recordsStyles: Bool) -> Paragraph {
-        let style = node.attributes["style"].flatMap(styleNode)
+    private mutating func paragraph(_ node: Node, recordsStyles: Bool, baseStyle: Node? = nil) -> Paragraph {
+        let style = node.attributes["style"].flatMap(styleNode) ?? baseStyle
         var paragraphFormat = PagesParagraphProperties()
         var baseCharacters = Self.defaultCharacters
         if let style { (paragraphFormat, baseCharacters) = paragraphStyle(style) }
@@ -550,15 +551,17 @@ private struct Pages09Converter {
         return Table(rows: rows, gridColumns: gridColumns, preservedPropertiesXML: nil, styleID: nil, hasBorders: true)
     }
 
-    /// What a cell shows: its text's paragraphs, or its value as text.
+    /// What a cell shows: its text's paragraphs, or its value as text, in
+    /// the paragraph style its cell style gives.
     private mutating func cellBlocks(_ cell: Node) -> [Block] {
+        let style = cell.attributes["s"].flatMap(styleNode)
+        let textStyle = style.flatMap(cellParagraphStyle)
         if let body = cell.descendants(where: { $0.name == "text-body" }).first {
-            var blocks = self.blocks(in: body, recordsStyles: false)
+            var blocks = self.blocks(in: body, recordsStyles: false, baseStyle: textStyle)
             // The text ends with an empty paragraph, which the cell does not show.
             while blocks.count > 1, case .paragraph(let last) = blocks.last, last.inlines.isEmpty { blocks.removeLast() }
             if !blocks.isEmpty { return blocks }
         }
-        let style = cell.attributes["s"].flatMap(styleNode)
         let format = style.flatMap(numberFormat)
         func number(_ value: String) -> String? {
             Double(value).map { format?.text($0, locale: Self.locale) ?? PagesConverter.numberText($0) }
@@ -581,7 +584,21 @@ private struct Pages09Converter {
             text = result.flatMap { $0.attributes["v"].map { number($0) ?? $0 } ?? $0.attributes["s"] }
         }
         guard let text, !text.isEmpty else { return [] }
-        return [.paragraph(Paragraph(text: text))]
+        let (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), Self.defaultCharacters)
+        var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+        paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
+        return [.paragraph(paragraph)]
+    }
+
+    /// The paragraph style a cell style sets text in: its own, or its layout
+    /// style's, the nearest in the cell style's ancestry.
+    private func cellParagraphStyle(_ cellStyle: Node) -> Node? {
+        for node in chain(cellStyle).reversed() {
+            if case .node(let style) = value("SFTCellStylePropertyParagraphStyle", in: node) { return style }
+            if case .node(let layout) = value("SFTCellStylePropertyLayoutStyle", in: node),
+               case .node(let style) = inheritedValue("layoutParagraphStyle", from: layout) { return style }
+        }
+        return nil
     }
 
     /// Pages '09 keeps no language for the document; numbers are written as in the US.
