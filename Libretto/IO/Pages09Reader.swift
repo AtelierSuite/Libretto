@@ -421,9 +421,10 @@ private struct Pages09Converter {
                     noteFormat.style.verticalAlignment = .superscript
                     runs.append(Inline(.note(NoteReference(kind: .footnote, id: id)), format: noteFormat))
                 case "attachment-ref":
-                    if let table = element.attributes["IDREF"].flatMap({ byID[$0] }).flatMap({ table($0) }) {
-                        pendingTables.append(table)
-                    } else if let image = attachment(element.attributes["IDREF"]) {
+                    let attached = element.attributes["IDREF"].flatMap { byID[$0] }
+                    if let attached, !attached.descendants(where: { $0.name == "tabular-model" }).isEmpty {
+                        if let table = table(attached) { pendingTables.append(table) }
+                    } else if let image = attached.flatMap({ image(in: $0) }) {
                         runs.append(Inline(.image(image), format: format))
                     } else {
                         document.unsupportedFeatures.insert(.shapes)
@@ -493,11 +494,6 @@ private struct Pages09Converter {
         )
     }
 
-    /// A picture an attachment holds.
-    private mutating func attachment(_ id: String?) -> InlineImage? {
-        id.flatMap { byID[$0] }.flatMap { image(in: $0) }
-    }
-
     /// The first data file found in an element, as a picture at the size it is shown.
     private mutating func image(in node: Node) -> InlineImage? {
         let files = self.files
@@ -531,7 +527,12 @@ private struct Pages09Converter {
             .map { max($0.attributes["width"].flatMap(Self.measure) ?? 100, 0) }
         let columnCount = widths.count
         let rowCount = (grid.first("rows")?.elements ?? []).filter { $0.name == "grid-row" }.count
-        guard rowCount > 0, columnCount > 0, rowCount * columnCount <= 100_000 else { return nil }
+        guard rowCount > 0, columnCount > 0 else { return nil }
+        guard rowCount * columnCount <= 100_000 else {
+            // Too large to bring across: left out, and the document says something is.
+            document.unsupportedFeatures.insert(.embeddedObjects)
+            return nil
+        }
 
         // Cells come row by row. A merged cell gives its span; the cells it
         // covers are there to be skipped, unless the source leaves them out.

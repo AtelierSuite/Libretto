@@ -412,6 +412,21 @@ struct Pages09Tests {
         #expect(document.allParagraphs.first?.properties.lineSpacing == LineSpacing(line: 288, rule: .auto))
     }
 
+    @Test("A table too large to bring across is reported as left out, not as a shape")
+    func tooLargeTable() throws {
+        let rows = String(repeating: "<sf:grid-row/>", count: 50_001)
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sf:text-storage sf:kind="body"><sf:attachments><sf:attachment sfa:ID="T"><sf:tabular-info><sf:tabular-model>\
+            <sf:grid><sf:columns><sf:grid-column/><sf:grid-column/></sf:columns><sf:rows>\(rows)</sf:rows>\
+            <sf:datasource/></sf:grid></sf:tabular-model></sf:tabular-info></sf:attachment></sf:attachments>\
+            <sf:text-body><sf:p>Text<sf:attachment-ref sfa:IDREF="T"/></sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        #expect(document.unsupportedFeatures.features == [.embeddedObjects])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
