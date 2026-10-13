@@ -310,10 +310,13 @@ private struct Pages09Converter {
     }
 
     private mutating func paragraph(_ node: Node, recordsStyles: Bool, baseStyle: Node? = nil) -> Paragraph {
-        let style = node.attributes["style"].flatMap(styleNode) ?? baseStyle
+        let ownStyle = node.attributes["style"].flatMap(styleNode)
+        let style = ownStyle ?? baseStyle
         var paragraphFormat = PagesParagraphProperties()
         var baseCharacters = Self.defaultCharacters
         if let style { (paragraphFormat, baseCharacters) = paragraphStyle(style) }
+        // A table cell's style can come from a heading's, which its text is not.
+        if ownStyle == nil, baseStyle != nil { paragraphFormat.outlineLevel = nil }
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
         let listStyle = style.flatMap { inheritedValue("listStyle", from: $0) }.flatMap { value -> Node? in
             if case .node(let node) = value { node } else { nil }
@@ -590,7 +593,8 @@ private struct Pages09Converter {
             text = result.flatMap { $0.attributes["v"].map { number($0) ?? $0 } ?? $0.attributes["s"] }
         }
         guard let text, !text.isEmpty else { return [] }
-        let (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), Self.defaultCharacters)
+        var (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), Self.defaultCharacters)
+        paragraphFormat.outlineLevel = nil
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
         paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
         return [.paragraph(paragraph)]

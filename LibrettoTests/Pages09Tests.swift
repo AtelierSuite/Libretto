@@ -213,6 +213,9 @@ struct Pages09Tests {
         #expect(style(1, 0)?.fontSize == 28)
         #expect(style(1, 2)?.fontName == "Times New Roman")
         #expect(style(1, 2)?.colorHex == nil)
+        // The cell styles' paragraph styles carry an outline level, as headings' do, but cells are not headings.
+        let properties = table.rows.flatMap(\.cells).flatMap(\.blocks).flatMap(\.paragraphs).map(\.properties)
+        #expect(properties.allSatisfy { $0.styleID == nil && $0.outlineLevel == nil })
     }
 
     @Test("Cells are filled as their cell styles say, a style with no fill taking away its parent's")
