@@ -416,8 +416,10 @@ struct PagesConverter {
     /// heading of each level, which become the Normal and heading styles.
     private var bodyStyles = PagesStyleTally<UInt64?>()
     private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
-    /// The document's language and region, which numbers in tables are written for.
+    /// The document's language and region, which numbers and dates in tables are written for.
     private let locale: Locale
+    /// Formatters for dates in tables, by the pattern they show.
+    private var dateFormatters: [String: DateFormatter] = [:]
 
     init(archive: IWorkArchive) {
         self.archive = archive
@@ -1019,6 +1021,8 @@ struct PagesConverter {
         /// or an amount of money, in.
         var numberFormatKey: UInt64?
         var currencyFormatKey: UInt64?
+        /// Key in the table's formats of the format a date is shown in.
+        var dateFormatKey: UInt64?
         /// Whether the cell is in the format Pages has written since 2019,
         /// whose formats are in a list of their own.
         var isNewStorage = false
@@ -1047,6 +1051,7 @@ struct PagesConverter {
             textStyleKey = keys[0x40]
             numberFormatKey = keys[0x2000]
             currencyFormatKey = keys[0x4000]
+            dateFormatKey = keys[0x8000]
         }
 
         /// The format before: the version, then the type, at the second byte
@@ -1111,7 +1116,13 @@ struct PagesConverter {
             let format = keys.lazy.compactMap { $0.flatMap { formats[$0]?.message(6) } }.first.map(PagesNumberFormat.init)
             text = (value.decimal ?? value.double).map { format?.text($0, locale: locale) ?? Self.numberText($0) }
         case 5:
-            text = value.seconds.map { Date(timeIntervalSinceReferenceDate: $0).formatted(date: .numeric, time: .omitted) }
+            let formats = value.isNewStorage ? lists.formats : lists.formatsBefore2019
+            let pattern = value.dateFormatKey.flatMap { formats[$0]?.message(6)?.string(14) }
+            if let seconds = value.seconds {
+                text = Self.dateText(seconds, pattern: pattern, locale: locale, formatters: &dateFormatters)
+            } else {
+                text = nil
+            }
         case 6:
             text = (value.double ?? value.decimal).map { $0 != 0 ? "TRUE" : "FALSE" }
         default:
@@ -1123,6 +1134,31 @@ struct PagesConverter {
         var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
         paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
         return TableCell(blocks: [.paragraph(paragraph)], shadingHex: shading)
+    }
+
+    /// A date as a cell shows it: in the pattern the cell's format gives, or
+    /// else as a short date, with the time if it has one. Pages keeps the
+    /// date and time as they were typed, as seconds since 2001 in GMT, so they
+    /// are shown in GMT, whatever the time zone they are read in.
+    static func dateText(
+        _ seconds: Double, pattern: String?, locale: Locale, formatters: inout [String: DateFormatter]
+    ) -> String {
+        guard seconds.isFinite else { return "" }
+        let hasTime = seconds.truncatingRemainder(dividingBy: 86400) != 0
+        // Patterns as Unicode spells them are shown as they are; others, as a short date, or date and time.
+        let key = pattern.flatMap { $0.isEmpty || $0.contains("%") ? nil : $0 } ?? (hasTime ? "short+time" : "short")
+        let date = Date(timeIntervalSinceReferenceDate: seconds)
+        if let formatter = formatters[key] { return formatter.string(from: date) }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        switch key {
+        case "short": formatter.dateStyle = .short
+        case "short+time": formatter.dateStyle = .short; formatter.timeStyle = .short
+        default: formatter.dateFormat = key
+        }
+        formatters[key] = formatter
+        return formatter.string(from: date)
     }
 
     /// The fill of a `TST.CellStyleArchive`, or of the style it is a variation

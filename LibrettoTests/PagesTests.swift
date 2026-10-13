@@ -269,6 +269,18 @@ struct PagesTests {
         #expect(PagesNumberFormat(kind: .automatic).text(2.5, locale: locale) == "2.5")
     }
 
+    @Test("Dates show as they were typed, whatever the time zone, with their time if they have one")
+    func dates() {
+        let locale = Locale(identifier: "en_US")
+        var formatters: [String: DateFormatter] = [:]
+        // 1 January 2024 at midnight, and at half past two in the afternoon, as Pages keeps them.
+        let midnight = 725_760_000.0
+        #expect(PagesConverter.dateText(midnight, pattern: nil, locale: locale, formatters: &formatters) == "1/1/24")
+        #expect(PagesConverter.dateText(midnight + 52_200, pattern: nil, locale: locale, formatters: &formatters)
+            .hasPrefix("1/1/24, 2:30"))
+        #expect(PagesConverter.dateText(midnight, pattern: "d MMMM y", locale: locale, formatters: &formatters) == "1 January 2024")
+    }
+
     @Test("Merged cells span their columns and rows")
     func mergedCells() throws {
         let table = try #require(Self.fields.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
