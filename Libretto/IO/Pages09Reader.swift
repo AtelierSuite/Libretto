@@ -912,6 +912,7 @@ private struct Pages09Converter {
     /// Paragraph formatting `PagesParagraphProperties` does not carry; `nil` inherits.
     private struct ParagraphExtras {
         var tabStops: [TabStop]?
+        var borders: ParagraphBorders?
     }
 
     private mutating func paragraphExtras(_ style: Node) -> ParagraphExtras {
@@ -929,6 +930,7 @@ private struct Pages09Converter {
                 )
             }
         }
+        extras.borders = paragraphBorders(style)
         paragraphExtraStyles[key] = extras
         return extras
     }
@@ -939,7 +941,28 @@ private struct Pages09Converter {
         guard let style else { return properties }
         let extras = paragraphExtras(style)
         if let tabStops = extras.tabStops, !tabStops.isEmpty { properties.tabStops = tabStops }
+        if let borders = extras.borders { properties.borders = borders }
         return properties
+    }
+
+    /// The rules a paragraph style draws with its stroke: above the paragraph, below it, both, or all
+    /// round it, as its border type is 1, 2, 3 or 4. A stroke with no pattern draws nothing.
+    private func paragraphBorders(_ style: Node) -> ParagraphBorders? {
+        guard case .number(let type) = inheritedValue("paragraphBorderType", from: style), (1...4).contains(type),
+              case .node(let stroke) = inheritedValue("paragraphStroke", from: style),
+              let width = stroke.attributes["width"].flatMap(Self.measure), width > 0,
+              stroke.first("pattern")?.attributes["type"] != "empty" else { return nil }
+        var line = BorderLine()
+        line.size = min(max(Int((width * 8).rounded()), 2), 96)
+        line.colorHex = stroke.first("color").flatMap { color($0) }
+        var borders = ParagraphBorders()
+        if type != 2 { borders.top = line }
+        if type != 1 { borders.bottom = line }
+        if type == 4 {
+            borders.left = line
+            borders.right = line
+        }
+        return borders
     }
 
     private mutating func characterStyle(_ style: Node) -> PagesCharacterProperties {

@@ -478,6 +478,28 @@ struct Pages09Tests {
         ])
     }
 
+    @Test("A style's rule becomes a paragraph border, and a stroke with no pattern none")
+    func paragraphBorders() throws {
+        func style(_ ident: String, type: Int, pattern: String) -> String {
+            """
+            <sf:paragraphstyle sf:ident="\(ident)"><sf:property-map>\
+            <sf:paragraphBorderType><sf:number sfa:number="\(type)"/></sf:paragraphBorderType><sf:paragraphStroke>\
+            <sf:stroke sf:width="0.5"><sf:pattern sf:type="\(pattern)"/><sf:color sfa:r="1" sfa:g="0" sfa:b="0" sfa:a="1"/>\
+            </sf:stroke></sf:paragraphStroke></sf:property-map></sf:paragraphstyle>
+            """
+        }
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:styles>\(style("ruled", type: 1, pattern: "solid"))\(style("unruled", type: 1, pattern: "empty"))\
+            </sf:styles></sl:stylesheet><sf:text-storage sf:kind="body"><sf:text-body>\
+            <sf:p sf:style="ruled">Ruled</sf:p><sf:p sf:style="unruled">Plain</sf:p></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        let line = BorderLine(style: "single", size: 4, colorHex: "FF0000")
+        #expect(document.allParagraphs.map(\.properties.borders) == [ParagraphBorders(top: line), nil])
+    }
+
     @Test("A cell's text leaves out the empty paragraph it ends with")
     func cellText() throws {
         let table = try #require(Self.formats.body.lazy.compactMap { if case .table(let table) = $0 { table } else { nil } }.first)
