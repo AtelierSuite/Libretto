@@ -91,6 +91,40 @@ struct PagesTests {
         #expect(indented.widowControl == true)
     }
 
+    /// A protocol buffer message with fields in order: whole numbers, floats, text and messages.
+    private static func message(_ fields: [(Int, Any)]) -> [UInt8] {
+        func varint(_ value: UInt64) -> [UInt8] {
+            var value = value
+            var bytes: [UInt8] = []
+            repeat {
+                bytes.append(UInt8(value & 0x7F) | (value > 0x7F ? 0x80 : 0))
+                value >>= 7
+            } while value > 0
+            return bytes
+        }
+        return fields.flatMap { number, value -> [UInt8] in
+            switch value {
+            case let value as Int: return varint(UInt64(number << 3)) + varint(UInt64(value))
+            case let value as Float: return varint(UInt64(number << 3 | 5)) + withUnsafeBytes(of: value.bitPattern.littleEndian, Array.init)
+            case let value as String: return varint(UInt64(number << 3 | 2)) + varint(UInt64(value.utf8.count)) + Array(value.utf8)
+            case let value as [UInt8]: return varint(UInt64(number << 3 | 2)) + varint(UInt64(value.count)) + value
+            default: return []
+            }
+        }
+    }
+
+    @Test("Tab stops keep their places, alignments and leaders")
+    func tabStops() throws {
+        let tabs = Self.message([
+            (1, Self.message([(1, Float(57.5))])),
+            (1, Self.message([(1, Float(451)), (2, 2), (3, ".")])),
+        ])
+        let properties = PagesParagraphProperties(try ProtoMessage(Self.message([(25, tabs)])[...])).paragraphProperties
+        #expect(properties.tabStops == [
+            TabStop(position: 1150, alignment: .left), TabStop(position: 9020, alignment: .right, leader: "dot"),
+        ])
+    }
+
     @Test("Lists keep their kind and levels")
     func lists() throws {
         let bullet = try #require(paragraph(startingWith: "First bullet").properties.list)

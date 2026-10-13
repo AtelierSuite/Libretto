@@ -285,6 +285,7 @@ struct PagesParagraphProperties {
     var keepWithNext: Bool?
     var pageBreakBefore: Bool?
     var widowControl: Bool?
+    var tabStops: [TabStop]?
     /// `.some(nil)` is no fill.
     var fillHex: String??
     /// Zero for the top level; `nil` for body text.
@@ -315,6 +316,19 @@ struct PagesParagraphProperties {
         rightIndent = message.float(19)
         spaceAfter = message.float(20)
         spaceBefore = message.float(21)
+        if let tabs = message.message(25) {
+            // A `TSWP.TabsArchive`: each stop's place, how text lines up at it, and what leads up to it.
+            tabStops = tabs.messages(1).compactMap { tab in
+                guard let position = tab.float(1) else { return nil }
+                let alignments: [TabStop.Alignment] = [.left, .center, .right, .decimal]
+                let leaders = [".": "dot", "-": "hyphen", "_": "underscore", "\u{00B7}": "middleDot"]
+                return TabStop(
+                    position: Int(rounding: position * 20),
+                    alignment: alignments.indices.contains(Int(clamping: tab.uint(2))) ? alignments[Int(clamping: tab.uint(2))] : .left,
+                    leader: tab.string(3).flatMap { leaders[$0.trimmingCharacters(in: .whitespaces)] }
+                )
+            }
+        }
         widowControl = message.bool(26)
         if let level = message.optionalUInt(27) {
             outlineLevel = .some(level < 9 ? Int(level) : nil)
@@ -334,6 +348,7 @@ struct PagesParagraphProperties {
         result.keepWithNext = other.keepWithNext ?? keepWithNext
         result.pageBreakBefore = other.pageBreakBefore ?? pageBreakBefore
         result.widowControl = other.widowControl ?? widowControl
+        result.tabStops = other.tabStops ?? tabStops
         result.fillHex = other.fillHex ?? fillHex
         result.outlineLevel = other.outlineLevel ?? outlineLevel
         return result
@@ -362,6 +377,7 @@ struct PagesParagraphProperties {
         properties.keepNext = keepWithNext == true ? true : nil
         properties.pageBreakBefore = pageBreakBefore == true ? true : nil
         properties.widowControl = widowControl
+        if let tabStops, !tabStops.isEmpty { properties.tabStops = tabStops }
         if let fillHex, let hex = fillHex { properties.shadingHex = hex }
         if let outlineLevel, let level = outlineLevel {
             properties.outlineLevel = level
