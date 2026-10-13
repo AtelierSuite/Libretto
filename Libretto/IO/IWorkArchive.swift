@@ -95,11 +95,10 @@ struct IWorkArchive {
     private mutating func read(_ bytes: [UInt8]) throws {
         var reader = ProtoReader(bytes[...])
         while !reader.isAtEnd {
-            let headerLength = try Int(reader.varint())
-            let header = try ProtoMessage(reader.take(headerLength))
+            let header = try ProtoMessage(reader.take(reader.length()))
             let identifier = header.uint(1)
             for (index, info) in header.messages(2).enumerated() {
-                let body = try reader.take(Int(info.uint(3)))
+                let body = try reader.take(ProtoReader.length(info.uint(3)))
                 // An object's first message is the object; any after it are for its own use.
                 guard index == 0 else { continue }
                 objects[identifier] = Object(type: UInt32(truncatingIfNeeded: info.uint(1)), message: try ProtoMessage(body))
@@ -129,7 +128,7 @@ struct IWorkArchive {
 enum Snappy {
     static func decompress(_ input: ArraySlice<UInt8>, into output: inout [UInt8], name: String) throws {
         var reader = ProtoReader(input)
-        let expected = try Int(reader.varint())
+        let expected = try reader.length()
         let start = output.count
         output.reserveCapacity(start + expected)
         var position = reader.position
@@ -203,8 +202,18 @@ struct ProtoReader {
         }
     }
 
+    /// A varint that gives a length, which must fit in an `Int`.
+    mutating func length() throws -> Int {
+        try Self.length(varint())
+    }
+
+    static func length(_ value: UInt64) throws -> Int {
+        guard let length = Int(exactly: value) else { throw IWorkError.corrupt("length") }
+        return length
+    }
+
     mutating func take(_ count: Int) throws -> ArraySlice<UInt8> {
-        guard count >= 0, position + count <= bytes.endIndex else { throw IWorkError.corrupt("length") }
+        guard count >= 0, count <= bytes.endIndex - position else { throw IWorkError.corrupt("length") }
         defer { position += count }
         return bytes[position..<position + count]
     }
@@ -229,7 +238,7 @@ struct ProtoMessage {
             switch key & 7 {
             case 0: fields.append((number, .varint(try reader.varint())))
             case 1: fields.append((number, .fixed64(Self.littleEndian(try reader.take(8)))))
-            case 2: fields.append((number, .bytes(try reader.take(Int(reader.varint())))))
+            case 2: fields.append((number, .bytes(try reader.take(reader.length()))))
             case 5: fields.append((number, .fixed32(UInt32(Self.littleEndian(try reader.take(4))))))
             default: throw IWorkError.corrupt("wire type \(key & 7)")
             }

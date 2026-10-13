@@ -349,4 +349,19 @@ struct PagesTests {
         damaged["Index/Document.iwa"] = Data([0, 9, 0, 0, 1, 2, 3])
         #expect(throws: IWorkError.self) { try PagesReader.document(fromFiles: damaged) }
     }
+
+    @Test("Lengths too large for an integer are damage, not a crash")
+    func hugeLengths() {
+        // A ten-byte varint of 2^64 - 1, as an object's header length and as a field's.
+        let huge: [UInt8] = Array(repeating: 0xFF, count: 9) + [0x01]
+        var reader = ProtoReader(huge[...])
+        #expect(throws: IWorkError.self) { try reader.length() }
+        #expect(throws: IWorkError.self) { try ProtoMessage([0x0A] + huge[...]) }
+        // A length that only overflows once added to the position.
+        var short = ProtoReader([1, 2, 3][...])
+        #expect(throws: IWorkError.self) { try short.take(Int.max) }
+        // Snappy's preamble, giving the decompressed length.
+        var output: [UInt8] = []
+        #expect(throws: IWorkError.self) { try Snappy.decompress(huge[...], into: &output, name: "test") }
+    }
 }
