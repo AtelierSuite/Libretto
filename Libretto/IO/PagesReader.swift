@@ -639,7 +639,8 @@ struct PagesConverter {
                 paragraph.properties.indentFirstLine = nil
             }
 
-            var tables: [Block] = []
+            // Whether a table set in the paragraph split it.
+            var splitByTable = false
             var pending: [UInt16] = []
             var pendingFormat = RunFormat()
             var pendingLink: Hyperlink?
@@ -709,7 +710,17 @@ struct PagesConverter {
                     flush()
                     switch attachment(attachments.object(at: index)) {
                     case .image(let image): paragraph.inlines.append(Inline(.image(image), format: format, revision: revision))
-                    case .table(let table): tables.append(.table(table))
+                    case .table(let table):
+                        // The text before a table set in a paragraph stays above it, and the rest goes below.
+                        var rest = Paragraph(properties: paragraph.properties)
+                        if !paragraph.inlines.isEmpty {
+                            blocks.append(.paragraph(paragraph))
+                            // The rest is the same list item, which is not numbered again.
+                            rest.properties.list = nil
+                        }
+                        blocks.append(.table(table))
+                        paragraph = rest
+                        splitByTable = true
                     case nil: break
                     }
                 case 0x00..<0x20:
@@ -726,8 +737,9 @@ struct PagesConverter {
                 paragraph.inlines.append(Inline(.pageBreak))
             }
             // A paragraph that only held a table becomes the table.
-            if tables.isEmpty || !paragraph.inlines.isEmpty { blocks.append(.paragraph(paragraph)) }
-            blocks += tables
+            if !splitByTable || !paragraph.inlines.isEmpty || paragraph.markRevision != nil {
+                blocks.append(.paragraph(paragraph))
+            }
             if endsSection {
                 // A section ends with a paragraph, which a table cannot be.
                 if case .paragraph = blocks.last {} else { blocks.append(.paragraph(Paragraph())) }
