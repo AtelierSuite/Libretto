@@ -287,13 +287,13 @@ struct Pages09Tests {
 
     @Test("A password-protected document is recognised")
     func passwordProtected() throws {
-        // Pages '09 marks its encrypted entries with a compression method of its own.
-        var archive = try ZipArchive.archive(entries: [(path: "index.xml", data: Data(Self.index.utf8))])
-        archive.replaceSubrange(8..<10, with: [0x6B, 0x63])
-        let central = try #require(archive.lastRange(of: Data([0x50, 0x4B, 0x01, 0x02])))
-        archive.replaceSubrange((central.lowerBound + 10)..<(central.lowerBound + 12), with: [0x6B, 0x63])
+        // `Locked09.pages`: a document Pages exported for Pages '09 with a password,
+        // which marks its encrypted entries with compression methods of its own.
+        let data = try Data(
+            contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Locked09.pages")
+        )
         #expect {
-            try PagesReader.document(from: archive)
+            try PagesReader.document(from: data)
         } throws: { error in
             if case IWorkError.passwordProtected = error { true } else { false }
         }
