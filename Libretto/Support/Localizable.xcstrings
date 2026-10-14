@@ -7777,31 +7777,31 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages documents open read-only. Save a copy as a Word document to keep your changes."
+            "value": "This Pages document opens read-only. Save a copy as a Word document to keep your changes."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pagesの書類は読み出し専用で開きます。変更を残すには、Word書類としてコピーを保存してください。"
+            "value": "このPagesの書類は読み出し専用で開きます。変更を残すには、Word書類としてコピーを保存してください。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages 문서는 읽기 전용으로 열립니다. 변경 사항을 유지하려면 Word 문서로 사본을 저장하십시오."
+            "value": "이 Pages 문서는 읽기 전용으로 열립니다. 변경 사항을 유지하려면 Word 문서로 사본을 저장하십시오."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages 文稿以只读方式打开。若要保留更改，请将副本存储为 Word 文稿。"
+            "value": "此 Pages 文稿以只读方式打开。若要保留更改，请将副本存储为 Word 文稿。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pages 文件會以唯讀方式開啟。若要保留變更，請將副本儲存為 Word 文件。"
+            "value": "此 Pages 文件會以唯讀方式開啟。若要保留變更，請將副本儲存為 Word 文件。"
           }
         }
       }
@@ -7872,6 +7872,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "變更尚未儲存。若要保留變更，請將副本儲存為 Word 文件。"
+          }
+        }
+      }
+    },
+    "Notice.Pages.Unsaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some of your changes, such as to tables, pictures or headers, can’t be saved in a Pages document. Save a copy as a Word document to keep them."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表、画像、ヘッダなどへの変更の一部は、Pagesの書類に保存できません。それらを残すには、Word書類としてコピーを保存してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표, 이미지, 머리말 등에 대한 일부 변경 사항은 Pages 문서에 저장할 수 없습니다. 변경 사항을 유지하려면 Word 문서로 사본을 저장하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你对表格、图像或页眉等所做的部分更改无法存储在 Pages 文稿中。若要保留这些更改，请将副本存储为 Word 文稿。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你對表格、影像或頁首等所做的部分變更無法儲存在 Pages 文件中。若要保留這些變更，請將副本儲存為 Word 文件。"
           }
         }
       }
@@ -8047,6 +8082,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "此文件包含 Libretto 可以顯示但無法編輯的內容。這些內容會原樣保留，並隨文件一起儲存。Libretto 絕不會執行巨集。"
+          }
+        }
+      }
+    },
+    "Notice.UnsupportedFeatures.PagesMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This document uses things Libretto can’t bring across from Pages. They’re left out of what you see here, but kept in the Pages document when it’s saved."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この書類には、LibrettoがPagesから取り込めない要素が含まれています。これらはここには表示されませんが、保存時にPagesの書類に残ります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 문서에는 Libretto가 Pages에서 가져올 수 없는 요소가 있습니다. 이러한 요소는 여기에 표시되지 않지만 저장할 때 Pages 문서에 유지됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文稿包含 Libretto 无法从 Pages 导入的内容。这些内容不会显示在此处，但存储时会保留在 Pages 文稿中。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件包含 Libretto 無法從 Pages 匯入的內容。這些內容不會顯示在此處，但儲存時會保留在 Pages 文件中。"
           }
         }
       }

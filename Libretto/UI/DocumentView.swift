@@ -21,6 +21,8 @@ struct DocumentView: View {
     @State private var keptDocument: WordDocument?
     /// Whether there are changes that only a copy would keep.
     @State private var hasUnsavedChanges = false
+    /// Whether a Pages document has changes saving it as one would not keep.
+    @State private var hasUnsavablePagesChanges = false
     /// The mode this window was last in, so it comes back the same way.
     @SceneStorage("viewMode") private var storedMode: String?
     @Environment(\.undoManager) private var undoManager
@@ -32,7 +34,11 @@ struct DocumentView: View {
     var body: some View {
         content
         .safeAreaInset(edge: .top, spacing: 0) {
-            if !savesInPlace { readOnlyNotice }
+            if !savesInPlace {
+                readOnlyNotice
+            } else if hasUnsavablePagesChanges {
+                pagesNotice
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Code is edited as text: there is nothing to format.
@@ -68,6 +74,7 @@ struct DocumentView: View {
                 history.record(from: old, to: new, scope: state.pendingScope)
                 state.pendingScope = .other
                 if let keptDocument { hasUnsavedChanges = new != keptDocument }
+                if savesPages { hasUnsavablePagesChanges = PagesWriter.hasUnsavableChanges(new) }
             }
             .toolbar { navigationToolbar }
             .sheet(item: $state.presentedPanel) { panel in
@@ -94,7 +101,8 @@ struct DocumentView: View {
             }
             .sheet(isPresented: $state.isShowingUnsupportedFeatureNotice) {
                 UnsupportedFeatureNotice(
-                    report: document.unsupportedFeatures, isImported: document.document.importedFormat != nil
+                    report: document.unsupportedFeatures, isImported: document.document.importedFormat != nil,
+                    keepsWhatIsLeftOut: savesPages
                 )
                     .presentationDetents([.medium])
                     .presentationContentInteraction(.scrolls)
@@ -321,15 +329,20 @@ struct DocumentView: View {
         }
     }
 
-    /// Whether changes are saved to the file they were made in.
-    private var savesInPlace: Bool { isEditable && document.document.importedFormat == nil }
+    /// Whether changes are saved to the file they were made in: a Pages
+    /// document's too, unless Libretto cannot write it back.
+    private var savesInPlace: Bool { isEditable && (document.document.importedFormat == nil || savesPages) }
 
     private var isImported: Bool { document.document.importedFormat != nil }
 
+    /// Whether the document is a Pages document its edits are saved back into.
+    private var savesPages: Bool { document.document.pagesSource?.body != nil }
+
     /// The type a copy is saved as: a Word document for one converted from
-    /// another format, and otherwise the type the file already is.
+    /// another format that cannot keep the changes, and otherwise the type
+    /// the file already is.
     private var copyType: UTType {
-        if isImported { return .openXMLDocument }
+        if isImported, !savesPages || hasUnsavablePagesChanges { return .openXMLDocument }
         let pathExtension = (fileName as NSString?)?.pathExtension ?? ""
         return UTType(filenameExtension: pathExtension).flatMap { type in
             LibrettoDocument.writableContentTypes.contains { type.conforms(to: $0) } ? type : nil
@@ -367,6 +380,31 @@ struct DocumentView: View {
         .background(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readOnlyNotice")
+    }
+
+    /// Says some changes to a Pages document will not be saved in it, and
+    /// offers to keep them in a Word document.
+    private var pagesNotice: some View {
+        HStack(spacing: 12) {
+            Label {
+                Text("Notice.Pages.Unsaved").foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Notice.Imported.Save") { isSavingCopy = true }
+            .font(.footnote.weight(.semibold))
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .accessibilityIdentifier("saveCopy")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pagesNotice")
     }
 
     private var findButton: some View {
@@ -454,6 +492,8 @@ private struct UnsupportedFeatureNotice: View {
     var report: UnsupportedFeatureReport
     /// Converted from another format, which leaves out what it cannot bring across.
     var isImported = false
+    /// Saved back into the file it came from, which keeps what was left out.
+    var keepsWhatIsLeftOut = false
 
     var body: some View {
         ScrollView {
@@ -461,7 +501,10 @@ private struct UnsupportedFeatureNotice: View {
                 Label("Notice.UnsupportedFeatures.Title", systemImage: "exclamationmark.triangle")
                     .font(.headline)
                     .labelStyle(.titleAndIcon)
-                Text(isImported ? "Notice.UnsupportedFeatures.ImportedMessage" : "Notice.UnsupportedFeatures.Message")
+                Text(
+                    keepsWhatIsLeftOut ? "Notice.UnsupportedFeatures.PagesMessage"
+                        : isImported ? "Notice.UnsupportedFeatures.ImportedMessage" : "Notice.UnsupportedFeatures.Message"
+                )
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

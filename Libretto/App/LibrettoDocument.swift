@@ -24,13 +24,15 @@ extension UTType {
 /// back with it, but Libretto never runs them. Plain text and source code open
 /// in the code editor and save back as text, with syntax colouring only for
 /// source code. A Markdown file keeps only the formatting Markdown has. A
-/// Pages document is only read: it is saved as a Word document to keep changes.
+/// Pages document saves its edits back into itself, as far as `PagesWriter`
+/// can; one from Pages '09, or a page layout one, is only read, and is saved
+/// as a Word document to keep changes.
 struct LibrettoDocument: FileDocument {
     static let readableContentTypes: [UTType] = [
         .openXMLDocument, .macroEnabledDocument, .markdownDocument, .pagesDocument, .pagesPackage,
     ] + SourceLanguage.contentTypes + [.plainText]
     static let writableContentTypes: [UTType] = [
-        .openXMLDocument, .macroEnabledDocument, .markdownDocument,
+        .openXMLDocument, .macroEnabledDocument, .markdownDocument, .pagesDocument, .pagesPackage,
     ] + SourceLanguage.contentTypes + [.plainText]
 
     var document: WordDocument
@@ -90,9 +92,11 @@ struct LibrettoDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        // A Pages document is never overwritten with something Pages cannot open.
+        // A Pages document is saved back into itself, and is never overwritten with something Pages cannot open.
         if configuration.contentType.conforms(to: .pagesDocument) || configuration.contentType.conforms(to: .pagesPackage) {
-            throw CocoaError(.fileWriteUnsupportedScheme)
+            return try PagesWriter.fileWrapper(
+                for: document, asPackage: configuration.contentType.conforms(to: .pagesPackage)
+            )
         }
         // Text has no way to track changes; it is saved as it reads with them accepted.
         var text = document
