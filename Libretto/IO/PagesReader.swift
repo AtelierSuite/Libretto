@@ -3,8 +3,9 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Reads a Pages document into a new word-processing document, which saves
-/// as `.docx`. Nothing of the Pages file is kept to be written back.
+/// Reads a Pages document into a new word-processing document. The Pages
+/// file is kept, with where the body's content came from, for `PagesWriter`
+/// to save edits back into it.
 ///
 /// The body text comes across with its paragraph and character formatting,
 /// lists, links, inline pictures, tables, footnotes, and the page's size,
@@ -24,25 +25,34 @@ enum PagesReader {
             // under a compression method of its own.
             throw IWorkError.passwordProtected
         }
-        return try document(fromFiles: files)
+        var document = try document(fromFiles: files)
+        // What was left unread is still saved back.
+        document.pagesSource?.original = .archive(data)
+        return document
     }
 
     /// Reads a document saved as a package, by its files' paths within it.
-    static func document(fromFiles files: [String: Data]) throws -> WordDocument {
-        let files = try unwrapped(files)
+    static func document(fromFiles original: [String: Data]) throws -> WordDocument {
+        let files = try unwrapped(original)
         // Pages since 2013 keeps a password-protected document's archives
         // encrypted, with the password's verifier alongside.
         if files.keys.contains(where: { $0.hasPrefix(".iwpv") }) { throw IWorkError.passwordProtected }
+        var document: WordDocument
         if let index = try Pages09Reader.index(in: files) {
-            return try Pages09Reader.document(fromIndex: index, files: files)
+            document = try Pages09Reader.document(fromIndex: index, files: files)
+        } else {
+            document = try self.document(from: IWorkArchive(files: files))
         }
-        return try document(from: IWorkArchive(files: files))
+        var source = document.pagesSource ?? PagesSource(original: .files(original))
+        source.original = .files(original)
+        document.pagesSource = source
+        return document
     }
 
     /// The package's files as the readers expect them: out of the folder a
     /// ZIP may hold the package in, and with the archives of a Pages 5
     /// package, which keeps them zipped in `Index.zip`, alongside the rest.
-    private static func unwrapped(_ files: [String: Data]) throws -> [String: Data] {
+    static func unwrapped(_ files: [String: Data]) throws -> [String: Data] {
         var files = files
         let folders = Set(files.keys.map { $0.prefix { $0 != "/" } })
         if folders.count == 1, let folder = folders.first, folder.hasSuffix(".pages"),
@@ -66,7 +76,14 @@ enum PagesReader {
             throw IWorkError.notAnIWorkDocument
         }
         var converter = PagesConverter(archive: archive)
-        return converter.convert(root)
+        var document = converter.convert(root)
+        if !converter.isPageLayout, let storage = root.reference(4) {
+            var body = converter.body
+            body.storage = storage
+            body.original = PagesOriginal(document)
+            document.pagesSource = PagesSource(original: .files(archive.files), body: body)
+        }
+        return document
     }
 
     /// The message types the reader knows, by their registry numbers.
@@ -463,6 +480,12 @@ struct PagesConverter {
     private let locale: Locale
     /// Formatters for dates in tables, by the pattern they show.
     private var dateFormatters: [String: DateFormatter] = [:]
+    /// Where the body's content came from, for saving edits back.
+    private(set) var body = PagesBody()
+    /// Whether the document is a page layout one, read from what is placed on its pages.
+    private(set) var isPageLayout = false
+    /// Whether what is read is the body's own text, not text set in its tables or notes.
+    private var recording: Bool { readingBody && storageDepth == 1 }
 
     init(archive: IWorkArchive) {
         self.archive = archive
@@ -482,6 +505,7 @@ struct PagesConverter {
                 // A page layout document has no body text, only a break between each page and the
                 // next: its pages are what is placed on them.
                 sectionBreaks = []
+                isPageLayout = true
                 blocks = floatingBlocks(floating)
             } else {
                 // Objects placed on a page of a word-processing document have no place in its text.
@@ -490,7 +514,9 @@ struct PagesConverter {
         }
         // A table cannot end the document; Word wants a paragraph after it.
         if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
-            blocks.append(.paragraph(Paragraph()))
+            let paragraph = Paragraph()
+            body.additions.insert(paragraph.id)
+            blocks.append(.paragraph(paragraph))
         }
         document.body = blocks
         adoptStyles()
@@ -614,8 +640,9 @@ struct PagesConverter {
             var paragraphFormat = PagesParagraphProperties()
             var baseCharacters = PagesCharacterProperties()
             if let styleID { (paragraphFormat, baseCharacters) = paragraphStyle(styleID) }
-            var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
-            paragraph.properties.lineSpacing = paragraphFormat.lineSpacing(fontSize: baseCharacters.fontSize)
+            var paragraph = Paragraph(properties: paragraphProperties(of: styleID))
+            // The blocks after the first the paragraph becomes carry it on, rather than start one of their own.
+            let firstBlock = blocks.count
             let listStyleID = listStyles.inheritedObject(at: start)
             var listNumberingID = listStyleID.flatMap { list(for: $0) }
             if storageDepth == 1 {
@@ -676,15 +703,7 @@ struct PagesConverter {
                     break
                 }
                 let unit = text[index]
-                let characterStyleID = characterStyles.object(at: index)
-                let format: RunFormat
-                if let known = runFormats[[styleID, characterStyleID]] {
-                    format = known
-                } else {
-                    let characters = characterStyleID.map { characterStyle($0) } ?? PagesCharacterProperties()
-                    format = RunFormat(style: baseCharacters.overlaid(with: characters).runStyle)
-                    runFormats[[styleID, characterStyleID]] = format
-                }
+                let format = runFormat(paragraphStyle: styleID, characterStyle: characterStyles.object(at: index))
                 let link = smartFields.object(at: index).flatMap { hyperlink($0) }
                 if format != pendingFormat || link != pendingLink || revision != pendingRevision {
                     flush()
@@ -702,15 +721,20 @@ struct PagesConverter {
                 case 0x000E:
                     flush()
                     if let reference = footnote(footnotes.object(at: index)) {
+                        if recording, let attachment = footnotes.object(at: index) { body.notes[reference.id] = attachment }
                         var noteFormat = format
                         noteFormat.style.verticalAlignment = .superscript
                         paragraph.inlines.append(Inline(.note(reference), format: noteFormat, revision: revision))
                     }
                 case 0xFFFC:
                     flush()
-                    switch attachment(attachments.object(at: index)) {
-                    case .image(let image): paragraph.inlines.append(Inline(.image(image), format: format, revision: revision))
+                    let attachmentID = attachments.object(at: index)
+                    switch attachment(attachmentID) {
+                    case .image(let image):
+                        if recording, let attachmentID { body.images[image.relationshipID] = attachmentID }
+                        paragraph.inlines.append(Inline(.image(image), format: format, revision: revision))
                     case .table(let table):
+                        if recording, let attachmentID { body.tables[table.id] = attachmentID }
                         // The text before a table set in a paragraph stays above it, and the rest goes below.
                         var rest = Paragraph(properties: paragraph.properties)
                         if !paragraph.inlines.isEmpty {
@@ -750,6 +774,9 @@ struct PagesConverter {
                 // A section ends with a paragraph, which a table cannot be.
                 if case .paragraph = blocks.last {} else { blocks.append(.paragraph(Paragraph())) }
                 sectionBreaks.append((blocks.count - 1, end))
+            }
+            if recording, blocks.count > firstBlock + 1 {
+                body.continuations.formUnion(blocks[(firstBlock + 1)...].map(\.id))
             }
             start = end + 1
         }
@@ -801,6 +828,7 @@ struct PagesConverter {
             attributesXML: " r:id=\"\(id)\" w:history=\"1\""
         )
         links[identifier] = link
+        body.links[id] = identifier
         return link
     }
 
@@ -834,6 +862,7 @@ struct PagesConverter {
             }
         }
         comments[identifier] = .some(id)
+        if let id { body.comments[identifier] = id }
         return id
     }
 
@@ -855,7 +884,26 @@ struct PagesConverter {
         return ISO8601DateFormatter().string(from: Date(timeIntervalSinceReferenceDate: seconds))
     }
 
-    private mutating func paragraphStyle(_ identifier: UInt64) -> (PagesParagraphProperties, PagesCharacterProperties) {
+    /// What a paragraph in a paragraph style reads as, before any list it is in.
+    mutating func paragraphProperties(of styleID: UInt64?) -> ParagraphProperties {
+        guard let styleID else { return ParagraphProperties() }
+        let (format, characters) = paragraphStyle(styleID)
+        var properties = format.paragraphProperties
+        properties.lineSpacing = format.lineSpacing(fontSize: characters.fontSize)
+        return properties
+    }
+
+    /// The format of text in a paragraph style and a character style.
+    mutating func runFormat(paragraphStyle styleID: UInt64?, characterStyle characterStyleID: UInt64?) -> RunFormat {
+        if let known = runFormats[[styleID, characterStyleID]] { return known }
+        let base = styleID.map { paragraphStyle($0).1 } ?? PagesCharacterProperties()
+        let characters = characterStyleID.map { characterStyle($0) } ?? PagesCharacterProperties()
+        let format = RunFormat(style: base.overlaid(with: characters).runStyle)
+        runFormats[[styleID, characterStyleID]] = format
+        return format
+    }
+
+    mutating func paragraphStyle(_ identifier: UInt64) -> (PagesParagraphProperties, PagesCharacterProperties) {
         if let cached = paragraphStyles[identifier] { return cached }
         var chain: [ProtoMessage] = []
         var next: UInt64? = identifier
@@ -874,7 +922,7 @@ struct PagesConverter {
         return (paragraph, characters)
     }
 
-    private mutating func characterStyle(_ identifier: UInt64) -> PagesCharacterProperties {
+    mutating func characterStyle(_ identifier: UInt64) -> PagesCharacterProperties {
         if let cached = characterStyles[identifier] { return cached }
         var chain: [ProtoMessage] = []
         var next: UInt64? = identifier
@@ -922,6 +970,7 @@ struct PagesConverter {
         })
         let numberingID = document.numbering.addList(levels: levels, kind: first == 3 ? .numbered : .bulleted)
         lists[identifier] = numberingID
+        body.lists[numberingID] = identifier
         return numberingID
     }
 
@@ -934,7 +983,9 @@ struct PagesConverter {
         } else if numberingInUse[listStyleID] == nil {
             numberingInUse[listStyleID] = list
         }
-        return numberingInUse[listStyleID] ?? list
+        let numberingID = numberingInUse[listStyleID] ?? list
+        body.lists[numberingID] = listStyleID
+        return numberingID
     }
 
     /// `w:numFmt` and `w:lvlText`, with `%` for the number, for a `TSWP.ListStyleArchive.NumberType`.

@@ -50,6 +50,8 @@ struct WordDocument: Equatable, Sendable {
     /// The format the document was converted from, which Libretto reads but
     /// cannot save. `nil` for a document that saves back to its own file.
     var importedFormat: ImportedFormat?
+    /// The Pages document it was read from, kept to save edits back into it.
+    var pagesSource: PagesSource?
 
     /// Whether the file carries a VBA project. Libretto keeps it but never runs it.
     var hasMacros: Bool { package.parts.keys.contains { $0.lowercased().hasSuffix("vbaproject.bin") } }
