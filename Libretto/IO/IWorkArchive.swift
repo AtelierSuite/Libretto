@@ -40,6 +40,8 @@ struct IWorkArchive {
     }
 
     private(set) var objects: [UInt64: Object] = [:]
+    /// The archive each object is in, by its path within the package.
+    private(set) var locations: [UInt64: String] = [:]
     /// The package's files, by their path within it.
     let files: [String: Data]
     /// Data file names, by the identifier objects refer to them with.
@@ -59,7 +61,9 @@ struct IWorkArchive {
         }
         for path in archives {
             do {
-                objects.merge(try Self.objects(in: Self.decompress(files[path]!, name: path))) { first, _ in first }
+                let found = try Self.objects(in: Self.decompress(files[path]!, name: path))
+                objects.merge(found) { first, _ in first }
+                for identifier in found.keys where locations[identifier] == nil { locations[identifier] = path }
             } catch where !Self.essentialArchives.contains(path) {
                 // The rest only add to the document, so a damaged one is left out.
                 continue
@@ -375,5 +379,255 @@ struct ProtoMessage {
     /// The identifier a `TSP.Reference` field points at.
     func reference(_ number: Int) -> UInt64? {
         message(number)?.optionalUInt(1)
+    }
+}
+
+// MARK: - Writing
+
+/// Writes the protobuf wire format.
+struct ProtoWriter {
+    private(set) var bytes: [UInt8] = []
+
+    mutating func varint(_ value: UInt64) {
+        var value = value
+        while value >= 0x80 {
+            bytes.append(UInt8(value & 0x7F) | 0x80)
+            value >>= 7
+        }
+        bytes.append(UInt8(value))
+    }
+
+    mutating func littleEndian(_ value: UInt64, count: Int) {
+        for shift in 0..<count { bytes.append(UInt8(truncatingIfNeeded: value >> (8 * shift))) }
+    }
+
+    mutating func append<Bytes: Collection>(_ more: Bytes) where Bytes.Element == UInt8 {
+        bytes.append(contentsOf: more)
+    }
+
+    /// Integers as a packed repeated field holds them.
+    static func packed(_ values: [UInt64]) -> [UInt8] {
+        var writer = ProtoWriter()
+        for value in values { writer.varint(value) }
+        return writer.bytes
+    }
+}
+
+extension ProtoMessage {
+    /// The message in the wire format, its fields in the order they are held,
+    /// so a message read and written back unchanged comes out as it went in.
+    var encoded: [UInt8] {
+        var writer = ProtoWriter()
+        for (number, value) in fields {
+            let key = UInt64(number) << 3
+            switch value {
+            case .varint(let value):
+                writer.varint(key)
+                writer.varint(value)
+            case .fixed64(let value):
+                writer.varint(key | 1)
+                writer.littleEndian(value, count: 8)
+            case .bytes(let bytes):
+                writer.varint(key | 2)
+                writer.varint(UInt64(bytes.count))
+                writer.append(bytes)
+            case .fixed32(let value):
+                writer.varint(key | 5)
+                writer.littleEndian(UInt64(value), count: 4)
+            }
+        }
+        return writer.bytes
+    }
+
+    /// A `TSP.Reference` to an object.
+    static func reference(_ identifier: UInt64) -> ProtoMessage {
+        var reference = ProtoMessage()
+        reference.append(1, .varint(identifier))
+        return reference
+    }
+
+    mutating func append(_ number: Int, _ value: Value) {
+        fields.append((number, value))
+    }
+
+    mutating func append(_ number: Int, message: ProtoMessage) {
+        append(number, .bytes(message.encoded[...]))
+    }
+
+    /// Gives a field this one value, where it was if it was set, and last if not.
+    mutating func set(_ number: Int, _ value: Value) {
+        replace(number, with: [value])
+    }
+
+    mutating func set(_ number: Int, message: ProtoMessage) {
+        set(number, .bytes(message.encoded[...]))
+    }
+
+    /// Gives a repeated field these values, where its first was if it was
+    /// set, and last if not; no values clears it.
+    mutating func replace(_ number: Int, with values: [Value]) {
+        let at = fields.firstIndex { $0.number == number } ?? fields.count
+        let before = fields[..<at].filter { $0.number != number }
+        let after = fields[at...].filter { $0.number != number }
+        fields = before + values.map { (number, $0) } + after
+    }
+
+    mutating func replace(_ number: Int, withMessages messages: [ProtoMessage]) {
+        replace(number, with: messages.map { .bytes($0.encoded[...]) })
+    }
+
+    mutating func remove(_ number: Int) {
+        fields.removeAll { $0.number == number }
+    }
+}
+
+extension Snappy {
+    /// Compresses a block in Snappy's raw format, finding repeats of four
+    /// bytes or more up to 64 KiB back.
+    static func compress(_ input: ArraySlice<UInt8>) -> [UInt8] {
+        var writer = ProtoWriter()
+        writer.varint(UInt64(input.count))
+        var output = writer.bytes
+        output.reserveCapacity(input.count + input.count / 6 + 32)
+        let start = input.startIndex
+        let end = input.endIndex
+
+        func emitLiteral(_ range: Range<Int>) {
+            guard !range.isEmpty else { return }
+            let length = range.count - 1
+            switch length {
+            case ..<60: output.append(UInt8(length << 2))
+            case ..<0x100: output += [60 << 2, UInt8(length)]
+            case ..<0x10000: output += [61 << 2, UInt8(length & 0xFF), UInt8(length >> 8)]
+            case ..<0x100_0000: output += [62 << 2, UInt8(length & 0xFF), UInt8(length >> 8 & 0xFF), UInt8(length >> 16)]
+            default:
+                output += [63 << 2] + (0..<4).map { UInt8(truncatingIfNeeded: length >> (8 * $0)) }
+            }
+            output.append(contentsOf: input[range])
+        }
+        func emitCopy(distance: Int, length: Int) {
+            var remaining = length
+            while remaining > 0 {
+                // At most 64 a copy, leaving no fewer than four for the next.
+                var count = min(remaining, 64)
+                if remaining > 64, remaining - 64 < 4 { count = 60 }
+                output += [UInt8((count - 1) << 2 | 2), UInt8(distance & 0xFF), UInt8(distance >> 8)]
+                remaining -= count
+            }
+        }
+        func word(_ index: Int) -> UInt32 {
+            UInt32(input[index]) | UInt32(input[index + 1]) << 8 | UInt32(input[index + 2]) << 16 | UInt32(input[index + 3]) << 24
+        }
+
+        var table = [Int](repeating: -1, count: 1 << 14)
+        var position = start
+        var literalStart = start
+        while position + 4 <= end {
+            let current = word(position)
+            let slot = Int((current &* 0x1E35_A7BD) >> 18)
+            let candidate = table[slot]
+            table[slot] = position
+            guard candidate >= start, position - candidate <= 0xFFFF, word(candidate) == current else {
+                position += 1
+                continue
+            }
+            emitLiteral(literalStart..<position)
+            var length = 4
+            while position + length < end, input[candidate + length] == input[position + length] { length += 1 }
+            emitCopy(distance: position - candidate, length: length)
+            position += length
+            literalStart = position
+        }
+        emitLiteral(literalStart..<end)
+        return output
+    }
+}
+
+/// One `.iwa` archive's objects, in the order it holds them, to change some
+/// and write it back with the rest as they were.
+struct IWorkArchiveFile {
+    struct Object {
+        /// The `TSP.ArchiveInfo` that leads the object.
+        var header: ProtoMessage
+        /// The object's messages: the object itself, then any for its own use.
+        var messages: [ArraySlice<UInt8>]
+
+        var identifier: UInt64 { header.uint(1) }
+    }
+
+    private(set) var objects: [Object] = []
+
+    init(_ data: Data, name: String) throws {
+        let bytes = try IWorkArchive.decompress(data, name: name)
+        var reader = ProtoReader(bytes[...])
+        while !reader.isAtEnd {
+            let header = try ProtoMessage(reader.take(reader.length()))
+            let messages = try header.messages(2).map { try reader.take(ProtoReader.length($0.uint(3))) }
+            objects.append(Object(header: header, messages: messages))
+        }
+    }
+
+    func message(_ identifier: UInt64) -> ProtoMessage? {
+        objects.first { $0.identifier == identifier }.flatMap { $0.messages.first.flatMap { try? ProtoMessage($0) } }
+    }
+
+    /// The objects an object says it refers to.
+    func references(_ identifier: UInt64) -> [UInt64] {
+        objects.first { $0.identifier == identifier }?.header.messages(2).first?.uints(5) ?? []
+    }
+
+    /// The `TSP.MessageInfo` versions an object of a type was written with, to write another like it.
+    func version(ofType type: UInt64) -> [UInt64]? {
+        objects.lazy.compactMap { $0.header.messages(2).first }.first { $0.uint(1) == type }?.uints(2)
+    }
+
+    /// Replaces an object's message, and the list of objects it refers to.
+    mutating func replace(_ identifier: UInt64, with message: ProtoMessage, references: [UInt64]) {
+        guard let index = objects.firstIndex(where: { $0.identifier == identifier }) else { return }
+        var infos = objects[index].header.messages(2)
+        guard !infos.isEmpty else { return }
+        infos[0].set(5, .bytes(ProtoWriter.packed(references)[...]))
+        if references.isEmpty { infos[0].remove(5) }
+        objects[index].header.replace(2, withMessages: infos)
+        objects[index].messages[0] = message.encoded[...]
+    }
+
+    /// Adds an object at the end.
+    mutating func append(_ identifier: UInt64, type: UInt64, version: [UInt64], message: ProtoMessage, references: [UInt64]) {
+        var info = ProtoMessage()
+        info.append(1, .varint(type))
+        info.append(2, .bytes(ProtoWriter.packed(version)[...]))
+        info.append(3, .varint(0))
+        if !references.isEmpty { info.append(5, .bytes(ProtoWriter.packed(references)[...])) }
+        var header = ProtoMessage()
+        header.append(1, .varint(identifier))
+        header.append(2, message: info)
+        objects.append(Object(header: header, messages: [message.encoded[...]]))
+    }
+
+    /// The archive, each object's message lengths as they now are, in chunks
+    /// of 64 KiB before compression, as iWork writes them.
+    var data: Data {
+        var raw: [UInt8] = []
+        for object in objects {
+            var header = object.header
+            var infos = header.messages(2)
+            for index in infos.indices where index < object.messages.count {
+                infos[index].set(3, .varint(UInt64(object.messages[index].count)))
+            }
+            header.replace(2, withMessages: infos)
+            let encoded = header.encoded
+            raw += ProtoWriter.packed([UInt64(encoded.count)])
+            raw += encoded
+            for message in object.messages { raw += message }
+        }
+        var output = Data()
+        for chunkStart in stride(from: 0, to: raw.count, by: 0x10000) {
+            let block = Snappy.compress(raw[chunkStart..<min(chunkStart + 0x10000, raw.count)])
+            output.append(0)
+            output.append(contentsOf: (0..<3).map { UInt8(truncatingIfNeeded: block.count >> (8 * $0)) })
+            output.append(contentsOf: block)
+        }
+        return output
     }
 }
