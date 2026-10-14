@@ -218,6 +218,27 @@ struct PagesSavingTests {
         #expect(try PagesWriter.files(for: document) == document.pagesSource!.files())
     }
 
+    @Test("Edits to tables, pictures and headers are told apart from those a Pages document keeps")
+    func unsavable() throws {
+        let document = try PagesReader.document(from: PagesWriterTests.data("Sample.pages"))
+        #expect(!PagesWriter.hasUnsavableChanges(document))
+        let typed = Self.editing(document, startingWith: "Final") { $0.inlines.append(Inline(.text(" More."))) }
+        #expect(!PagesWriter.hasUnsavableChanges(typed))
+        var table = document
+        let index = table.body.firstIndex { if case .table = $0 { true } else { false } }!
+        guard case .table(var edited) = table.body[index] else { return }
+        edited.rows[0].cells[0].blocks = [.paragraph(Paragraph(text: "Changed"))]
+        table.body[index] = .table(edited)
+        #expect(PagesWriter.hasUnsavableChanges(table))
+        var header = document
+        if let id = header.headerFooters.keys.first { header.headerFooters[id]?.text = "Changed" }
+        #expect(PagesWriter.hasUnsavableChanges(header))
+        let picture = Self.editing(document, startingWith: "Final") { paragraph in
+            paragraph.inlines.append(Inline(.image(InlineImage(relationshipID: "rIdNew", width: 10, height: 10))))
+        }
+        #expect(PagesWriter.hasUnsavableChanges(picture))
+    }
+
     @Test("Text aligns with the text it was edited from")
     func alignment() {
         let old = Array("one\ntwo\nthree".utf16).map(Int.init)

@@ -57,6 +57,78 @@ enum PagesWriter {
         return FileWrapper(directoryWithFileWrappers: children)
     }
 
+    /// Whether a document has changes saving it as a Pages document would
+    /// not keep: to its tables, pictures, notes, headers and footers,
+    /// sections or comments, or formatting Pages has no place for.
+    static func hasUnsavableChanges(_ document: WordDocument) -> Bool {
+        guard let body = document.pagesSource?.body, let original = body.original?.document else { return false }
+        let setup = document.pageSetup
+        let originalSetup = original.pageSetup
+        let pageChanges: [Bool] = [
+            document.headerFooters != original.headerFooters, document.evenAndOddHeaders != original.evenAndOddHeaders,
+            setup.headerFooters != originalSetup.headerFooters, setup.columns != originalSetup.columns,
+            setup.columnSpacing != originalSetup.columnSpacing, setup.start != originalSetup.start,
+            setup.pageNumberFormat != originalSetup.pageNumberFormat,
+        ]
+        if pageChanges.contains(true) { return true }
+        let notes = Dictionary(original.notes.map { ($0.key, $0.text) }, uniquingKeysWith: { first, _ in first }) as [String: String]
+        if document.notes.contains(where: { notes[$0.key] != $0.text }) { return true }
+        // Comments can be taken away, but not added or changed.
+        if document.comments.contains(where: { !original.comments.contains($0) }) { return true }
+        var originalBlocks: [UUID: Block] = [:]
+        var images: [String: InlineImage] = [:]
+        var revisions = Set<Revision>()
+        for block in original.body {
+            originalBlocks[block.id] = block
+            for inline in block.paragraphs.flatMap(\.inlines) {
+                if case .image(let image) = inline.content { images[image.relationshipID] = image }
+                if let revision = inline.revision { revisions.insert(revision) }
+            }
+            if let revision = block.paragraphs.first?.markRevision { revisions.insert(revision) }
+        }
+        let headings: [String?] = [ParagraphStyleChoice.heading1, .heading2, .heading3].map(\.defaultID)
+        let styleIDs = Set<String?>([nil, document.styles.defaultParagraphStyleID, "Normal"] + headings)
+        for block in document.body {
+            switch block {
+            case .table(let table):
+                guard case .table(let was) = originalBlocks[table.id], was == table else { return true }
+            case .preserved:
+                return true
+            case .paragraph(let paragraph):
+                let was: Paragraph? = if case .paragraph(let was) = originalBlocks[paragraph.id] { was } else { nil }
+                if paragraph.section != (was?.section ?? nil) { return true }
+                let properties = paragraph.properties
+                if properties.borders != nil || properties.dropCap != nil || !styleIDs.contains(properties.styleID) {
+                    return true
+                }
+                // A list made in Libretto takes a list style of Pages' of the same kind, if there is one.
+                if let list = properties.list, list.numberingID != 0, body.lists[list.numberingID] == nil {
+                    let kind = document.numbering.kind(of: list.numberingID)
+                    if !body.lists.keys.contains(where: { original.numbering.kind(of: $0) == kind }) { return true }
+                }
+                if let revision = paragraph.markRevision, !revisions.contains(revision) { return true }
+                for inline in paragraph.inlines {
+                    if let revision = inline.revision, !revisions.contains(revision) { return true }
+                    if let id = inline.hyperlink?.relationshipID, body.links[id] == nil { return true }
+                    let style = inline.format.style
+                    if style.highlight != nil || style.characterSpacing != nil || style.characterStyleID != nil
+                        || style.outline == true || style.shadow == true || style.emboss == true || style.imprint == true {
+                        return true
+                    }
+                    switch inline.content {
+                    case .image(let image):
+                        if body.images[image.relationshipID] == nil || images[image.relationshipID] != image { return true }
+                    case .note(let reference):
+                        if body.notes[reference.id] == nil { return true }
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+        return false
+    }
+
     /// Whether a file is one of the package's previews, which show the document as it was.
     static func isPreview(_ path: String) -> Bool {
         (!path.contains("/") && path.hasPrefix("preview")) || path.hasPrefix("QuickLook/")
