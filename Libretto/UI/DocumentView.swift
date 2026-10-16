@@ -413,7 +413,7 @@ struct DocumentView: View {
     }
 
     private var sourceCodeLink: some View {
-        Link(destination: URL(string: "https://github.com/katagaki/Libretto")!) {
+        Link(destination: URL(string: "https://github.com/AtelierSuite/Libretto")!) {
             Label("Toolbar.SourceCode", systemImage: "chevron.left.forwardslash.chevron.right")
         }
     }
