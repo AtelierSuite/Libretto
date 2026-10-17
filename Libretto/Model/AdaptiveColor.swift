@@ -8,7 +8,8 @@ import SwiftUI
 /// hue and saturation and only moves lightness, and only when it needs to:
 ///
 /// - Near-greys (whitish/blackish) flip their lightness, so white paper becomes
-///   dark paper and black ink becomes light ink.
+///   dark paper and black ink becomes light ink. Ones already meant for a dark
+///   page — a black code block with pale text — are left alone.
 /// - Saturated colours keep their identity and are nudged only far enough to
 ///   stay legible against the current background.
 enum AdaptiveColor {
@@ -51,8 +52,11 @@ enum AdaptiveColor {
         var result = color
 
         if color.saturation < achromaticThreshold {
-            // Whitish and blackish: flip lightness, keeping any slight tint.
-            result.lightness = 1 - color.lightness
+            // Whitish fills and blackish text: flip lightness, keeping any
+            // slight tint. A dark fill or light text was already made for a
+            // dark page, so flipping it would undo the author's dark design.
+            let isLightModeColor = isText ? color.lightness < 0.5 : color.lightness > 0.5
+            if isLightModeColor { result.lightness = 1 - color.lightness }
             return result
         }
 
