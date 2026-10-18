@@ -127,6 +127,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
             inspector.editor = editor
             refreshNotice()
         }
+        updateToolbarState()
         window?.makeFirstResponder(pageEditor?.textView ?? codeEditor?.textView)
     }
 
@@ -356,6 +357,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         static let unsupported = NSToolbarItem.Identifier("unsupported")
     }
 
+    /// The items that only do something to pages, hidden while editing source code.
+    private static let pageItems: Set<NSToolbarItem.Identifier> = [
+        Item.style, Item.font, Item.alignment, Item.lists, Item.insert, Item.comment, Item.track, .toggleInspector,
+    ]
+
     private var fontControl: NSSegmentedControl?
     private var alignmentControl: NSSegmentedControl?
     private var trackItem: NSToolbarItem?
@@ -372,6 +378,12 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     func toolbar(
         _ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
+        let item = makeToolbarItem(identifier)
+        if Self.pageItems.contains(identifier) { item?.isHidden = codeEditor != nil }
+        return item
+    }
+
+    private func makeToolbarItem(_ identifier: NSToolbarItem.Identifier) -> NSToolbarItem? {
         switch identifier {
         case Item.style:
             let item = NSMenuToolbarItem(itemIdentifier: identifier)
@@ -483,6 +495,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     private func updateToolbarState() {
         let format = state.selectionFormat
         let isPages = pageEditor != nil
+        for item in window?.toolbar?.items ?? [] where Self.pageItems.contains(item.itemIdentifier) {
+            item.isHidden = codeEditor != nil
+        }
         if let fontControl {
             fontControl.isEnabled = isPages
             for (index, isOn) in [format.isBold, format.isItalic, format.isUnderlined, format.isStruckThrough].enumerated() {
