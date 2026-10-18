@@ -59,7 +59,7 @@ enum PDFExporter {
 
 /// The header and footer, drawn as plain text in the page's margins.
 enum HeaderFooterDrawing {
-    static let font = PlatformFont.systemFont(ofSize: 9)
+    static var font: PlatformFont { .systemFont(ofSize: 9) }
 
     static func frames(_ section: WordDocumentHeaderFooter.Section, shape: PageGeometry.Shape) -> (header: CGRect, footer: CGRect) {
         let header = CGRect(

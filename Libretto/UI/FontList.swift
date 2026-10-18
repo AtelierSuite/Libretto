@@ -77,18 +77,3 @@ struct FontList: View {
         return Font(Typography.font(for: style, styles: StyleSheet()))
     }
 }
-
-extension WordDocument {
-    /// Fonts the document's text and styles name, in alphabetical order.
-    var fontNames: [String] {
-        var names: Set<String> = []
-        for paragraph in allParagraphs {
-            for inline in paragraph.inlines { if let name = inline.format.style.fontName { names.insert(name) } }
-        }
-        for style in styles.styles.values { if let name = style.runStyle.fontName { names.insert(name) } }
-        if let name = styles.defaultRunStyle.fontName { names.insert(name) }
-        names.remove(RunStyle.minorThemeFont)
-        names.remove(RunStyle.majorThemeFont)
-        return names.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-    }
-}

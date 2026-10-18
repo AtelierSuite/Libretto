@@ -203,7 +203,7 @@ enum DocumentRenderer {
         return style
     }
 
-    static let blockFont = PlatformFont.systemFont(ofSize: 1)
+    static var blockFont: PlatformFont { .systemFont(ofSize: 1) }
 
     static func renderBlock(_ block: Block, context: RenderContext) -> NSAttributedString {
         let output = NSMutableAttributedString()
