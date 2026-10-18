@@ -635,7 +635,7 @@ private final class PageInspector: InspectorPane {
 // MARK: - Review
 
 private final class ReviewInspector: InspectorPane {
-    private let tracking = NSSwitch()
+    private let tracking = NSButton(checkboxWithTitle: String(localized: "Review.TrackChanges"), target: nil, action: nil)
     private let author = NSTextField()
     private let comments = NSStackView()
     private let empty = NSTextField(labelWithString: String(localized: "Comments.None"))
@@ -653,7 +653,7 @@ private final class ReviewInspector: InspectorPane {
         comments.spacing = 8
         empty.textColor = .secondaryLabelColor
         addSection(String(localized: "Review.Section.Changes"), [
-            row(String(localized: "Review.TrackChanges"), tracking),
+            tracking,
             buttons([
                 button(String(localized: "Review.Accept"), #selector(DocumentTextView.acceptChange(_:))),
                 button(String(localized: "Review.Reject"), #selector(DocumentTextView.rejectChange(_:))),
