@@ -17,12 +17,16 @@ xcodebuild build -project "$PROJECT_DIR/Libretto.xcodeproj" -scheme "Libretto fo
   -destination "platform=macOS" -derivedDataPath $DERIVED_DATA CODE_SIGNING_ALLOWED=NO -quiet
 APP=$DERIVED_DATA/Build/Products/Debug/Libretto.app/Contents/MacOS/Libretto
 
-# Opens one document and waits for the app to draw it and quit.
+# Opens one document and waits for the app to draw it and quit. The app gives up
+# without a picture when its window can't become key, so try a few times.
 shoot() {
-  local document=$1 output=$2 language=$3; shift 3
-  "$APP" "$document" -LibrettoScreenshot "$output" -AppleLanguages "($language)" \
-    -ApplePersistenceIgnoreState YES "$@" >/dev/null 2>&1
-  [[ -f $output ]] || { echo "no screenshot for $document" >&2; return 1 }
+  local document=$1 output=$2 language=$3 attempt; shift 3
+  for attempt in 1 2 3 4 5; do
+    "$APP" "$document" -LibrettoScreenshot "$output" -AppleLanguages "($language)" \
+      -ApplePersistenceIgnoreState YES "$@" >/dev/null 2>&1 || true
+    [[ -f $output ]] && return
+  done
+  echo "no screenshot for $document" >&2; return 1
 }
 
 for language in $LANGUAGES; do
