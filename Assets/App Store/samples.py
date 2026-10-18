@@ -1,6 +1,6 @@
 """Writes the sample documents the App Store screenshots open.
 
-Usage: python3 samples.py <iPhone|iPad> <en|ja>
+Usage: python3 samples.py <iPhone|iPad|Mac> <en|ja>
 
 Prints the directory it wrote the documents to.
 
@@ -22,7 +22,7 @@ def choose(value, options):
 
 if len(sys.argv) != 3:
     sys.exit(__doc__)
-DEVICE = choose(sys.argv[1], ("iPhone", "iPad"))
+DEVICE = choose(sys.argv[1], ("iPhone", "iPad", "Mac"))
 LANG = choose(sys.argv[2], ("en", "ja"))
 OUT = tempfile.mkdtemp(prefix=f"libretto-samples-{DEVICE}-{LANG}-")
 JA = LANG == "ja"

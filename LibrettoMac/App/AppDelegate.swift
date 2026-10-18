@@ -12,6 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.run()
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        ScreenshotMode.start()
+        #endif
+    }
+
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
