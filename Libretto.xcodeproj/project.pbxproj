@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		A1E0000000000000000000EA /* LibrettoEngine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1E0000000000000000000E2 /* LibrettoEngine.framework */; };
 		A1E0000000000000000000EB /* LibrettoEngine.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A1E0000000000000000000E2 /* LibrettoEngine.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A1F00000000000000000000A /* LibrettoEngine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1E0000000000000000000E2 /* LibrettoEngine.framework */; };
+		A1F00000000000000000000B /* LibrettoEngine.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A1E0000000000000000000E2 /* LibrettoEngine.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +35,13 @@
 			remoteGlobalIDString = A1E0000000000000000000E1;
 			remoteInfo = LibrettoEngine;
 		};
+		A1F00000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 427FF3554CC0C4D5EE1DED76 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1E0000000000000000000E1;
+			remoteInfo = LibrettoEngine;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -47,6 +56,17 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1F00000000000000000000C /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				A1F00000000000000000000B /* LibrettoEngine.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -54,6 +74,7 @@
 		A89B1FA7EE4511A6BA446481 /* LibrettoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LibrettoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E42AC0167264BE45C006713C /* Libretto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Libretto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1E0000000000000000000E2 /* LibrettoEngine.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LibrettoEngine.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1F000000000000000000002 /* Libretto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Libretto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -63,6 +84,21 @@
 				Support/Info.plist,
 			);
 			target = 387A342D3F4BE3DD2131456A /* Libretto */;
+		};
+		A1F00000000000000000000F /* Exceptions for "Libretto" folder in "Libretto for Mac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Support/AppIcon.icon,
+				Support/Assets.xcassets,
+			);
+			target = A1F000000000000000000001 /* Libretto for Mac */;
+		};
+		A1F000000000000000000010 /* Exceptions for "LibrettoMac" folder in "Libretto for Mac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Support/Info.plist,
+			);
+			target = A1F000000000000000000001 /* Libretto for Mac */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -81,6 +117,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				DA6C3F3BED0559513768C33F /* Exceptions for "Libretto" folder in "Libretto" target */,
+				A1F00000000000000000000F /* Exceptions for "Libretto" folder in "Libretto for Mac" target */,
 			);
 			path = Libretto;
 			sourceTree = "<group>";
@@ -88,6 +125,14 @@
 		A1E0000000000000000000E3 /* LibrettoEngine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LibrettoEngine;
+			sourceTree = "<group>";
+		};
+		A1F000000000000000000003 /* LibrettoMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A1F000000000000000000010 /* Exceptions for "LibrettoMac" folder in "Libretto for Mac" target */,
+			);
+			path = LibrettoMac;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -108,6 +153,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1F000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1F00000000000000000000A /* LibrettoEngine.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -116,6 +169,7 @@
 			children = (
 				DF51DB3A199F5F4143E13F7F /* Libretto */,
 				A1E0000000000000000000E3 /* LibrettoEngine */,
+				A1F000000000000000000003 /* LibrettoMac */,
 				5E103D2583CF75B71F076331 /* LibrettoTests */,
 				240E03C3942F287C2B05CE9A /* LibrettoUITests */,
 				D5AF72DFEB19D26E22C9FD3E /* Products */,
@@ -127,6 +181,7 @@
 			children = (
 				E42AC0167264BE45C006713C /* Libretto.app */,
 				A1E0000000000000000000E2 /* LibrettoEngine.framework */,
+				A1F000000000000000000002 /* Libretto.app */,
 				53853A63CF6761C03238BAB9 /* LibrettoTests.xctest */,
 				A89B1FA7EE4511A6BA446481 /* LibrettoUITests.xctest */,
 			);
@@ -224,6 +279,30 @@
 			productReference = A1E0000000000000000000E2 /* LibrettoEngine.framework */;
 			productType = "com.apple.product-type.framework";
 		};
+		A1F000000000000000000001 /* Libretto for Mac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1F000000000000000000007 /* Build configuration list for PBXNativeTarget "Libretto for Mac" */;
+			buildPhases = (
+				A1F000000000000000000004 /* Sources */,
+				A1F000000000000000000005 /* Frameworks */,
+				A1F000000000000000000006 /* Resources */,
+				A1F00000000000000000000C /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1F00000000000000000000E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1F000000000000000000003 /* LibrettoMac */,
+			);
+			name = "Libretto for Mac";
+			packageProductDependencies = (
+			);
+			productName = Libretto;
+			productReference = A1F000000000000000000002 /* Libretto.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -233,6 +312,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					A1F000000000000000000001 = {
+						CreatedOnToolsVersion = 27.1;
+					};
 					A1E0000000000000000000E1 = {
 						CreatedOnToolsVersion = 27.1;
 					};
@@ -268,6 +350,7 @@
 			targets = (
 				387A342D3F4BE3DD2131456A /* Libretto */,
 				A1E0000000000000000000E1 /* LibrettoEngine */,
+				A1F000000000000000000001 /* Libretto for Mac */,
 				94222E3E56832D50C0E3B3F2 /* LibrettoTests */,
 				821B5F861649D9F04A362224 /* LibrettoUITests */,
 			);
@@ -283,6 +366,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A1E0000000000000000000E6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1F000000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -320,6 +410,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1F000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -337,6 +434,11 @@
 			isa = PBXTargetDependency;
 			target = A1E0000000000000000000E1 /* LibrettoEngine */;
 			targetProxy = A1E0000000000000000000EE /* PBXContainerItemProxy */;
+		};
+		A1F00000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1E0000000000000000000E1 /* LibrettoEngine */;
+			targetProxy = A1F00000000000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -694,6 +796,74 @@
 			};
 			name = Release;
 		};
+		A1F000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = LibrettoMac/Support/Libretto.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LibrettoMac/Support/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto;
+				PRODUCT_MODULE_NAME = LibrettoMac;
+				PRODUCT_NAME = Libretto;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		A1F000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = LibrettoMac/Support/Libretto.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LibrettoMac/Support/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto;
+				PRODUCT_MODULE_NAME = LibrettoMac;
+				PRODUCT_NAME = Libretto;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -738,6 +908,15 @@
 			buildConfigurations = (
 				A1E0000000000000000000E8 /* Debug */,
 				A1E0000000000000000000E9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1F000000000000000000007 /* Build configuration list for PBXNativeTarget "Libretto for Mac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1F000000000000000000008 /* Debug */,
+				A1F000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
