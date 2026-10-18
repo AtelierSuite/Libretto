@@ -1,28 +1,30 @@
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Draws shapes, text boxes, charts and SmartArt diagrams as pictures, for
 /// the pages, the reader and the PDF to show.
 enum ObjectRenderer {
-    static func image(for object: DrawingObject, size: CGSize) -> UIImage {
-        let format = UIGraphicsImageRendererFormat.preferred()
-        format.opaque = false
+    static func image(for object: DrawingObject, size: CGSize) -> PlatformImage {
         let canvas = CGSize(width: max(1, size.width), height: max(1, size.height))
-        return UIGraphicsImageRenderer(size: canvas, format: format).image { context in
+        return PlatformImage.drawn(size: canvas) { context in
             let bounds = CGRect(origin: .zero, size: canvas)
             switch object {
             case .shape(let shape):
-                draw(shape, in: bounds, context: context.cgContext)
+                draw(shape, in: bounds, context: context)
             case .diagram(let shapes):
-                drawDiagram(shapes, in: bounds, context: context.cgContext)
+                drawDiagram(shapes, in: bounds, context: context)
             case .chart(let chart):
                 ChartDrawing(chart: chart, bounds: bounds).draw()
             }
         }
     }
 
-    static func color(_ hex: String?, fallback: UIColor = .clear) -> UIColor {
+    static func color(_ hex: String?, fallback: PlatformColor = .clear) -> PlatformColor {
         guard let hex, hex.count == 6, let value = Int(hex, radix: 16) else { return fallback }
-        return UIColor(
+        return PlatformColor.sRGB(
             red: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
             blue: CGFloat(value & 0xFF) / 255, alpha: 1
         )
@@ -46,7 +48,7 @@ enum ObjectRenderer {
         let style = NSMutableParagraphStyle()
         style.alignment = shape.isTextBox ? .natural : .center
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: shape.fontSize ?? 11),
+            .font: PlatformFont.systemFont(ofSize: shape.fontSize ?? 11),
             .foregroundColor: color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? .black : .white),
             .paragraphStyle: style,
         ]
@@ -61,10 +63,10 @@ enum ObjectRenderer {
     }
 
     /// A preset geometry's outline, as near as these come to Word's.
-    static func path(_ geometry: String, in rect: CGRect) -> UIBezierPath {
+    static func path(_ geometry: String, in rect: CGRect) -> PlatformBezierPath {
         let (x, y, w, h) = (rect.minX, rect.minY, rect.width, rect.height)
-        func polygon(_ points: [(CGFloat, CGFloat)]) -> UIBezierPath {
-            let path = UIBezierPath()
+        func polygon(_ points: [(CGFloat, CGFloat)]) -> PlatformBezierPath {
+            let path = PlatformBezierPath()
             for (index, point) in points.enumerated() {
                 let location = CGPoint(x: x + w * point.0, y: y + h * point.1)
                 if index == 0 { path.move(to: location) } else { path.addLine(to: location) }
@@ -74,9 +76,9 @@ enum ObjectRenderer {
         }
         switch geometry {
         case "roundRect", "flowChartAlternateProcess", "wedgeRoundRectCallout":
-            return UIBezierPath(roundedRect: rect, cornerRadius: min(w, h) * 0.16)
+            return PlatformBezierPath(roundedRect: rect, cornerRadius: min(w, h) * 0.16)
         case "ellipse", "flowChartConnector", "donut", "cloud", "wedgeEllipseCallout":
-            return UIBezierPath(ovalIn: rect)
+            return PlatformBezierPath(ovalIn: rect)
         case "triangle", "flowChartExtract":
             return polygon([(0.5, 0), (1, 1), (0, 1)])
         case "rtTriangle":
@@ -115,12 +117,12 @@ enum ObjectRenderer {
             }
             return polygon(points)
         case "line", "straightConnector1", "bentConnector3", "curvedConnector3":
-            let path = UIBezierPath()
+            let path = PlatformBezierPath()
             path.move(to: CGPoint(x: rect.minX, y: rect.minY))
             path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
             return path
         default:
-            return UIBezierPath(rect: rect)
+            return PlatformBezierPath(rect: rect)
         }
     }
 
@@ -148,26 +150,26 @@ private struct ChartDrawing {
 
     static let palette = ["4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47", "264478", "9E480E"]
 
-    private let labelFont = UIFont.systemFont(ofSize: 8)
+    private let labelFont = PlatformFont.systemFont(ofSize: 8)
 
-    private func seriesColor(_ index: Int) -> UIColor {
+    private func seriesColor(_ index: Int) -> PlatformColor {
         ObjectRenderer.color(chart.series[index].colorHex ?? Self.palette[index % Self.palette.count])
     }
 
     private func label(_ text: String, at point: CGPoint, alignment: NSTextAlignment = .center, width: CGFloat = 60) {
         let style = NSMutableParagraphStyle()
         style.alignment = alignment
-        let attributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: UIColor.darkGray, .paragraphStyle: style]
+        let attributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: PlatformColor.darkGray, .paragraphStyle: style]
         let x = alignment == .center ? point.x - width / 2 : alignment == .right ? point.x - width : point.x
         (text as NSString).draw(in: CGRect(x: x, y: point.y, width: width, height: 11), withAttributes: attributes)
     }
 
     func draw() {
-        UIColor.white.setFill()
-        UIRectFill(bounds)
+        PlatformColor.white.setFill()
+        PlatformGraphics.fill(bounds)
         var area = bounds.insetBy(dx: 8, dy: 8)
         if let title = chart.title {
-            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 11), .foregroundColor: UIColor.black]
+            let attributes: [NSAttributedString.Key: Any] = [.font: PlatformFont.boldSystemFont(ofSize: 11), .foregroundColor: PlatformColor.black]
             let size = (title as NSString).size(withAttributes: attributes)
             (title as NSString).draw(at: CGPoint(x: area.midX - size.width / 2, y: area.minY), withAttributes: attributes)
             area.origin.y += size.height + 6
@@ -187,13 +189,13 @@ private struct ChartDrawing {
     }
 
     private func drawLegend(_ names: [String], in rect: CGRect, round: Bool) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: UIColor.darkGray]
+        let attributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: PlatformColor.darkGray]
         let widths = names.map { ($0 as NSString).size(withAttributes: attributes).width + 16 }
         var x = rect.midX - widths.reduce(0, +) / 2
         for (index, name) in names.enumerated() {
             let color = round ? ObjectRenderer.color(Self.palette[index % Self.palette.count]) : seriesColor(index)
             color.setFill()
-            UIRectFill(CGRect(x: x, y: rect.minY + 2, width: 7, height: 7))
+            PlatformGraphics.fill(CGRect(x: x, y: rect.minY + 2, width: 7, height: 7))
             (name as NSString).draw(at: CGPoint(x: x + 10, y: rect.minY), withAttributes: attributes)
             x += widths[index]
         }
@@ -208,20 +210,20 @@ private struct ChartDrawing {
         var angle = -CGFloat.pi / 2
         for (index, value) in values.enumerated() {
             let sweep = CGFloat(value / total) * 2 * .pi
-            let path = UIBezierPath()
+            let path = PlatformBezierPath()
             path.move(to: center)
             path.addArc(withCenter: center, radius: radius, startAngle: angle, endAngle: angle + sweep, clockwise: true)
             path.close()
             ObjectRenderer.color(Self.palette[index % Self.palette.count]).setFill()
             path.fill()
-            UIColor.white.setStroke()
+            PlatformColor.white.setStroke()
             path.lineWidth = 1
             path.stroke()
             angle += sweep
         }
         if chart.kind == .doughnut {
-            UIColor.white.setFill()
-            UIBezierPath(ovalIn: CGRect(x: center.x - radius / 2, y: center.y - radius / 2, width: radius, height: radius)).fill()
+            PlatformColor.white.setFill()
+            PlatformBezierPath(ovalIn: CGRect(x: center.x - radius / 2, y: center.y - radius / 2, width: radius, height: radius)).fill()
         }
     }
 
@@ -245,11 +247,11 @@ private struct ChartDrawing {
         let plot = CGRect(x: area.minX + (horizontal ? 50 : 28), y: area.minY + 4,
                           width: area.width - (horizontal ? 54 : 32), height: area.height - 18)
         // Gridlines and their values.
-        UIColor(white: 0.85, alpha: 1).setStroke()
+        PlatformColor(white: 0.85, alpha: 1).setStroke()
         var value = 0.0
         while value <= top + step / 2 {
             let fraction = CGFloat(value / top)
-            let path = UIBezierPath()
+            let path = PlatformBezierPath()
             if horizontal {
                 let x = plot.minX + plot.width * fraction
                 path.move(to: CGPoint(x: x, y: plot.minY))
@@ -292,7 +294,7 @@ private struct ChartDrawing {
                                  width: plot.width * position(max(0, value)), height: barWidth)
                         : CGRect(x: plot.minX + start, y: plot.maxY - plot.height * position(base + max(0, value)),
                                  width: barWidth, height: plot.height * position(max(0, value)))
-                    UIRectFill(rect)
+                    PlatformGraphics.fill(rect)
                     stacks[index] += max(0, value)
                 }
             }
@@ -302,7 +304,7 @@ private struct ChartDrawing {
                     CGPoint(x: plot.minX + band * (CGFloat(index) + 0.5), y: plot.maxY - plot.height * position(value))
                 }
                 guard let first = points.first else { continue }
-                let path = UIBezierPath()
+                let path = PlatformBezierPath()
                 path.move(to: first)
                 points.dropFirst().forEach(path.addLine)
                 let color = seriesColor(seriesIndex)
@@ -319,14 +321,14 @@ private struct ChartDrawing {
                 }
                 color.setFill()
                 for point in points where chart.kind != .area {
-                    UIBezierPath(ovalIn: CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)).fill()
+                    PlatformBezierPath(ovalIn: CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)).fill()
                 }
             }
         case .pie, .doughnut:
             break
         }
-        UIColor.gray.setStroke()
-        let axis = UIBezierPath()
+        PlatformColor.gray.setStroke()
+        let axis = PlatformBezierPath()
         axis.move(to: CGPoint(x: plot.minX, y: plot.minY))
         axis.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
         axis.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))

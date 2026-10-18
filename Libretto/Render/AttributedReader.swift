@@ -1,4 +1,8 @@
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Reads the editor's text back into blocks, from the model its attributes carry.
 enum AttributedReader {

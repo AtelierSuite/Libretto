@@ -166,11 +166,6 @@ extension Color {
 
     /// "AARRGGBB" representation, for round-tripping through OOXML.
     var argbHex: String? {
-        #if canImport(UIKit)
-        typealias PlatformColor = UIColor
-        #else
-        typealias PlatformColor = NSColor
-        #endif
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         #if canImport(UIKit)
         guard PlatformColor(self).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
@@ -184,12 +179,12 @@ extension Color {
 }
 
 extension AdaptiveColor {
-    /// The UIKit colour, for text drawn through TextKit.
-    static func uiColor(hex: String?, for scheme: ColorScheme, isText: Bool) -> UIColor? {
-        resolve(hex: hex, for: scheme, isText: isText).map(UIColor.init)
+    /// The platform's colour, for text drawn through TextKit.
+    static func platformColor(hex: String?, for scheme: ColorScheme, isText: Bool) -> PlatformColor? {
+        resolve(hex: hex, for: scheme, isText: isText).map(PlatformColor.init)
     }
 
-    static func uiTextColor(hex: String?, on fillHex: String?, for scheme: ColorScheme) -> UIColor? {
-        resolveText(hex: hex, on: fillHex, for: scheme).map(UIColor.init)
+    static func platformTextColor(hex: String?, on fillHex: String?, for scheme: ColorScheme) -> PlatformColor? {
+        resolveText(hex: hex, on: fillHex, for: scheme).map(PlatformColor.init)
     }
 }

@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Everything resolving the model into fonts, colours and paragraph styles needs.
 struct RenderContext: Sendable {
@@ -28,27 +32,27 @@ struct RenderContext: Sendable {
         noteNumbers = NoteNumbering.numbers(in: document)
     }
 
-    var defaultTextColor: UIColor { scheme == .dark ? .white : .black }
+    var defaultTextColor: PlatformColor { scheme == .dark ? .white : .black }
 }
 
 /// Decoded pictures, kept across re-renders so editing does not decode them again.
 final class ImageStore: @unchecked Sendable {
     private let lock = NSLock()
-    private var images: [String: UIImage] = [:]
+    private var images: [String: PlatformImage] = [:]
 
-    func image(forRelationship id: String, in package: DocumentPackage) -> UIImage? {
+    func image(forRelationship id: String, in package: DocumentPackage) -> PlatformImage? {
         lock.lock()
         defer { lock.unlock() }
         if let cached = images[id] { return cached }
-        guard let data = package.data(forRelationship: id), let image = UIImage(data: data) else { return nil }
+        guard let data = package.data(forRelationship: id), let image = PlatformImage(data: data) else { return nil }
         images[id] = image
         return image
     }
 
-    private var equations: [String: (image: UIImage, descent: CGFloat)] = [:]
+    private var equations: [String: (image: PlatformImage, descent: CGFloat)] = [:]
 
     /// An equation drawn at a size, in a colour.
-    func equation(_ xml: String, fontSize: CGFloat, color: UIColor) -> (image: UIImage, descent: CGFloat)? {
+    func equation(_ xml: String, fontSize: CGFloat, color: PlatformColor) -> (image: PlatformImage, descent: CGFloat)? {
         let key = "\(xml.hashValue):\(fontSize):\(color.hashValue)"
         lock.lock()
         if let cached = equations[key] {
@@ -64,7 +68,7 @@ final class ImageStore: @unchecked Sendable {
     }
 
     /// A picture with what its crop cuts off taken away, or a shape, chart or diagram, drawn.
-    func image(for picture: InlineImage, in package: DocumentPackage) -> UIImage? {
+    func image(for picture: InlineImage, in package: DocumentPackage) -> PlatformImage? {
         if let object = picture.object {
             let key = "object:\(object.hashValue):\(Int(picture.width))x\(Int(picture.height))"
             lock.lock()
@@ -95,8 +99,7 @@ final class ImageStore: @unchecked Sendable {
             x: width * crop.left, y: height * crop.top,
             width: max(1, width * (1 - crop.left - crop.right)), height: max(1, height * (1 - crop.top - crop.bottom))
         ).integral
-        guard let cropped = cgImage.cropping(to: rect) else { return full }
-        let result = UIImage(cgImage: cropped, scale: full.scale, orientation: full.imageOrientation)
+        guard let result = full.cropped(toPixels: rect) else { return full }
         lock.lock()
         images[key] = result
         lock.unlock()
@@ -126,10 +129,10 @@ enum Typography {
 
         let highlightHex = style.highlight.flatMap { highlightColors[$0] }
         if let highlightHex {
-            attributes[.backgroundColor] = AdaptiveColor.uiColor(hex: highlightHex, for: context.scheme, isText: false)
+            attributes[.backgroundColor] = AdaptiveColor.platformColor(hex: highlightHex, for: context.scheme, isText: false)
         }
         let backgroundHex = highlightHex ?? context.backgroundHex
-        attributes[.foregroundColor] = AdaptiveColor.uiTextColor(
+        attributes[.foregroundColor] = AdaptiveColor.platformTextColor(
             hex: style.colorHex ?? (backgroundHex != nil ? "000000" : nil), on: backgroundHex, for: context.scheme
         ) ?? context.defaultTextColor
 
@@ -148,7 +151,7 @@ enum Typography {
         if let spacing = style.characterSpacing, spacing != 0 {
             attributes[.kern] = CGFloat(spacing) / 20 * fontScale
         }
-        let ink = attributes[.foregroundColor] as? UIColor ?? context.defaultTextColor
+        let ink = attributes[.foregroundColor] as? PlatformColor ?? context.defaultTextColor
         if style.outline == true {
             // Hollow letters: a positive stroke width draws the outline alone.
             attributes[.strokeWidth] = 3.0
@@ -165,7 +168,7 @@ enum Typography {
             let edge = NSShadow()
             let offset: CGFloat = style.emboss == true ? -0.75 : 0.75
             edge.shadowOffset = CGSize(width: offset, height: offset)
-            edge.shadowColor = context.scheme == .dark ? UIColor.black : UIColor.white
+            edge.shadowColor = context.scheme == .dark ? PlatformColor.black : PlatformColor.white
             attributes[.shadow] = edge
             attributes[.foregroundColor] = ink.withAlphaComponent(0.6)
         }
@@ -185,11 +188,11 @@ enum Typography {
     }
 
     /// A colour of its own for each reviewer, as Word gives them.
-    static func reviewerColor(_ author: String?, scheme: ColorScheme) -> UIColor {
-        let palette: [UIColor] = [.systemRed, .systemBlue, .systemGreen, .systemPurple, .systemOrange, .systemTeal]
+    static func reviewerColor(_ author: String?, scheme: ColorScheme) -> PlatformColor {
+        let palette: [PlatformColor] = [.systemRed, .systemBlue, .systemGreen, .systemPurple, .systemOrange, .systemTeal]
         let hash = (author ?? "").unicodeScalars.reduce(5381) { ($0 &* 33) &+ Int($1.value) }
         let color = palette[abs(hash) % palette.count]
-        return color.resolvedColor(with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light))
+        return color.resolved(for: scheme)
     }
 
     /// How a `w:u` kind is drawn; wavy lines, which TextKit lacks, as a single line.
@@ -218,7 +221,7 @@ enum Typography {
         "lightGray": "C0C0C0", "black": "000000", "white": "FFFFFF",
     ]
 
-    private static let installedFamilies = Set(UIFont.familyNames)
+    private static let installedFamilies = Set(PlatformFont.installedFamilyNames)
 
     /// Office fonts iOS lacks, by what iOS has that looks most like them.
     private static let substitutes: [String: String] = [
@@ -232,7 +235,7 @@ enum Typography {
         "Batang": "Apple SD Gothic Neo", "맑은 고딕": "Apple SD Gothic Neo",
     ]
 
-    static func font(for style: RunStyle, styles: StyleSheet, scale: CGFloat = 1) -> UIFont {
+    static func font(for style: RunStyle, styles: StyleSheet, scale: CGFloat = 1) -> PlatformFont {
         var size = CGFloat(style.fontSize ?? 22) / 2 * scale
         if style.verticalAlignment == .superscript || style.verticalAlignment == .subscript { size *= 0.65 }
 
@@ -241,26 +244,27 @@ enum Typography {
         if name == RunStyle.majorThemeFont { name = styles.majorFont }
         if let requested = name, !installedFamilies.contains(requested) { name = substitutes[requested] }
 
-        var descriptor: UIFontDescriptor
+        var descriptor: PlatformFontDescriptor
         if let family = name, installedFamilies.contains(family) {
-            descriptor = UIFontDescriptor(fontAttributes: [.family: family])
+            descriptor = PlatformFontDescriptor(fontAttributes: [.family: family])
         } else {
-            descriptor = UIFont.systemFont(ofSize: size).fontDescriptor
+            descriptor = PlatformFont.systemFont(ofSize: size).fontDescriptor
         }
-        var traits: UIFontDescriptor.SymbolicTraits = []
-        if style.isBold == true { traits.insert(.traitBold) }
-        if style.isItalic == true { traits.insert(.traitItalic) }
-        if !traits.isEmpty {
-            descriptor = descriptor.withSymbolicTraits(traits.union(descriptor.symbolicTraits))
-                ?? UIFont.systemFont(ofSize: size).fontDescriptor.withSymbolicTraits(traits) ?? descriptor
+        let bold = style.isBold == true
+        let italic = style.isItalic == true
+        if bold || italic {
+            descriptor = descriptor.adding(bold: bold, italic: italic)
+                ?? PlatformFont.systemFont(ofSize: size).fontDescriptor.adding(bold: bold, italic: italic) ?? descriptor
         }
         if style.smallCaps == true {
             // The font's own small capitals: lower case type, small caps selector.
-            descriptor = descriptor.addingAttributes([.featureSettings: [[
-                UIFontDescriptor.FeatureKey.featureIdentifier: 37, UIFontDescriptor.FeatureKey.typeIdentifier: 1,
-            ]]])
+            descriptor = descriptor.addingSmallCaps
         }
-        return UIFont(descriptor: descriptor, size: size)
+        #if canImport(UIKit)
+        return PlatformFont(descriptor: descriptor, size: size)
+        #else
+        return PlatformFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size)
+        #endif
     }
 
     // MARK: - Paragraphs

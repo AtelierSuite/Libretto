@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Prints a document to PDF, laid out in pages exactly as the page view shows it.
 enum PDFExporter {
@@ -25,36 +29,29 @@ enum PDFExporter {
             document: document, sections: layoutManager.sections.map(\.setup), pageSections: layoutManager.pageSections
         )
 
-        return UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: geometry.pageSize)).pdfData { pdf in
-            for page in 0..<pages {
-                let shape = geometry.shape(page)
-                // Each page its own size: the media box must say so, as well as the bounds.
-                var box = CGRect(origin: .zero, size: shape.size)
-                pdf.beginPage(withBounds: box, pageInfo: [
-                    kCGPDFContextMediaBox as String: Data(bytes: &box, count: MemoryLayout<CGRect>.size),
-                ])
-                let graphics = pdf.cgContext
-                let top = geometry.textTop(page)
-                let visible = CGRect(x: 0, y: top, width: geometry.contentWidth, height: shape.contentHeight)
-                let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: container)
-                let origin = CGPoint(x: geometry.textLeft, y: shape.margins.top - top)
+        let sizes = (0..<pages).map { geometry.shape($0).size }
+        return PlatformGraphics.pdf(pages: sizes) { page, graphics in
+            let shape = geometry.shape(page)
+            let top = geometry.textTop(page)
+            let visible = CGRect(x: 0, y: top, width: geometry.contentWidth, height: shape.contentHeight)
+            let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: container)
+            let origin = CGPoint(x: geometry.textLeft, y: shape.margins.top - top)
 
-                graphics.saveGState()
-                graphics.clip(to: CGRect(
-                    x: shape.margins.left - 40, y: shape.margins.top - 2,
-                    width: shape.contentWidth + 80, height: shape.contentHeight + 4
-                ))
-                layoutManager.drawBackground(forGlyphRange: glyphs, at: origin)
-                layoutManager.drawGlyphs(forGlyphRange: glyphs, at: origin)
-                graphics.restoreGState()
+            graphics.saveGState()
+            graphics.clip(to: CGRect(
+                x: shape.margins.left - 40, y: shape.margins.top - 2,
+                width: shape.contentWidth + 80, height: shape.contentHeight + 4
+            ))
+            layoutManager.drawBackground(forGlyphRange: glyphs, at: origin)
+            layoutManager.drawGlyphs(forGlyphRange: glyphs, at: origin)
+            graphics.restoreGState()
 
-                HeaderFooterDrawing.draw(texts, page: page, of: pages, shape: shape, color: .darkGray)
-                if let notes = layoutManager.notesByPage[page], let height = layoutManager.noteHeights[page] {
-                    PageLayoutManager.drawNotes(notes, in: CGRect(
-                        x: shape.margins.left, y: shape.margins.top + shape.contentHeight - height,
-                        width: shape.contentWidth, height: height
-                    ), color: .black)
-                }
+            HeaderFooterDrawing.draw(texts, page: page, of: pages, shape: shape, color: .darkGray)
+            if let notes = layoutManager.notesByPage[page], let height = layoutManager.noteHeights[page] {
+                PageLayoutManager.drawNotes(notes, in: CGRect(
+                    x: shape.margins.left, y: shape.margins.top + shape.contentHeight - height,
+                    width: shape.contentWidth, height: height
+                ), color: .black)
             }
         }
     }
@@ -62,7 +59,7 @@ enum PDFExporter {
 
 /// The header and footer, drawn as plain text in the page's margins.
 enum HeaderFooterDrawing {
-    static let font = UIFont.systemFont(ofSize: 9)
+    static let font = PlatformFont.systemFont(ofSize: 9)
 
     static func frames(_ section: WordDocumentHeaderFooter.Section, shape: PageGeometry.Shape) -> (header: CGRect, footer: CGRect) {
         let header = CGRect(
@@ -77,7 +74,7 @@ enum HeaderFooterDrawing {
         return (header, footer)
     }
 
-    static func attributed(_ text: HeaderFooterText, page: Int, of count: Int, format: String? = nil, color: UIColor)
+    static func attributed(_ text: HeaderFooterText, page: Int, of count: Int, format: String? = nil, color: PlatformColor)
         -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         switch text.alignment {
@@ -92,7 +89,7 @@ enum HeaderFooterDrawing {
         )
     }
 
-    static func draw(_ texts: WordDocumentHeaderFooter, page: Int, of count: Int, shape: PageGeometry.Shape, color: UIColor) {
+    static func draw(_ texts: WordDocumentHeaderFooter, page: Int, of count: Int, shape: PageGeometry.Shape, color: PlatformColor) {
         let section = texts.section(forPage: page)
         let frames = frames(section, shape: shape)
         if let header = texts.header(forPage: page) {

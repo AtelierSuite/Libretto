@@ -1,4 +1,8 @@
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Draws tables, row by row, and kept blocks, line by line, as pictures for
 /// the page view's text.
@@ -20,18 +24,18 @@ enum TableRenderer {
         return widths.map { $0 * scale }
     }
 
-    static func rowImages(_ table: Table, context: RenderContext) -> [(rowID: TableRow.ID, image: UIImage)] {
+    static func rowImages(_ table: Table, context: RenderContext) -> [(rowID: TableRow.ID, image: PlatformImage)] {
         let widths = columnWidths(table, availableWidth: context.contentWidth)
         let tableWidth = widths.reduce(0, +)
         let ink = context.defaultTextColor
-        let styledColor = table.borderColorHex.flatMap { AdaptiveColor.uiColor(hex: $0, for: context.scheme, isText: true) }
+        let styledColor = table.borderColorHex.flatMap { AdaptiveColor.platformColor(hex: $0, for: context.scheme, isText: true) }
         let lineColor = table.hasBorders ? (styledColor ?? ink.withAlphaComponent(0.75)) : ink.withAlphaComponent(0.18)
         let appearances = TableStyling.appearances(of: table, styles: context.styles)
 
         return table.rows.enumerated().map { rowIndex, row in
             // Lay the row's cells out first: their text decides its height.
             var column = 0
-            var cells: [(frame: CGRect, text: NSAttributedString?, fill: UIColor?, continues: Bool)] = []
+            var cells: [(frame: CGRect, text: NSAttributedString?, fill: PlatformColor?, continues: Bool)] = []
             var height: CGFloat = 14
             for (cellIndex, cell) in row.cells.enumerated() {
                 let appearance = appearances[rowIndex][cellIndex]
@@ -48,17 +52,14 @@ enum TableRenderer {
                     )
                     height = max(height, ceil(bounds.height) + verticalPadding * 2)
                 }
-                let fill = appearance.fillHex.flatMap { AdaptiveColor.uiColor(hex: $0, for: context.scheme, isText: false) }
+                let fill = appearance.fillHex.flatMap { AdaptiveColor.platformColor(hex: $0, for: context.scheme, isText: false) }
                 cells.append((CGRect(x: x, y: 0, width: width, height: 0), text, fill, continues))
             }
             height = min(height, context.contentHeight * 0.9)
             let isLastRow = rowIndex == table.rows.count - 1
 
-            let format = UIGraphicsImageRendererFormat.preferred()
-            format.opaque = false
             let size = CGSize(width: ceil(tableWidth) + 1, height: ceil(height) + (isLastRow ? 1 : 0))
-            let image = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
-                let graphics = renderer.cgContext
+            let image = PlatformImage.drawn(size: size) { graphics in
                 for cell in cells {
                     let frame = CGRect(x: cell.frame.minX + 0.5, y: 0, width: cell.frame.width, height: height)
                     if let fill = cell.fill {
@@ -111,12 +112,12 @@ enum TableRenderer {
                 output.append(NSAttributedString(
                     string: nested.rows.map { $0.cells.map(\.plainText).joined(separator: " | ") }.joined(separator: "\n")
                         + "\n",
-                    attributes: [.font: UIFont.systemFont(ofSize: 9), .foregroundColor: context.defaultTextColor]
+                    attributes: [.font: PlatformFont.systemFont(ofSize: 9), .foregroundColor: context.defaultTextColor]
                 ))
             case .preserved(let preserved):
                 output.append(NSAttributedString(
                     string: preserved.displayText + "\n",
-                    attributes: [.font: UIFont.systemFont(ofSize: 10), .foregroundColor: context.defaultTextColor]
+                    attributes: [.font: PlatformFont.systemFont(ofSize: 10), .foregroundColor: context.defaultTextColor]
                 ))
             }
         }
@@ -137,15 +138,13 @@ enum TableRenderer {
     }
 
     /// A kept block's text, one picture per line, tinted to show it is not editable.
-    static func preservedImages(_ block: PreservedBlock, context: RenderContext) -> [UIImage] {
+    static func preservedImages(_ block: PreservedBlock, context: RenderContext) -> [PlatformImage] {
         let text = block.displayText.isEmpty ? String(localized: "Block.Preserved.Placeholder") : block.displayText
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 11),
+            .font: PlatformFont.systemFont(ofSize: 11),
             .foregroundColor: context.defaultTextColor.withAlphaComponent(0.75),
         ]
         let width = context.contentWidth
-        let format = UIGraphicsImageRendererFormat.preferred()
-        format.opaque = false
         return text.components(separatedBy: "\n").map { line in
             let string = NSAttributedString(string: line.isEmpty ? " " : line, attributes: attributes)
             let bounds = string.boundingRect(
@@ -153,11 +152,11 @@ enum TableRenderer {
                 options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
             )
             let size = CGSize(width: width, height: min(ceil(bounds.height) + 4, context.contentHeight * 0.9))
-            return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
-                UIColor.systemGray.withAlphaComponent(0.12).setFill()
-                renderer.cgContext.fill(CGRect(origin: .zero, size: size))
-                UIColor.systemGray.withAlphaComponent(0.5).setFill()
-                renderer.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: size.height))
+            return PlatformImage.drawn(size: size) { graphics in
+                PlatformColor.systemGray.withAlphaComponent(0.12).setFill()
+                graphics.fill(CGRect(origin: .zero, size: size))
+                PlatformColor.systemGray.withAlphaComponent(0.5).setFill()
+                graphics.fill(CGRect(x: 0, y: 0, width: 2, height: size.height))
                 string.draw(
                     with: CGRect(x: 8, y: 2, width: width - 12, height: size.height - 4),
                     options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil

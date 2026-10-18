@@ -1,4 +1,8 @@
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Footnotes and endnotes as the page layout sets them: each footnote at
 /// the foot of the page its reference is on, the endnotes at the end.

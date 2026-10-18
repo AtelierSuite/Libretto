@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Where the pages are, in the text container's coordinates.
 ///
@@ -14,11 +18,11 @@ struct PageGeometry: Equatable {
     /// One page's size and margins, in points.
     struct Shape: Equatable {
         var size: CGSize
-        var margins: UIEdgeInsets
+        var margins: PlatformEdgeInsets
 
         init(setup: PageSetup) {
             size = setup.size
-            margins = UIEdgeInsets(
+            margins = PlatformEdgeInsets(
                 top: CGFloat(setup.marginTop) / 20, left: CGFloat(setup.marginLeft) / 20,
                 bottom: CGFloat(setup.marginBottom) / 20, right: CGFloat(setup.marginRight) / 20
             )
@@ -63,7 +67,7 @@ struct PageGeometry: Equatable {
 
     /// The first page's size and margins.
     var pageSize: CGSize { shapes[0].size }
-    var margins: UIEdgeInsets { shapes[0].margins }
+    var margins: PlatformEdgeInsets { shapes[0].margins }
 
     /// Where the container's left edge is on a page: the leftmost any page's text starts.
     var textLeft: CGFloat { shapes.map(\.margins.left).min() ?? 0 }
@@ -164,9 +168,9 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         container.size = CGSize(width: geometry.contentWidth, height: geometry.totalHeight(pages: pages + 1))
         container.lineFragmentPadding = 0
         container.exclusionPaths = (0..<pages).flatMap { page in
-            [UIBezierPath(rect: geometry.band(after: page, reserving: noteHeights[page] ?? 0))]
-                + geometry.sides(of: page).map { UIBezierPath(rect: $0) }
-        } + dropCapExclusions.map { UIBezierPath(rect: $0) }
+            [PlatformBezierPath(rect: geometry.band(after: page, reserving: noteHeights[page] ?? 0))]
+                + geometry.sides(of: page).map { PlatformBezierPath(rect: $0) }
+        } + dropCapExclusions.map { PlatformBezierPath(rect: $0) }
     }
 
     // MARK: - Sections
@@ -272,7 +276,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     struct PlacedFloat: Equatable {
         var frame: CGRect
         var page: Int
-        var image: UIImage
+        var image: PlatformImage
         var behindText: Bool
         /// The picture's character in the text, which takes no room of its own.
         var location: Int
@@ -334,7 +338,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let first = geometry.page(containing: lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).midY)
         let last = geometry.page(containing: lineFragmentRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil).midY)
         for placed in placedFloats where placed.behindText == behindText && (first...last).contains(placed.page) {
-            placed.image.draw(in: placed.frame.offsetBy(dx: origin.x, dy: origin.y))
+            placed.image.drawUpright(in: placed.frame.offsetBy(dx: origin.x, dy: origin.y))
         }
     }
 
@@ -366,17 +370,17 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let glyph = glyphIndexForCharacter(at: next)
             guard glyph < numberOfGlyphs else { return }
             let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            let font = storage.attribute(.font, at: next, effectiveRange: nil) as? UIFont ?? .systemFont(ofSize: 11)
+            let font = storage.attribute(.font, at: next, effectiveRange: nil) as? PlatformFont ?? .systemFont(ofSize: 11)
             let style = storage.attribute(.paragraphStyle, at: next, effectiveRange: nil) as? NSParagraphStyle
             let lineHeight = font.lineHeight * max(1, style?.lineHeightMultiple ?? 1)
             let top = line.minY + (style?.paragraphSpacingBefore ?? 0)
             let lines = CGFloat(max(1, box.dropCap.lines))
             // As tall, cap to baseline, as the lines it drops into.
-            let capFont = storage.attribute(.font, at: paragraph.location, effectiveRange: nil) as? UIFont ?? font
+            let capFont = storage.attribute(.font, at: paragraph.location, effectiveRange: nil) as? PlatformFont ?? font
             let capHeight = (lines - 1) * lineHeight + font.capHeight
             let size = capHeight / max(capFont.capHeight / capFont.pointSize, 0.1)
             let letterFont = capFont.withSize(size)
-            let color = storage.attribute(.foregroundColor, at: paragraph.location, effectiveRange: nil) ?? UIColor.label
+            let color = storage.attribute(.foregroundColor, at: paragraph.location, effectiveRange: nil) ?? PlatformColor.text
             let letter = NSAttributedString(string: text, attributes: [.font: letterFont, .foregroundColor: color])
             let width = ceil(letter.size().width)
             let baseline = top + (lines - 1) * lineHeight + font.ascender
@@ -415,10 +419,10 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     }
 
     /// Draws a page's notes at its foot, under a short rule.
-    static func drawNotes(_ notes: [NSAttributedString], in frame: CGRect, color: UIColor) {
+    static func drawNotes(_ notes: [NSAttributedString], in frame: CGRect, color: PlatformColor) {
         guard !notes.isEmpty else { return }
         color.withAlphaComponent(0.5).setFill()
-        UIRectFill(CGRect(x: frame.minX, y: frame.minY + noteSeparatorSpace / 2 - 0.25, width: min(144, frame.width / 3), height: 0.5))
+        PlatformGraphics.fill(CGRect(x: frame.minX, y: frame.minY + noteSeparatorSpace / 2 - 0.25, width: min(144, frame.width / 3), height: 0.5))
         var y = frame.minY + noteSeparatorSpace
         for text in notes {
             let rect = CGRect(x: frame.minX, y: y, width: frame.width, height: frame.maxY - y)
@@ -471,7 +475,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     func layoutManager(
         _ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
         properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>,
-        font: UIFont, forGlyphRange glyphRange: NSRange
+        font: PlatformFont, forGlyphRange glyphRange: NSRange
     ) -> Int {
         guard let storage = textStorage, glyphRange.length > 0 else { return 0 }
         let first = characterIndexes[0]
@@ -613,7 +617,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     private var headerRepeats: [Int: CGFloat] = [:]
 
     /// The table and its header rows' pictures, for a table row's character.
-    private func headerRows(forRowAt location: Int) -> (images: [UIImage], isHeader: Bool, isFirst: Bool)? {
+    private func headerRows(forRowAt location: Int) -> (images: [PlatformImage], isHeader: Bool, isFirst: Bool)? {
         guard let storage = textStorage, location < storage.length,
               let attachment = storage.attribute(.attachment, at: location, effectiveRange: nil) as? BlockAttachment,
               let rowID = attachment.rowID, case .table(let table) = attachment.block,
@@ -623,7 +627,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         // The header rows' pictures are on the table's line, before this one.
         let line = (storage.string as NSString).paragraphRange(for: NSRange(location: location, length: 0))
         let headerIDs = Set(headers.map(\.id))
-        var images: [UIImage] = []
+        var images: [PlatformImage] = []
         storage.enumerateAttribute(.attachment, in: line) { value, _, _ in
             if let row = value as? BlockAttachment, let id = row.rowID, headerIDs.contains(id), let image = row.image {
                 images.append(image)
@@ -651,7 +655,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             guard line.height > height else { continue }
             var y = line.minY
             for image in rows.images {
-                image.draw(at: CGPoint(x: origin.x + line.minX, y: origin.y + y))
+                image.drawUpright(at: CGPoint(x: origin.x + line.minX, y: origin.y + y))
                 y += image.size.height
             }
         }
@@ -670,7 +674,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         guard keepsWhole || properties.widowControl == true else { return nil }
         let string = storage.string as NSString
         let range = string.paragraphRange(for: NSRange(location: start, length: 0))
-        let font = storage.attribute(.font, at: start, effectiveRange: nil) as? UIFont ?? .systemFont(ofSize: 11)
+        let font = storage.attribute(.font, at: start, effectiveRange: nil) as? PlatformFont ?? .systemFont(ofSize: 11)
         let style = storage.attribute(.paragraphStyle, at: start, effectiveRange: nil) as? NSParagraphStyle
         let line = font.lineHeight * max(1, style?.lineHeightMultiple ?? 1)
         let before = style?.paragraphSpacingBefore ?? 0
@@ -685,7 +689,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let whole = height(of: range)
         var needed = keepsWhole ? whole : min(whole, before + line * 2)
         if properties.keepNext == true, NSMaxRange(range) < string.length {
-            let following = storage.attribute(.font, at: NSMaxRange(range), effectiveRange: nil) as? UIFont ?? font
+            let following = storage.attribute(.font, at: NSMaxRange(range), effectiveRange: nil) as? PlatformFont ?? font
             needed += following.lineHeight
         }
         return needed
@@ -739,7 +743,7 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         }
         decorations.sort { ($0.paragraph.location, $0.page) < ($1.paragraph.location, $1.page) }
 
-        let ink = scheme == .dark ? UIColor.white : UIColor.black
+        let ink = scheme == .dark ? PlatformColor.white : PlatformColor.black
         for (index, decoration) in decorations.enumerated() {
             func joins(_ other: Decoration?) -> Bool {
                 guard let other else { return false }
@@ -764,13 +768,13 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                 rect.size.height = max(rect.height, decorations[index + 1].rect.minY - rect.minY)
             }
             let frame = rect.offsetBy(dx: origin.x, dy: origin.y)
-            if let fill = decoration.properties.shadingHex.flatMap({ AdaptiveColor.uiColor(hex: $0, for: scheme, isText: false) }) {
+            if let fill = decoration.properties.shadingHex.flatMap({ AdaptiveColor.platformColor(hex: $0, for: scheme, isText: false) }) {
                 fill.setFill()
-                UIRectFillUsingBlendMode(frame, .normal)
+                PlatformGraphics.fill(frame)
             }
             func stroke(_ line: BorderLine?, from start: CGPoint, to end: CGPoint) {
                 guard let line else { return }
-                let color = line.colorHex.flatMap { AdaptiveColor.uiColor(hex: $0, for: scheme, isText: true) } ?? ink
+                let color = line.colorHex.flatMap { AdaptiveColor.platformColor(hex: $0, for: scheme, isText: true) } ?? ink
                 Self.strokeBorder(line, from: start, to: end, color: color)
             }
             if !joinsAbove {
@@ -787,9 +791,9 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     }
 
     /// One border line, in its style: single, double, dotted, dashed or thick.
-    static func strokeBorder(_ line: BorderLine, from start: CGPoint, to end: CGPoint, color: UIColor) {
+    static func strokeBorder(_ line: BorderLine, from start: CGPoint, to end: CGPoint, color: PlatformColor) {
         let width = max(0.5, CGFloat(line.size) / 8)
-        let path = UIBezierPath()
+        let path = PlatformBezierPath()
         path.lineWidth = width
         color.setStroke()
         switch line.style {
@@ -824,11 +828,11 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         for range in commentRanges where range.length > 0 && NSIntersectionRange(range, shown).length > 0 {
             let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             let alpha: CGFloat = activeCommentRanges.contains(range) ? 0.5 : 0.25
-            UIColor.systemYellow.withAlphaComponent(alpha).setFill()
+            PlatformColor.systemYellow.withAlphaComponent(alpha).setFill()
             enumerateEnclosingRects(
                 forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container
             ) { rect, _ in
-                UIRectFillUsingBlendMode(rect.offsetBy(dx: origin.x, dy: origin.y), .normal)
+                PlatformGraphics.fill(rect.offsetBy(dx: origin.x, dy: origin.y))
             }
         }
     }
@@ -917,9 +921,9 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             default: mark = "."
             }
             let attributes = storage.attributes(at: found.location, effectiveRange: nil)
-            let font = attributes[.font] as? UIFont ?? .systemFont(ofSize: 11)
+            let font = attributes[.font] as? PlatformFont ?? .systemFont(ofSize: 11)
             let drawn: [NSAttributedString.Key: Any] = [
-                .font: font, .foregroundColor: attributes[.foregroundColor] ?? UIColor.label,
+                .font: font, .foregroundColor: attributes[.foregroundColor] ?? PlatformColor.text,
             ]
             // A mark and the space after it, as many as fit.
             let unit = ((mark + " ") as NSString).size(withAttributes: drawn).width
@@ -943,8 +947,8 @@ final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         let baseline = location(forGlyphAt: glyph).y
         var attributes = storage.attributes(at: index, effectiveRange: nil)
-        let font = attributes[.font] as? UIFont ?? .systemFont(ofSize: 11)
-        attributes = [.font: font, .foregroundColor: attributes[.foregroundColor] ?? UIColor.label]
+        let font = attributes[.font] as? PlatformFont ?? .systemFont(ofSize: 11)
+        attributes = [.font: font, .foregroundColor: attributes[.foregroundColor] ?? PlatformColor.text]
         let point = CGPoint(
             x: origin.x + line.minX + label.indent,
             y: origin.y + line.minY + baseline - font.ascender

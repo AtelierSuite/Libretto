@@ -1,4 +1,8 @@
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// The editor's text for a run of blocks, and what does not fit in it.
 struct RenderedText {
@@ -162,7 +166,7 @@ enum DocumentRenderer {
     ) -> ImageAttachment {
         let attachment = ImageAttachment()
         attachment.inline = inline
-        attachment.image = context.images.image(for: image, in: context.package) ?? UIImage(systemName: "photo")
+        attachment.image = context.images.image(for: image, in: context.package) ?? PlatformImage.symbol("photo")
         // A floating picture takes no room in its line: the page layout sets it where it sits.
         guard image.wrap == .inline else {
             attachment.bounds = CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
@@ -178,8 +182,8 @@ enum DocumentRenderer {
     static func equationAttachment(
         _ xml: String, attributes: [NSAttributedString.Key: Any], context: RenderContext
     ) -> NSTextAttachment {
-        let font = attributes[.font] as? UIFont ?? .systemFont(ofSize: 11)
-        let color = attributes[.foregroundColor] as? UIColor ?? context.defaultTextColor
+        let font = attributes[.font] as? PlatformFont ?? .systemFont(ofSize: 11)
+        let color = attributes[.foregroundColor] as? PlatformColor ?? context.defaultTextColor
         let attachment = NSTextAttachment()
         guard let drawn = context.images.equation(xml, fontSize: font.pointSize, color: color) else { return attachment }
         attachment.image = drawn.image
@@ -199,14 +203,14 @@ enum DocumentRenderer {
         return style
     }
 
-    static let blockFont = UIFont.systemFont(ofSize: 1)
+    static let blockFont = PlatformFont.systemFont(ofSize: 1)
 
     static func renderBlock(_ block: Block, context: RenderContext) -> NSAttributedString {
         let output = NSMutableAttributedString()
         let lineAttributes: [NSAttributedString.Key: Any] = [
             .font: blockFont, .paragraphStyle: blockParagraphStyle(),
         ]
-        let pictures: [(image: UIImage, rowID: TableRow.ID?)]
+        let pictures: [(image: PlatformImage, rowID: TableRow.ID?)]
         switch block {
         case .table(let table):
             pictures = TableRenderer.rowImages(table, context: context).map { ($0.image, $0.rowID) }

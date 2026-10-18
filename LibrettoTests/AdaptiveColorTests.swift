@@ -5,7 +5,7 @@ import UIKit
 @Suite("Adapting document colours to dark mode")
 struct AdaptiveColorTests {
     private func lightness(_ hex: String, isText: Bool) -> Double {
-        let color = AdaptiveColor.uiColor(hex: hex, for: .dark, isText: isText)!
+        let color = AdaptiveColor.platformColor(hex: hex, for: .dark, isText: isText)!
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
         return Double(max(red, green, blue) + min(red, green, blue)) / 2

@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// What a stretch of source code is, for colouring.
 enum SyntaxKind: Sendable {
@@ -46,10 +50,10 @@ enum SyntaxHighlighter {
     /// Colours `text` by its syntax, and what is not syntax in `plainColor`.
     /// Only what changes colour is touched, so the layout of the rest stands.
     static func apply(
-        _ language: SourceLanguage, to text: NSMutableAttributedString, scheme: ColorScheme, plainColor: UIColor
+        _ language: SourceLanguage, to text: NSMutableAttributedString, scheme: ColorScheme, plainColor: PlatformColor
     ) {
-        var colors: [SyntaxKind: UIColor] = [:]
-        var segments: [(range: NSRange, color: UIColor)] = []
+        var colors: [SyntaxKind: PlatformColor] = [:]
+        var segments: [(range: NSRange, color: PlatformColor)] = []
         var location = 0
         for token in tokens(in: text.string, language: language) where NSMaxRange(token.range) > location {
             let start = max(location, token.range.location)
@@ -66,7 +70,7 @@ enum SyntaxHighlighter {
             var effective = NSRange()
             let current = text.attribute(
                 .foregroundColor, at: segment.range.location, longestEffectiveRange: &effective, in: segment.range
-            ) as? UIColor
+            ) as? PlatformColor
             if current != segment.color || effective != segment.range {
                 text.addAttribute(.foregroundColor, value: segment.color, range: segment.range)
             }
@@ -77,7 +81,7 @@ enum SyntaxHighlighter {
     /// Xcode's default colours, light and dark, darkened or lightened in
     /// their own hue where they fell short of a contrast of 7.5:1 against
     /// white, or 10:1 against black.
-    static func color(for kind: SyntaxKind, scheme: ColorScheme) -> UIColor {
+    static func color(for kind: SyntaxKind, scheme: ColorScheme) -> PlatformColor {
         let dark = scheme == .dark
         let hex: UInt32
         switch kind {
@@ -91,7 +95,7 @@ enum SyntaxHighlighter {
         case .property: hex = dark ? 0x7CC1B0 : 0x2A5B60
         case .variable: hex = dark ? 0xC8A7F0 : 0x6C36A9
         }
-        return UIColor(
+        return PlatformColor.sRGB(
             red: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255,
             blue: CGFloat(hex & 0xFF) / 255, alpha: 1
         )

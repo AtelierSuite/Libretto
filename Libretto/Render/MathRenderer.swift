@@ -1,4 +1,8 @@
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Lays out and draws Office Math (OMML): fractions, scripts, radicals,
 /// big operators, delimiters, functions, accents, bars, limits, matrices and
@@ -12,16 +16,14 @@ enum MathRenderer {
     static func isEquation(_ xml: String) -> Bool { xml.firstMatch(of: equationPattern) != nil }
 
     /// An equation drawn: the picture, and how far it reaches below the baseline.
-    static func image(forXML xml: String, fontSize: CGFloat, color: UIColor) -> (image: UIImage, descent: CGFloat)? {
+    static func image(forXML xml: String, fontSize: CGFloat, color: PlatformColor) -> (image: PlatformImage, descent: CGFloat)? {
         var namespaces = DOCXPatcher.namespaceBindings(for: xml)
         namespaces["m"] = namespace
         guard let element = XMLLite.fragment(xml, namespaces: namespaces) else { return nil }
         let box = Layout(size: fontSize, color: color).box(element)
         let pad: CGFloat = 1
         let size = CGSize(width: ceil(box.width) + pad * 2, height: ceil(box.ascent + box.descent) + pad * 2)
-        let format = UIGraphicsImageRendererFormat.preferred()
-        format.opaque = false
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+        let image = PlatformImage.drawn(size: size) { _ in
             box.draw(CGPoint(x: pad, y: pad + box.ascent))
         }
         return (image, box.descent + pad)
@@ -57,17 +59,17 @@ enum MathRenderer {
     /// Lays out at one size: scripts and limits shrink as they nest.
     struct Layout {
         var size: CGFloat
-        var color: UIColor
+        var color: PlatformColor
 
         private var smaller: Layout { Layout(size: max(5, size * 0.7), color: color) }
         /// Where fraction bars and minus signs sit above the baseline.
         private var axis: CGFloat { size * 0.27 }
 
-        private func font(italic: Bool) -> UIFont {
+        private func font(italic: Bool) -> PlatformFont {
             let names = italic ? ["STIXTwoMath-Italic", "TimesNewRomanPS-ItalicMT", "Georgia-Italic"]
                 : ["STIXTwoMath-Regular", "TimesNewRomanPSMT", "Georgia"]
-            for name in names { if let font = UIFont(name: name, size: size) { return font } }
-            return italic ? UIFont.italicSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
+            for name in names { if let font = PlatformFont(name: name, size: size) { return font } }
+            return italic ? PlatformFont.italicSystemFont(ofSize: size) : PlatformFont.systemFont(ofSize: size)
         }
 
         func text(_ string: String, italic: Bool = false) -> Box {
@@ -163,7 +165,7 @@ enum MathRenderer {
                 return Box(width: inner.width + 4, ascent: inner.ascent + 2, descent: inner.descent + 2) { origin in
                     inner.draw(CGPoint(x: origin.x + 2, y: origin.y))
                     color.setStroke()
-                    UIBezierPath(rect: CGRect(x: origin.x + 0.5, y: origin.y - inner.ascent - 1.5, width: inner.width + 3,
+                    PlatformBezierPath(rect: CGRect(x: origin.x + 0.5, y: origin.y - inner.ascent - 1.5, width: inner.width + 3,
                                               height: inner.ascent + inner.descent + 3)).stroke()
                 }
             case "phant":
@@ -195,7 +197,7 @@ enum MathRenderer {
                 denominator.draw(CGPoint(x: origin.x + (width - denominator.width) / 2, y: origin.y - axis + gap + denominator.ascent))
                 if type != "noBar" {
                     color.setFill()
-                    UIRectFill(CGRect(x: origin.x + 1, y: origin.y - axis - 0.4, width: width - 2, height: 0.8))
+                    PlatformGraphics.fill(CGRect(x: origin.x + 1, y: origin.y - axis - 0.4, width: width - 2, height: 0.8))
                 }
             }
         }
@@ -228,7 +230,7 @@ enum MathRenderer {
             return Box(width: lead + inner.width + 2, ascent: inner.ascent + gap * 2, descent: inner.descent) { origin in
                 let top = origin.y - inner.ascent - gap * 1.5
                 let bottom = origin.y + inner.descent
-                let path = UIBezierPath()
+                let path = PlatformBezierPath()
                 path.move(to: CGPoint(x: origin.x + lead - sign, y: bottom - height * 0.35))
                 path.addLine(to: CGPoint(x: origin.x + lead - sign * 0.7, y: bottom - height * 0.42))
                 path.addLine(to: CGPoint(x: origin.x + lead - sign * 0.4, y: bottom))
@@ -310,7 +312,7 @@ enum MathRenderer {
                 inner.draw(origin)
                 color.setFill()
                 let y = below ? origin.y + inner.descent + gap : origin.y - inner.ascent - gap
-                UIRectFill(CGRect(x: origin.x, y: y - 0.35, width: inner.width, height: 0.7))
+                PlatformGraphics.fill(CGRect(x: origin.x, y: y - 0.35, width: inner.width, height: 0.7))
             }
         }
 
