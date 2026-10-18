@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Libretto
+@testable import LibrettoEngine
 
 /// Writes iWork archives back: protobuf messages, Snappy blocks and `.iwa` files.
 @Suite("iWork writing")

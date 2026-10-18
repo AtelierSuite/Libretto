@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Mobile view: the document reflowed to the width of the screen, for reading.

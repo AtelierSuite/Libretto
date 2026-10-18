@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// The Liquid Glass bar that floats over the pages, keeping the common

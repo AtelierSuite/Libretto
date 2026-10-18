@@ -1,6 +1,7 @@
 import Testing
 import UIKit
 @testable import Libretto
+@testable import LibrettoEngine
 
 @Suite("Adapting document colours to dark mode")
 struct AdaptiveColorTests {

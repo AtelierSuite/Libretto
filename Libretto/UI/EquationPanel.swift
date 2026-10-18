@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Writes an equation on one line, seen as it will look, to put in at the

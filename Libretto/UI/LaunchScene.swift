@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// A quiet wash of the app icon's blue across the document browser's top

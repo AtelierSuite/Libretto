@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Character formatting: emphasis, size, colour and highlight.

@@ -1,0 +1,1756 @@
+import CoreText
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
+
+/// Reads a Pages document into a new word-processing document. The Pages
+/// file is kept, with where the body's content came from, for `PagesWriter`
+/// to save edits back into it.
+///
+/// The body text comes across with its paragraph and character formatting,
+/// lists, links, inline pictures, tables, footnotes, and the page's size,
+/// margins, headers and footers. A page layout document's text boxes and
+/// pictures are read in page order; objects placed on the pages of a
+/// word-processing document are left out.
+///
+/// Documents from Pages '09 and before, which are XML, are read by `Pages09Reader`.
+public enum PagesReader: Sendable {
+    /// Reads a document saved as a single file, which is a ZIP of the package.
+    public static func document(from data: Data) throws -> WordDocument {
+        let files: [String: Data]
+        do {
+            files = try ZipArchive.entries(in: data, including: IWorkArchive.isRead)
+        } catch ZipError.unsupportedCompression {
+            // Pages '09 stores a password-protected document's files encrypted,
+            // under a compression method of its own.
+            throw IWorkError.passwordProtected
+        }
+        var document = try document(fromFiles: files)
+        // What was left unread is still saved back.
+        document.pagesSource?.original = .archive(data)
+        return document
+    }
+
+    /// Reads a document saved as a package, by its files' paths within it.
+    public static func document(fromFiles original: [String: Data]) throws -> WordDocument {
+        let files = try unwrapped(original)
+        // Pages since 2013 keeps a password-protected document's archives
+        // encrypted, with the password's verifier alongside.
+        if files.keys.contains(where: { $0.hasPrefix(".iwpv") }) { throw IWorkError.passwordProtected }
+        var document: WordDocument
+        if let index = try Pages09Reader.index(in: files) {
+            document = try Pages09Reader.document(fromIndex: index, files: files)
+        } else {
+            document = try self.document(from: IWorkArchive(files: files))
+        }
+        var source = document.pagesSource ?? PagesSource(original: .files(original))
+        source.original = .files(original)
+        document.pagesSource = source
+        return document
+    }
+
+    /// The package's files as the readers expect them: out of the folder a
+    /// ZIP may hold the package in, and with the archives of a Pages 5
+    /// package, which keeps them zipped in `Index.zip`, alongside the rest.
+    public static func unwrapped(_ files: [String: Data]) throws -> [String: Data] {
+        var files = files
+        let folders = Set(files.keys.map { $0.prefix { $0 != "/" } })
+        if folders.count == 1, let folder = folders.first, folder.hasSuffix(".pages"),
+           files.keys.allSatisfy({ $0.hasPrefix(folder + "/") || $0 == folder }) {
+            files = Dictionary(
+                files.compactMap { path, data in
+                    let inner = String(path.dropFirst(folder.count + 1))
+                    return inner.isEmpty ? nil : (inner, data)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+        if let index = files.removeValue(forKey: "Index.zip") {
+            files.merge(try ZipArchive.entries(in: index)) { existing, _ in existing }
+        }
+        return files
+    }
+
+    public static func document(from archive: IWorkArchive) throws -> WordDocument {
+        guard let root = archive.objects(ofType: Types.document).first?.object.message else {
+            throw IWorkError.notAnIWorkDocument
+        }
+        var converter = PagesConverter(archive: archive)
+        var document = converter.convert(root)
+        if !converter.isPageLayout, let storage = root.reference(4) {
+            var body = converter.body
+            body.storage = storage
+            body.original = PagesOriginal(document)
+            document.pagesSource = PagesSource(original: .files(archive.files), body: body)
+        }
+        return document
+    }
+
+    /// The message types the reader knows, by their registry numbers.
+    public enum Types: Sendable {
+        public static let document: UInt32 = 10000
+        public static let pageMaster: UInt32 = 10143
+        public static let section: UInt32 = 10011
+        public static let documentSettings: UInt32 = 10012
+        public static let storage: UInt32 = 2001
+        public static let drawableAttachment: UInt32 = 2003
+        public static let footnoteAttachment: UInt32 = 2008
+        public static let hyperlink: UInt32 = 2032
+        public static let pageNumber: UInt32 = 2043
+        public static let characterStyle: UInt32 = 2021
+        public static let paragraphStyle: UInt32 = 2022
+        public static let listStyle: UInt32 = 2023
+        public static let image: UInt32 = 3005
+        public static let shapeInfo: UInt32 = 2011
+        public static let tableInfo: UInt32 = 6000
+        public static let tableModel: UInt32 = 6001
+    }
+}
+
+// MARK: - Number formats
+
+/// How Pages shows a number: a `TSK.FormatStructArchive`, or the number
+/// format of a Pages '09 cell style. Types Libretto does not show, such as
+/// dates, durations and fractions, show the number as it is.
+public struct PagesNumberFormat: Hashable, Sendable {
+    public enum Kind: Sendable {
+        case automatic, number, currency, percentage
+    }
+
+    public var kind: Kind
+    /// Places after the point; `nil` for as many as the number has.
+    public var decimalPlaces: Int?
+    public var currencyCode: String?
+    public var showsThousandsSeparator = false
+    /// Negative numbers in brackets, rather than after a minus sign.
+    public var bracketsNegatives = false
+    /// The currency symbol set apart from the amount, as accountants do.
+    public var isAccounting = false
+
+    public init(
+        kind: Kind, decimalPlaces: Int? = nil, currencyCode: String? = nil, showsThousandsSeparator: Bool = false,
+        bracketsNegatives: Bool = false, isAccounting: Bool = false
+    ) {
+        self.kind = kind
+        self.decimalPlaces = decimalPlaces
+        self.currencyCode = currencyCode
+        self.showsThousandsSeparator = showsThousandsSeparator
+        self.bracketsNegatives = bracketsNegatives
+        self.isAccounting = isAccounting
+    }
+
+    /// The kind both formats number: 256 a number, 257 currency, 258 a percentage.
+    public static func kind(_ type: Int) -> Kind {
+        switch type {
+        case 256: .number
+        case 257: .currency
+        case 258: .percentage
+        default: .automatic
+        }
+    }
+
+    /// From a `TSK.FormatStructArchive`, whose 253 places means as many as the number has.
+    public init(_ format: ProtoMessage) {
+        let places = format.optionalUInt(2).map { Int(clamping: $0) }
+        self.init(
+            kind: Self.kind(Int(clamping: format.uint(1))), decimalPlaces: places == 253 ? nil : places,
+            currencyCode: format.string(3), showsThousandsSeparator: format.bool(5) == true,
+            bracketsNegatives: [2, 3].contains(format.uint(4)), isAccounting: format.bool(6) == true
+        )
+    }
+
+    public func text(_ value: Double, locale: Locale) -> String {
+        guard kind != .automatic, value.isFinite else { return PagesConverter.numberText(value) }
+        let (formatter, symbol) = PagesNumberFormatterCache.shared.formatter(for: self, locale: locale)
+        var text = formatter.string(from: NSNumber(value: abs(value))) ?? PagesConverter.numberText(abs(value))
+        if let symbol { text = symbol + " " + text }
+        guard value < 0 else { return text }
+        return bracketsNegatives ? "(\(text))" : "-" + text
+    }
+
+    /// A formatter for numbers in the format, and the currency symbol an accounting format sets apart.
+    fileprivate func formatter(locale: Locale) -> (NumberFormatter, String?) {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = kind == .percentage ? .percent : kind == .currency && !isAccounting ? .currency : .decimal
+        if kind == .currency { formatter.currencyCode = currencyCode ?? locale.currency?.identifier ?? "USD" }
+        formatter.usesGroupingSeparator = showsThousandsSeparator
+        formatter.minimumFractionDigits = decimalPlaces ?? 0
+        formatter.maximumFractionDigits = decimalPlaces ?? 15
+        guard kind == .currency, isAccounting else { return (formatter, nil) }
+        let symbol = NumberFormatter()
+        symbol.locale = locale
+        symbol.numberStyle = .currency
+        symbol.currencyCode = formatter.currencyCode
+        return (formatter, symbol.currencySymbol)
+    }
+}
+
+/// Formatters for the number formats of a document's cells, as making one for every cell is slow.
+private final class PagesNumberFormatterCache: @unchecked Sendable {
+    static let shared = PagesNumberFormatterCache()
+    private let lock = NSLock()
+    private var formatters: [String: [PagesNumberFormat: (NumberFormatter, String?)]] = [:]
+
+    func formatter(for format: PagesNumberFormat, locale: Locale) -> (NumberFormatter, String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let known = formatters[locale.identifier]?[format] { return known }
+        let made = format.formatter(locale: locale)
+        formatters[locale.identifier, default: [:]][format] = made
+        return made
+    }
+}
+
+// MARK: - Styles
+
+/// Character formatting from a `TSWP.CharacterStylePropertiesArchive`; `nil` inherits.
+public struct PagesCharacterProperties: Sendable {
+    public var isBold: Bool?
+    public var isItalic: Bool?
+    public var fontSize: Double?
+    public var fontName: String?
+    /// `.some(nil)` is the automatic colour.
+    public var colorHex: String??
+    public var verticalPosition: Int?
+    public var underline: Int?
+    public var strikethrough: Int?
+    public var capitalization: Int?
+    public var baselineShift: Double?
+
+    public init() {}
+
+    public init(_ message: ProtoMessage) {
+        isBold = message.bool(1)
+        isItalic = message.bool(2)
+        fontSize = message.float(3)
+        if message.bool(4) != true { fontName = message.string(5).flatMap { $0.isEmpty ? nil : $0 } }
+        if message.bool(6) == true {
+            colorHex = .some(nil)
+        } else if let color = message.message(7) {
+            colorHex = .some(PagesConverter.hex(color))
+        }
+        verticalPosition = message.optionalUInt(10).map { Int(clamping: $0) }
+        underline = message.optionalUInt(11).map { Int(clamping: $0) }
+        strikethrough = message.optionalUInt(12).map { Int(clamping: $0) }
+        capitalization = message.optionalUInt(13).map { Int(clamping: $0) }
+        baselineShift = message.float(14)
+    }
+
+    public func overlaid(with other: PagesCharacterProperties) -> PagesCharacterProperties {
+        var result = self
+        result.isBold = other.isBold ?? isBold
+        result.isItalic = other.isItalic ?? isItalic
+        result.fontSize = other.fontSize ?? fontSize
+        result.fontName = other.fontName ?? fontName
+        result.colorHex = other.colorHex ?? colorHex
+        result.verticalPosition = other.verticalPosition ?? verticalPosition
+        result.underline = other.underline ?? underline
+        result.strikethrough = other.strikethrough ?? strikethrough
+        result.capitalization = other.capitalization ?? capitalization
+        result.baselineShift = other.baselineShift ?? baselineShift
+        return result
+    }
+
+    public var runStyle: RunStyle {
+        var style = RunStyle()
+        style.fontName = fontName.map(PagesConverter.familyName)
+        style.fontSize = fontSize.map { Int(rounding: $0 * 2) }
+        // A bold or italic typeface, such as Helvetica-Bold, is bold or italic itself.
+        let traits = fontName.map(PagesConverter.fontTraits) ?? (isBold: false, isItalic: false)
+        style.isBold = isBold == true || traits.isBold ? true : nil
+        style.isItalic = isItalic == true || traits.isItalic ? true : nil
+        if let colorHex, let hex = colorHex, hex != "000000" { style.colorHex = hex }
+        switch verticalPosition {
+        case 1: style.verticalAlignment = .superscript
+        case 2: style.verticalAlignment = .subscript
+        default: break
+        }
+        switch underline {
+        case 1: style.underline = true
+        case 2: style.underline = true; style.underlineStyle = "double"
+        case 3: style.underline = true; style.underlineStyle = "wave"
+        default: break
+        }
+        switch strikethrough {
+        case 1: style.isStruckThrough = true
+        case 2, 3: style.isDoubleStruckThrough = true
+        default: break
+        }
+        switch capitalization {
+        case 1: style.allCaps = true
+        case 2: style.smallCaps = true
+        default: break
+        }
+        if let baselineShift, baselineShift != 0, style.verticalAlignment == nil {
+            style.position = Int(rounding: baselineShift * 2)
+        }
+        return style
+    }
+}
+
+/// Paragraph formatting from a `TSWP.ParagraphStylePropertiesArchive`, in points; `nil` inherits.
+public struct PagesParagraphProperties: Sendable {
+    public var alignment: Int?
+    public var firstLineIndent: Double?
+    public var leftIndent: Double?
+    public var rightIndent: Double?
+    public var spaceBefore: Double?
+    public var spaceAfter: Double?
+    public var lineSpacing: LineSpacing?
+    /// Points between one line and the next, which Word has no way to say:
+    /// the line is made as tall as its text and the gap.
+    public var lineGap: Double?
+    public var keepLinesTogether: Bool?
+    public var keepWithNext: Bool?
+    public var pageBreakBefore: Bool?
+    public var widowControl: Bool?
+    public var tabStops: [TabStop]?
+    /// `.some(nil)` is no fill.
+    public var fillHex: String??
+    /// Zero for the top level; `nil` for body text.
+    public var outlineLevel: Int??
+
+    public init() {}
+
+    public init(_ message: ProtoMessage) {
+        alignment = message.optionalUInt(1).map { Int(clamping: $0) }
+        if message.bool(5) == true {
+            fillHex = .some(nil)
+        } else if let fill = message.message(6) {
+            fillHex = .some(fill.float(6) == 0 ? nil : PagesConverter.hex(fill))
+        }
+        firstLineIndent = message.float(7)
+        keepLinesTogether = message.bool(9)
+        keepWithNext = message.bool(10)
+        leftIndent = message.float(11)
+        if let spacing = message.message(13), let amount = spacing.float(2) {
+            switch spacing.uint(1) {
+            case 0: lineSpacing = LineSpacing(line: Int(rounding: amount * 240), rule: .auto)
+            case 1, 4: lineSpacing = LineSpacing(line: Int(rounding: amount * 20), rule: .atLeast)
+            case 2: lineSpacing = LineSpacing(line: Int(rounding: amount * 20), rule: .exact)
+            case 3: lineGap = amount
+            default: break
+            }
+        }
+        pageBreakBefore = message.bool(14)
+        rightIndent = message.float(19)
+        spaceAfter = message.float(20)
+        spaceBefore = message.float(21)
+        if let tabs = message.message(25) {
+            // A `TSWP.TabsArchive`: each stop's place, how text lines up at it, and what leads up to it.
+            tabStops = tabs.messages(1).compactMap { tab in
+                guard let position = tab.float(1) else { return nil }
+                let alignments: [TabStop.Alignment] = [.left, .center, .right, .decimal]
+                let leaders = [".": "dot", "-": "hyphen", "_": "underscore", "\u{00B7}": "middleDot"]
+                return TabStop(
+                    position: Int(rounding: position * 20),
+                    alignment: alignments.indices.contains(Int(clamping: tab.uint(2))) ? alignments[Int(clamping: tab.uint(2))] : .left,
+                    leader: tab.string(3).flatMap { leaders[$0.trimmingCharacters(in: .whitespaces)] }
+                )
+            }
+        }
+        widowControl = message.bool(26)
+        if let level = message.optionalUInt(27) {
+            outlineLevel = .some(level < 9 ? Int(level) : nil)
+        }
+    }
+
+    public func overlaid(with other: PagesParagraphProperties) -> PagesParagraphProperties {
+        var result = self
+        result.alignment = other.alignment ?? alignment
+        result.firstLineIndent = other.firstLineIndent ?? firstLineIndent
+        result.leftIndent = other.leftIndent ?? leftIndent
+        result.rightIndent = other.rightIndent ?? rightIndent
+        result.spaceBefore = other.spaceBefore ?? spaceBefore
+        result.spaceAfter = other.spaceAfter ?? spaceAfter
+        if other.lineSpacing != nil || other.lineGap != nil {
+            result.lineSpacing = other.lineSpacing
+            result.lineGap = other.lineGap
+        }
+        result.keepLinesTogether = other.keepLinesTogether ?? keepLinesTogether
+        result.keepWithNext = other.keepWithNext ?? keepWithNext
+        result.pageBreakBefore = other.pageBreakBefore ?? pageBreakBefore
+        result.widowControl = other.widowControl ?? widowControl
+        result.tabStops = other.tabStops ?? tabStops
+        result.fillHex = other.fillHex ?? fillHex
+        result.outlineLevel = other.outlineLevel ?? outlineLevel
+        return result
+    }
+
+    /// The spacing of lines of text at a size, in points; a gap between
+    /// lines is added to a line as tall as the text, as fonts usually make it.
+    public func lineSpacing(fontSize: Double?) -> LineSpacing? {
+        guard let lineGap else { return lineSpacing }
+        return LineSpacing(line: Int(rounding: ((fontSize ?? 12) * 1.2 + lineGap) * 20), rule: .atLeast)
+    }
+
+    public var paragraphProperties: ParagraphProperties {
+        var properties = ParagraphProperties()
+        switch alignment {
+        case 1: properties.alignment = .trailing
+        case 2: properties.alignment = .center
+        case 3: properties.alignment = .justified
+        default: break
+        }
+        func twips(_ points: Double?) -> Int? {
+            points.map { Int(rounding: $0 * 20) }
+        }
+        let left = leftIndent ?? 0
+        if left != 0 { properties.indentLeft = twips(left) }
+        if let rightIndent, rightIndent != 0 { properties.indentRight = twips(rightIndent) }
+        // Pages measures the first line from the margin; Word, from the other lines.
+        if let firstLineIndent, firstLineIndent != left { properties.indentFirstLine = twips(firstLineIndent - left) }
+        properties.spacingBefore = twips(spaceBefore)
+        properties.spacingAfter = twips(spaceAfter)
+        properties.lineSpacing = lineSpacing(fontSize: nil)
+        properties.keepLines = keepLinesTogether == true ? true : nil
+        properties.keepNext = keepWithNext == true ? true : nil
+        properties.pageBreakBefore = pageBreakBefore == true ? true : nil
+        properties.widowControl = widowControl
+        if let tabStops, !tabStops.isEmpty { properties.tabStops = tabStops }
+        if let fillHex, let hex = fillHex { properties.shadingHex = hex }
+        if let outlineLevel, let level = outlineLevel {
+            properties.outlineLevel = level
+            let headings: [ParagraphStyleChoice] = [.heading1, .heading2, .heading3]
+            if headings.indices.contains(level) { properties.styleID = headings[level].defaultID }
+        }
+        return properties
+    }
+}
+
+/// The styles of the body's plain paragraphs, counted, for the one most of
+/// the text is set in to become the Normal style.
+public struct PagesStyleTally<Key: Hashable> {
+    private var entries: [Key: (order: Int, count: Int, style: (PagesParagraphProperties, PagesCharacterProperties))] = [:]
+
+    public mutating func add(_ key: Key, _ style: @autoclosure () -> (PagesParagraphProperties, PagesCharacterProperties)) {
+        if entries[key] != nil {
+            entries[key]!.count += 1
+        } else {
+            entries[key] = (entries.count, 1, style())
+        }
+    }
+
+    /// The style most paragraphs are in; of those as common, the first met.
+    public var mostUsed: (PagesParagraphProperties, PagesCharacterProperties)? {
+        entries.values.max { ($0.count, -$0.order) < ($1.count, -$1.order) }?.style
+    }
+
+    public init() {}
+}
+
+// MARK: - Conversion
+
+public struct PagesConverter {
+    public let archive: IWorkArchive
+    public var document: WordDocument = {
+        var document = WordDocument()
+        document.importedFormat = .pages
+        return document
+    }()
+
+    private var paragraphStyles: [UInt64: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
+    private var characterStyles: [UInt64: PagesCharacterProperties] = [:]
+    /// The fill each cell style gives, by its identifier.
+    private var cellFills: [UInt64: String??] = [:]
+    /// The format of text in a paragraph style and a character style, by their identifiers.
+    private var runFormats: [[UInt64?]: RunFormat] = [:]
+    /// The list each list style became, by the list style's identifier; `nil` for no list.
+    private var lists: [UInt64: Int?] = [:]
+    /// The list each list style's paragraphs are being numbered in, by the
+    /// list style's identifier, once a paragraph has been.
+    private var numberingInUse: [UInt64: Int] = [:]
+    /// The link each hyperlink field became, by its identifier; `nil` for none.
+    private var links: [UInt64: Hyperlink?] = [:]
+    /// The tracked change each `TSWP.ChangeArchive` became, by its identifier.
+    private var revisions: [UInt64: Revision] = [:]
+    /// The comment each highlight became, by its identifier; `nil` for none.
+    private var comments: [UInt64: String?] = [:]
+    /// How deep in text storages the conversion is: one in the body, more in its tables.
+    private var storageDepth = 0
+    /// The formatting of the body's first plain paragraph, and of its first
+    /// heading of each level, which become the Normal and heading styles.
+    private var bodyStyles = PagesStyleTally<UInt64?>()
+    private var headingStyles: [Int: (PagesParagraphProperties, PagesCharacterProperties)] = [:]
+    /// Whether the body's text is being read, whose section breaks end sections.
+    private var readingBody = false
+    /// The body's paragraphs that end a section, by their index among the
+    /// blocks, with the index of the section break in the text.
+    private var sectionBreaks: [(block: Int, character: Int)] = []
+    /// The document's language and region, which numbers and dates in tables are written for.
+    private let locale: Locale
+    /// Formatters for dates in tables, by the pattern they show.
+    private var dateFormatters: [String: DateFormatter] = [:]
+    /// Where the body's content came from, for saving edits back.
+    public private(set) var body = PagesBody()
+    /// Whether the document is a page layout one, read from what is placed on its pages.
+    public private(set) var isPageLayout = false
+    /// Whether what is read is the body's own text, not text set in its tables or notes.
+    private var recording: Bool { readingBody && storageDepth == 1 }
+
+    public init(archive: IWorkArchive) {
+        self.archive = archive
+        let identifier = archive.objects(ofType: PagesReader.Types.documentSettings).first?.object.message.string(23)
+        locale = Locale(identifier: identifier.flatMap { $0.isEmpty ? nil : $0 } ?? "en_US")
+    }
+
+    public mutating func convert(_ root: ProtoMessage) -> WordDocument {
+        readPageSetup(root)
+        let storage = archive[root.reference(4)].flatMap { $0.type == PagesReader.Types.storage ? $0.message : nil }
+        readingBody = true
+        var blocks = storage.map { self.blocks(from: $0) } ?? []
+        readingBody = false
+        let floating = archive[root.reference(3)]?.message.messages(1).filter { !$0.messages(4).isEmpty } ?? []
+        if !floating.isEmpty {
+            if blocks.allSatisfy(Self.isBlank) {
+                // A page layout document has no body text, only a break between each page and the
+                // next: its pages are what is placed on them.
+                sectionBreaks = []
+                isPageLayout = true
+                blocks = floatingBlocks(floating)
+            } else {
+                // Objects placed on a page of a word-processing document have no place in its text.
+                document.unsupportedFeatures.insert(.shapes)
+            }
+        }
+        // A table cannot end the document; Word wants a paragraph after it.
+        if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
+            let paragraph = Paragraph()
+            body.additions.insert(paragraph.id)
+            blocks.append(.paragraph(paragraph))
+        }
+        document.body = blocks
+        adoptStyles()
+        if let storage { readSections(storage) }
+        return document
+    }
+
+    /// What is placed on the pages, page by page, read down each page and
+    /// across: text boxes' and shapes' text as paragraphs, pictures and
+    /// tables as they are, and a page break between pages.
+    private mutating func floatingBlocks(_ pages: [ProtoMessage]) -> [Block] {
+        var blocks: [Block] = []
+        for (index, page) in pages.sorted(by: { $0.uint(1) < $1.uint(1) }).enumerated() {
+            if index > 0 {
+                if case .paragraph(var last) = blocks.last {
+                    last.inlines.append(Inline(.pageBreak))
+                    blocks[blocks.count - 1] = .paragraph(last)
+                } else {
+                    blocks.append(.paragraph(Paragraph(inlines: [Inline(.pageBreak)])))
+                }
+            }
+            let objects = page.messages(4).compactMap { entry -> (object: IWorkArchive.Object, x: Double, y: Double)? in
+                guard let object = archive[entry.reference(1)] else { return nil }
+                let position = Self.geometry(of: object)?.message(1)
+                return (object, position?.float(1) ?? 0, position?.float(2) ?? 0)
+            }
+            for item in objects.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
+                switch item.object.type {
+                case PagesReader.Types.shapeInfo:
+                    guard let text = archive[item.object.message.reference(2)], text.type == PagesReader.Types.storage
+                    else { continue }
+                    let content = self.blocks(from: text.message)
+                    if content.allSatisfy(Self.isBlank) {
+                        // A shape with no text is a drawing Libretto cannot bring across.
+                        document.unsupportedFeatures.insert(.shapes)
+                    } else {
+                        blocks += content
+                    }
+                case PagesReader.Types.image:
+                    if let image = image(item.object.message) {
+                        blocks.append(.paragraph(Paragraph(inlines: [Inline(.image(image))])))
+                    }
+                case PagesReader.Types.tableInfo:
+                    if let table = table(item.object.message) { blocks.append(.table(table)) }
+                default:
+                    document.unsupportedFeatures.insert(.shapes)
+                }
+            }
+        }
+        return blocks
+    }
+
+    /// Whether a block shows nothing: a paragraph with no text, or only breaks.
+    private static func isBlank(_ block: Block) -> Bool {
+        guard case .paragraph(let paragraph) = block else { return false }
+        return paragraph.inlines.allSatisfy { $0.content == .pageBreak }
+    }
+
+    /// A drawable's `TSD.GeometryArchive`, from its `TSD.DrawableArchive`
+    /// or from the shape that one is the super of.
+    private static func geometry(of object: IWorkArchive.Object) -> ProtoMessage? {
+        let drawable = object.type == PagesReader.Types.shapeInfo
+            ? object.message.message(1)?.message(1) : object.message.message(1)
+        return drawable?.message(1)
+    }
+
+    private mutating func readPageSetup(_ root: ProtoMessage) {
+        func twips(_ field: Int) -> Int? {
+            root.float(field).map { Int(rounding: $0 * 20) }
+        }
+        var setup = document.pageSetup
+        if let width = twips(30), let height = twips(31), width > 0, height > 0 {
+            setup.width = width
+            setup.height = height
+        }
+        setup.marginLeft = twips(32) ?? setup.marginLeft
+        setup.marginRight = twips(33) ?? setup.marginRight
+        setup.marginTop = twips(34) ?? setup.marginTop
+        setup.marginBottom = twips(35) ?? setup.marginBottom
+        setup.headerDistance = twips(36) ?? setup.headerDistance
+        setup.footerDistance = twips(37) ?? setup.footerDistance
+        document.pageSetup = setup
+    }
+
+    private mutating func adoptStyles() {
+        document.adoptPagesStyles(body: bodyStyles.mostUsed, headings: headingStyles)
+    }
+
+    // MARK: Text
+
+    /// The blocks a text storage holds: its paragraphs, and the tables set in them.
+    public mutating func blocks(from storage: ProtoMessage) -> [Block] {
+        storageDepth += 1
+        defer { storageDepth -= 1 }
+        let text = Array(storage.strings(3).joined().utf16)
+        let paragraphStyles = AttributeTable(storage.message(5))
+        // Each paragraph's list level, and the number its list starts over at, if it does.
+        let paragraphData = storage.message(6)?.messages(1).map {
+            (index: Int(clamping: $0.uint(1)), level: Int(clamping: $0.uint(2)), start: Int(clamping: $0.uint(3)))
+        } ?? []
+        let listStyles = AttributeTable(storage.message(7))
+        let characterStyles = AttributeTable(storage.message(8))
+        let attachments = AttributeTable(storage.message(9))
+        let footnotes = AttributeTable(storage.message(16))
+        let smartFields = AttributeTable(storage.message(11))
+        // Text Pages has tracked as inserted or deleted, and ranges that are commented on.
+        let insertions = AttributeTable(storage.message(21))
+        let deletions = AttributeTable(storage.message(22))
+        let highlights = AttributeTable(storage.message(23))
+        var openComment: (highlight: UInt64, id: String)?
+
+        var blocks: [Block] = []
+        var start = 0
+        // The paragraph data in effect, which moves on with the paragraphs.
+        var dataIndex = -1
+        while start <= text.count {
+            var end = start
+            while end < text.count, !Self.paragraphTerminators.contains(text[end]) { end += 1 }
+
+            let styleID = paragraphStyles.inheritedObject(at: start)
+            var paragraphFormat = PagesParagraphProperties()
+            var baseCharacters = PagesCharacterProperties()
+            if let styleID { (paragraphFormat, baseCharacters) = paragraphStyle(styleID) }
+            var paragraph = Paragraph(properties: paragraphProperties(of: styleID))
+            // The blocks after the first the paragraph becomes carry it on, rather than start one of their own.
+            let firstBlock = blocks.count
+            let listStyleID = listStyles.inheritedObject(at: start)
+            var listNumberingID = listStyleID.flatMap { list(for: $0) }
+            if storageDepth == 1 {
+                if let level = paragraphFormat.outlineLevel ?? nil {
+                    if headingStyles[level] == nil { headingStyles[level] = (paragraphFormat, baseCharacters) }
+                } else if listNumberingID == nil, start < end {
+                    bodyStyles.add(styleID, (paragraphFormat, baseCharacters))
+                }
+            }
+            while dataIndex + 1 < paragraphData.count, paragraphData[dataIndex + 1].index <= start { dataIndex += 1 }
+            let data = paragraphData.indices.contains(dataIndex) ? paragraphData[dataIndex] : nil
+            if let listStyleID, let numberingID = listNumberingID {
+                listNumberingID = numbering(of: listStyleID, list: numberingID, level: min(data?.level ?? 0, 8),
+                                            startingOverAt: data?.index == start ? data?.start ?? 0 : 0)
+            }
+            if let numberingID = listNumberingID {
+                let level = data?.level ?? 0
+                paragraph.properties.list = ListReference(numberingID: numberingID, level: min(level, 8))
+                // The list's own indents apply, as they do in Pages.
+                paragraph.properties.indentLeft = nil
+                paragraph.properties.indentFirstLine = nil
+            }
+
+            // Whether a table set in the paragraph split it.
+            var splitByTable = false
+            var pending: [UInt16] = []
+            var pendingFormat = RunFormat()
+            var pendingLink: Hyperlink?
+            var pendingRevision: Revision?
+            func flush() {
+                guard !pending.isEmpty else { return }
+                paragraph.inlines.append(Inline(
+                    .text(String(decoding: pending, as: UTF16.self)), format: pendingFormat, hyperlink: pendingLink,
+                    revision: pendingRevision
+                ))
+                pending = []
+            }
+            for index in start...min(end, text.count) {
+                // A comment's range ends before the first character it leaves out, and starts at its first.
+                let highlight = index < text.count ? highlights.object(at: index) : nil
+                if highlight != openComment?.highlight, index < end || highlight == nil {
+                    flush()
+                    if let open = openComment {
+                        paragraph.inlines += CommentAnchors.end(open.id, referenceStyleID: nil)
+                        openComment = nil
+                    }
+                    if index < end, let highlight, let id = comment(highlight) {
+                        paragraph.inlines.append(CommentAnchors.start(id))
+                        openComment = (highlight, id)
+                    }
+                }
+                let revision = (deletions.object(at: index) ?? insertions.object(at: index)).flatMap { change in
+                    trackedChange(change, kind: deletions.object(at: index) != nil ? .deletion : .insertion)
+                }
+                guard index < end else {
+                    // A paragraph mark Pages tracks as deleted joins its paragraph to the next once the change is accepted.
+                    if index < text.count, let revision { paragraph.markRevision = revision }
+                    break
+                }
+                let unit = text[index]
+                let format = runFormat(paragraphStyle: styleID, characterStyle: characterStyles.object(at: index))
+                let link = smartFields.object(at: index).flatMap { hyperlink($0) }
+                if format != pendingFormat || link != pendingLink || revision != pendingRevision {
+                    flush()
+                    pendingFormat = format
+                    pendingLink = link
+                    pendingRevision = revision
+                }
+                switch unit {
+                case 0x09:
+                    flush()
+                    paragraph.inlines.append(Inline(.tab, format: format, hyperlink: link, revision: revision))
+                case 0x2028:
+                    flush()
+                    paragraph.inlines.append(Inline(.lineBreak, format: format, hyperlink: link, revision: revision))
+                case 0x000E:
+                    flush()
+                    if let reference = footnote(footnotes.object(at: index)) {
+                        if recording, let attachment = footnotes.object(at: index) { body.notes[reference.id] = attachment }
+                        var noteFormat = format
+                        noteFormat.style.verticalAlignment = .superscript
+                        paragraph.inlines.append(Inline(.note(reference), format: noteFormat, revision: revision))
+                    }
+                case 0xFFFC:
+                    flush()
+                    let attachmentID = attachments.object(at: index)
+                    switch attachment(attachmentID) {
+                    case .image(let image):
+                        if recording, let attachmentID { body.images[image.relationshipID] = attachmentID }
+                        paragraph.inlines.append(Inline(.image(image), format: format, revision: revision))
+                    case .table(let table):
+                        if recording, let attachmentID { body.tables[table.id] = attachmentID }
+                        // The text before a table set in a paragraph stays above it, and the rest goes below.
+                        var rest = Paragraph(properties: paragraph.properties)
+                        if !paragraph.inlines.isEmpty {
+                            blocks.append(.paragraph(paragraph))
+                            // The rest is the same list item, which is not numbered again.
+                            rest.properties.list = nil
+                        }
+                        blocks.append(.table(table))
+                        paragraph = rest
+                        splitByTable = true
+                    case .field(let code):
+                        paragraph.inlines += Fields.inlines(code: code, result: "1", format: format).map {
+                            var inline = $0
+                            inline.revision = revision
+                            return inline
+                        }
+                    case nil: break
+                    }
+                case 0x00..<0x20:
+                    // Other markers, such as for comments and fields, take no room.
+                    break
+                default:
+                    pending.append(unit)
+                }
+            }
+            flush()
+            // A section break in the body ends a section, which is given its page once the text is read.
+            let endsSection = readingBody && storageDepth == 1 && end < text.count && text[end] == 0x04
+            if end < text.count, text[end] == 0x05 || text[end] == 0x04, !endsSection {
+                paragraph.inlines.append(Inline(.pageBreak))
+            }
+            // A paragraph that only held a table becomes the table.
+            if !splitByTable || !paragraph.inlines.isEmpty || paragraph.markRevision != nil {
+                blocks.append(.paragraph(paragraph))
+            }
+            if endsSection {
+                // A section ends with a paragraph, which a table cannot be.
+                if case .paragraph = blocks.last {} else { blocks.append(.paragraph(Paragraph())) }
+                sectionBreaks.append((blocks.count - 1, end))
+            }
+            if recording, blocks.count > firstBlock + 1 {
+                body.continuations.formUnion(blocks[(firstBlock + 1)...].map(\.id))
+            }
+            start = end + 1
+        }
+        return blocks
+    }
+
+    /// Paragraph breaks, and the page and section breaks that also end a paragraph.
+    private static let paragraphTerminators: Set<UInt16> = [0x0A, 0x2029, 0x04, 0x05]
+
+    /// The plain text of a storage, its paragraphs a line each, with page
+    /// numbers as the placeholders headers and footers fill in.
+    public func plainText(of storage: ProtoMessage) -> String {
+        let text = Array(storage.strings(3).joined().utf16)
+        let attachments = AttributeTable(storage.message(9))
+        var result: [UInt16] = []
+        for (index, unit) in text.enumerated() {
+            switch unit {
+            case 0x0A, 0x2029, 0x2028:
+                result.append(0x0A)
+            case 0x09:
+                result.append(unit)
+            case 0xFFFC:
+                guard let field = archive[attachments.object(at: index)], field.type == PagesReader.Types.pageNumber
+                else { continue }
+                let placeholder = field.message.message(1)?.uint(2) == 1
+                    ? HeaderFooterText.pageCountPlaceholder : HeaderFooterText.pageNumberPlaceholder
+                result += placeholder.utf16
+            case 0x00..<0x20:
+                continue
+            default:
+                result.append(unit)
+            }
+        }
+        return String(decoding: result, as: UTF16.self).trimmingCharacters(in: .newlines)
+    }
+
+    /// A link to the address a `TSWP.HyperlinkFieldArchive` holds, made the first time it is met.
+    private mutating func hyperlink(_ identifier: UInt64) -> Hyperlink? {
+        if let known = links[identifier] { return known }
+        guard let field = archive[identifier], field.type == PagesReader.Types.hyperlink,
+              let address = field.message.string(2), !address.isEmpty else {
+            links[identifier] = .some(nil)
+            return nil
+        }
+        let id = document.package.unusedRelationshipID()
+        document.package.addedLinks[id] = address
+        let link = Hyperlink(
+            relationshipID: id, anchor: nil, url: URL(string: address),
+            attributesXML: " r:id=\"\(id)\" w:history=\"1\""
+        )
+        links[identifier] = link
+        body.links[id] = identifier
+        return link
+    }
+
+    // MARK: Changes and comments
+
+    /// A tracked change from a `TSWP.ChangeArchive`, by the author of its
+    /// `TSWP.ChangeSessionArchive`, at its date, made the first time it is met.
+    private mutating func trackedChange(_ identifier: UInt64, kind: Revision.Kind) -> Revision {
+        if let known = revisions[identifier], known.kind == kind { return known }
+        let change = archive[identifier]?.message
+        let author = archive[change.flatMap { archive[$0.reference(3)]?.message.reference(1) }]?.message.string(1)
+        let revision = Revision(
+            kind: kind, author: author.flatMap { $0.isEmpty ? nil : $0 } ?? "Pages",
+            date: change?.message(2)?.float(1).flatMap(Self.isoDate)
+        )
+        revisions[identifier] = revision
+        return revision
+    }
+
+    /// The comment a `TSWP.HighlightArchive` holds, made the first time it is
+    /// met, with its replies: its `TSD.CommentStorageArchive`'s text, author
+    /// and date. `nil` for a highlight with no comment.
+    private mutating func comment(_ identifier: UInt64) -> String? {
+        if let known = comments[identifier] { return known }
+        var id: String?
+        if let storage = archive[archive[identifier]?.message.reference(1)]?.message, storage.has(1) {
+            let comment = makeComment(storage, parentParaID: nil)
+            id = comment.id
+            for reply in storage.messages(4).compactMap({ archive[$0.optionalUInt(1)]?.message }) {
+                _ = makeComment(reply, parentParaID: comment.paraID)
+            }
+        }
+        comments[identifier] = .some(id)
+        if let id { body.comments[identifier] = id }
+        return id
+    }
+
+    private mutating func makeComment(_ storage: ProtoMessage, parentParaID: String?) -> Comment {
+        let author = archive[storage.reference(3)]?.message.string(1) ?? ""
+        let comment = Comment(
+            id: document.unusedCommentID(), author: author,
+            initials: author.isEmpty ? nil : author.split(separator: " ").compactMap(\.first).map(String.init).joined(),
+            date: storage.message(2)?.float(1).flatMap(Self.isoDate), text: storage.string(1) ?? "",
+            paraID: document.unusedCommentParaID(), parentParaID: parentParaID
+        )
+        document.comments.append(comment)
+        return comment
+    }
+
+    /// A `TSP.Date`'s seconds since 2001 as ISO 8601, as Word dates changes and comments.
+    private static func isoDate(_ seconds: Double) -> String? {
+        guard seconds.isFinite, abs(seconds) < 1e11 else { return nil }
+        return ISO8601DateFormatter().string(from: Date(timeIntervalSinceReferenceDate: seconds))
+    }
+
+    /// What a paragraph in a paragraph style reads as, before any list it is in.
+    public mutating func paragraphProperties(of styleID: UInt64?) -> ParagraphProperties {
+        guard let styleID else { return ParagraphProperties() }
+        let (format, characters) = paragraphStyle(styleID)
+        var properties = format.paragraphProperties
+        properties.lineSpacing = format.lineSpacing(fontSize: characters.fontSize)
+        return properties
+    }
+
+    /// The format of text in a paragraph style and a character style.
+    public mutating func runFormat(paragraphStyle styleID: UInt64?, characterStyle characterStyleID: UInt64?) -> RunFormat {
+        if let known = runFormats[[styleID, characterStyleID]] { return known }
+        let base = styleID.map { paragraphStyle($0).1 } ?? PagesCharacterProperties()
+        let characters = characterStyleID.map { characterStyle($0) } ?? PagesCharacterProperties()
+        let format = RunFormat(style: base.overlaid(with: characters).runStyle)
+        runFormats[[styleID, characterStyleID]] = format
+        return format
+    }
+
+    public mutating func paragraphStyle(_ identifier: UInt64) -> (PagesParagraphProperties, PagesCharacterProperties) {
+        if let cached = paragraphStyles[identifier] { return cached }
+        var chain: [ProtoMessage] = []
+        var next: UInt64? = identifier
+        while let current = next, let object = archive[current], object.type == PagesReader.Types.paragraphStyle,
+              chain.count < 32 {
+            chain.append(object.message)
+            next = object.message.message(1)?.reference(3)
+        }
+        var paragraph = PagesParagraphProperties()
+        var characters = PagesCharacterProperties()
+        for style in chain.reversed() {
+            if let properties = style.message(12) { paragraph = paragraph.overlaid(with: PagesParagraphProperties(properties)) }
+            if let properties = style.message(11) { characters = characters.overlaid(with: PagesCharacterProperties(properties)) }
+        }
+        paragraphStyles[identifier] = (paragraph, characters)
+        return (paragraph, characters)
+    }
+
+    public mutating func characterStyle(_ identifier: UInt64) -> PagesCharacterProperties {
+        if let cached = characterStyles[identifier] { return cached }
+        var chain: [ProtoMessage] = []
+        var next: UInt64? = identifier
+        while let current = next, let object = archive[current], object.type == PagesReader.Types.characterStyle,
+              chain.count < 32 {
+            chain.append(object.message)
+            next = object.message.message(1)?.reference(3)
+        }
+        let properties = chain.reversed().reduce(PagesCharacterProperties()) { result, style in
+            style.message(11).map { result.overlaid(with: PagesCharacterProperties($0)) } ?? result
+        }
+        characterStyles[identifier] = properties
+        return properties
+    }
+
+    // MARK: Lists
+
+    /// The list a `TSWP.ListStyleArchive` becomes, made the first time it is
+    /// met; `nil` if it labels nothing.
+    private mutating func list(for identifier: UInt64) -> Int? {
+        if let known = lists[identifier] { return known }
+        guard let style = archive[identifier], style.type == PagesReader.Types.listStyle else { return nil }
+        let labelTypes = style.message.uints(11)
+        let numberTypes = style.message.uints(15)
+        let bullets = style.message.strings(16)
+        func value<T>(_ values: [T], _ level: Int) -> T? {
+            values.isEmpty ? nil : values[min(level, values.count - 1)]
+        }
+        guard let first = labelTypes.first, first != 0 else {
+            lists[identifier] = .some(nil)
+            return nil
+        }
+        let standardBullets = ["\u{2022}", "\u{25E6}", "\u{25AA}"]
+        let levels = Dictionary(uniqueKeysWithValues: (0..<9).map { level -> (Int, NumberingDefinitions.ListLevel) in
+            let indent = 720 * (level + 1)
+            if value(labelTypes, level) == 3 {
+                let (format, pattern) = Self.numberFormat(value(numberTypes, level) ?? 0)
+                return (level, NumberingDefinitions.ListLevel(
+                    format: format, text: pattern.replacingOccurrences(of: "%", with: "%\(level + 1)"),
+                    indentLeft: indent, hanging: 360
+                ))
+            }
+            let bullet = value(bullets, level).flatMap { $0.isEmpty ? nil : $0 } ?? standardBullets[level % 3]
+            return (level, NumberingDefinitions.ListLevel(format: "bullet", text: bullet, indentLeft: indent, hanging: 360))
+        })
+        let numberingID = document.numbering.addList(levels: levels, kind: first == 3 ? .numbered : .bulleted)
+        lists[identifier] = numberingID
+        body.lists[numberingID] = identifier
+        return numberingID
+    }
+
+    /// The list a paragraph in a list style is numbered in: the one the
+    /// paragraphs before in the style are, or, where Pages starts the list
+    /// over, a new one, which starts at the number Pages gives.
+    private mutating func numbering(of listStyleID: UInt64, list: Int, level: Int, startingOverAt start: Int) -> Int {
+        if start > 0, numberingInUse[listStyleID] != nil || start != 1 {
+            numberingInUse[listStyleID] = document.numbering.restartList(list, level: level, at: start) ?? list
+        } else if numberingInUse[listStyleID] == nil {
+            numberingInUse[listStyleID] = list
+        }
+        let numberingID = numberingInUse[listStyleID] ?? list
+        body.lists[numberingID] = listStyleID
+        return numberingID
+    }
+
+    /// `w:numFmt` and `w:lvlText`, with `%` for the number, for a `TSWP.ListStyleArchive.NumberType`.
+    private static func numberFormat(_ type: UInt64) -> (String, String) {
+        let formats = ["decimal", "upperRoman", "lowerRoman", "upperLetter", "lowerLetter"]
+        guard type < 15 else { return ("decimal", "%.") }
+        let patterns = ["%.", "(%)", "%)"]
+        return (formats[Int(type) / 3], patterns[Int(type) % 3])
+    }
+
+    // MARK: Attachments
+
+    private enum Attachment {
+        case image(InlineImage)
+        case table(Table)
+        /// A field, by its code, such as `PAGE`.
+        case field(String)
+    }
+
+    private mutating func attachment(_ identifier: UInt64?) -> Attachment? {
+        guard let attachment = archive[identifier] else { return nil }
+        if attachment.type == PagesReader.Types.pageNumber {
+            return .field(attachment.message.message(1)?.uint(2) == 1 ? "NUMPAGES" : "PAGE")
+        }
+        guard attachment.type == PagesReader.Types.drawableAttachment,
+              let drawable = archive[attachment.message.reference(1)] else { return nil }
+        switch drawable.type {
+        case PagesReader.Types.image:
+            if let image = image(drawable.message) { return .image(image) }
+        case PagesReader.Types.tableInfo:
+            if let table = table(drawable.message) { return .table(table) }
+        default:
+            break
+        }
+        document.unsupportedFeatures.insert(.shapes)
+        return nil
+    }
+
+    /// A `TSD.ImageArchive`, at the size it is shown.
+    private mutating func image(_ message: ProtoMessage) -> InlineImage? {
+        guard let identifier = message.reference(11), let file = archive.dataFile(identifier),
+              let (data, fileExtension, contentType) = Self.wordImage(file.data) else { return nil }
+        let size = message.message(1)?.message(1)?.message(2)
+        let natural = message.message(4) ?? message.message(9)
+        let width = size?.float(1) ?? natural?.float(1) ?? 100
+        let height = size?.float(2) ?? natural?.float(2) ?? 100
+        let id = document.package.unusedRelationshipID()
+        document.package.addedMedia[id] = DocumentPackage.AddedMedia(
+            path: "word/media/pages-\(identifier).\(fileExtension)", data: data,
+            fileExtension: fileExtension, contentType: contentType
+        )
+        return InlineImage(relationshipID: id, width: width, height: height, xml: nil)
+    }
+
+    /// An image as Word reads it: PNG and JPEG as they are, anything else as PNG.
+    public static func wordImage(_ data: Data) -> (Data, String, String)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source).flatMap({ UTType($0 as String) }) else { return nil }
+        if type.conforms(to: .png) { return (data, "png", "image/png") }
+        if type.conforms(to: .jpeg) { return (data, "jpeg", "image/jpeg") }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return (output as Data, "png", "image/png")
+    }
+
+    // MARK: Footnotes
+
+    private mutating func footnote(_ identifier: UInt64?) -> NoteReference? {
+        guard let attachment = archive[identifier], attachment.type == PagesReader.Types.footnoteAttachment,
+              let storage = archive[attachment.message.reference(2)], storage.type == PagesReader.Types.storage
+        else { return nil }
+        let id = document.unusedNoteID(.footnote)
+        document.notes.append(Note(kind: .footnote, id: id, text: plainText(of: storage.message)))
+        return NoteReference(kind: .footnote, id: id)
+    }
+
+    // MARK: Tables
+
+    /// A `TST.TableInfoArchive`'s table, with each cell's text.
+    private mutating func table(_ info: ProtoMessage) -> Table? {
+        guard let model = archive[info.reference(2)], model.type == PagesReader.Types.tableModel else { return nil }
+        let rowCount = Int(clamping: model.message.uint(6))
+        let columnCount = Int(clamping: model.message.uint(7))
+        let cellCount = rowCount.multipliedReportingOverflow(by: columnCount)
+        guard rowCount > 0, columnCount > 0, !cellCount.overflow, cellCount.partialValue <= 100_000,
+              let store = model.message.message(4) else { return nil }
+
+        let defaultWidth = model.message.float(17) ?? 100
+        var widths = Array(repeating: defaultWidth, count: columnCount)
+        for header in archive[store.reference(2)]?.message.messages(2) ?? [] {
+            let index = Int(clamping: header.uint(1))
+            if widths.indices.contains(index), let size = header.float(2), size > 0 { widths[index] = size }
+        }
+
+        let lists = CellLists(
+            strings: dataList(store.reference(4)), richText: dataList(store.reference(17)),
+            styles: dataList(store.reference(5)),
+            formats: dataList(store.reference(22)), formatsBefore2019: dataList(store.reference(11))
+        )
+        // Header rows and columns, footer rows and the body each have a cell style, whose fill a cell's own replaces.
+        let headerRows = Int(clamping: model.message.uint(9))
+        let headerColumns = Int(clamping: model.message.uint(10))
+        let footerRows = Int(clamping: model.message.uint(11))
+        var regionFills: [String?] = []
+        for field in [19, 20, 21, 18] { regionFills.append(model.message.reference(field).flatMap { cellFill($0) } ?? nil) }
+        // Each also has a paragraph style, which values are set in unless the cell gives one.
+        let regionTextStyles = [25, 26, 27, 24].map { model.message.reference($0) }
+        func region(row: Int, column: Int) -> Int {
+            if row < headerRows { return 0 }
+            if column < headerColumns { return 1 }
+            if row >= rowCount - footerRows { return 2 }
+            return 3
+        }
+        func regionFill(row: Int, column: Int) -> String? { regionFills[region(row: row, column: column)] }
+        var cells = (0..<rowCount).map { row in
+            (0..<columnCount).map { column in TableCell(blocks: [], shadingHex: regionFill(row: row, column: column)) }
+        }
+        let tileStorage = store.message(3)
+        let tileSize = Int(clamping: tileStorage?.optionalUInt(2) ?? 256)
+        for tileEntry in tileStorage?.messages(1) ?? [] {
+            let firstRow = Int(clamping: tileEntry.uint(1)).multipliedReportingOverflow(by: tileSize)
+            guard !firstRow.overflow, let tile = archive[tileEntry.reference(2)]?.message else { continue }
+            for rowInfo in tile.messages(5) {
+                let position = firstRow.partialValue.addingReportingOverflow(Int(clamping: rowInfo.uint(1)))
+                // Pages has written both formats since 2019; older files have only the first.
+                let isNew = rowInfo.has(7)
+                guard !position.overflow, case let row = position.partialValue, row < rowCount, let buffer = rowInfo.bytes(isNew ? 6 : 3), let offsets = rowInfo.bytes(isNew ? 7 : 4)
+                else { continue }
+                // Wide rows count their offsets in fours.
+                let scale = rowInfo.bool(8) == true ? 4 : 1
+                for column in 0..<min(columnCount, offsets.count / 2) {
+                    let at = offsets.startIndex + column * 2
+                    let offset = Int(offsets[at]) | Int(offsets[at + 1]) << 8
+                    guard offset != 0xFFFF, buffer.startIndex + offset * scale < buffer.endIndex else { continue }
+                    let bytes = buffer[(buffer.startIndex + offset * scale)...]
+                    let value = isNew ? CellValue(newStorage: bytes) : CellValue(oldStorage: bytes)
+                    if let value {
+                        let region = region(row: row, column: column)
+                        cells[row][column] = cell(
+                            value, lists: lists, regionFill: regionFills[region], regionTextStyle: regionTextStyles[region]
+                        )
+                    }
+                }
+            }
+        }
+
+        let grid = widths.map { Int(rounding: $0 * 20) }
+        var spans = Array(repeating: Array(repeating: 1, count: columnCount), count: rowCount)
+        var covered = Array(repeating: Array(repeating: false, count: columnCount), count: rowCount)
+        var merges = Array(repeating: Array(repeating: TableCell.VerticalMerge?.none, count: columnCount), count: rowCount)
+        for region in mergedRegions(model.message, store: store) {
+            let rows = region.rows.clamped(to: 0..<rowCount)
+            let columns = region.columns.clamped(to: 0..<columnCount)
+            guard let top = rows.first, let left = columns.first, rows.count * columns.count > 1 else { continue }
+            for row in rows {
+                spans[row][left] = columns.count
+                if rows.count > 1 { merges[row][left] = row == top ? .restart : .continue }
+                for column in columns.dropFirst() { covered[row][column] = true }
+            }
+        }
+
+        let rows = cells.enumerated().map { row, cellsInRow in
+            TableRow(
+                cells: cellsInRow.enumerated().compactMap { column, cell -> TableCell? in
+                    guard !covered[row][column] else { return nil }
+                    var cell = cell
+                    cell.gridSpan = spans[row][column]
+                    cell.verticalMerge = merges[row][column]
+                    if cell.verticalMerge == .continue {
+                        // A cell merged into the one above shows that one's fill.
+                        cell.blocks = []
+                        let origin = (0..<row).last { merges[$0][column] == .restart }
+                        cell.shadingHex = origin.flatMap { cells[$0][column].shadingHex }
+                    }
+                    if cell.blocks.isEmpty { cell.blocks = [.paragraph(Paragraph())] }
+                    cell.preservedPropertiesXML = Self.cellPropertiesXML(cell, width: grid[column..<(column + cell.gridSpan)].reduce(0, +))
+                    return cell
+                },
+                isHeader: row < headerRows
+            )
+        }
+        return Table(
+            rows: rows, gridColumns: grid,
+            preservedPropertiesXML: nil, styleID: nil, hasBorders: true
+        )
+    }
+
+    /// `w:tcPr` for a cell, since the writer gives a cell only its width
+    /// unless it has properties of its own.
+    public static func cellPropertiesXML(_ cell: TableCell, width: Int) -> String? {
+        guard cell.gridSpan > 1 || cell.verticalMerge != nil || cell.shadingHex != nil else { return nil }
+        var xml = "<w:tcPr><w:tcW w:w=\"\(width)\" w:type=\"dxa\"/>"
+        if cell.gridSpan > 1 { xml += "<w:gridSpan w:val=\"\(cell.gridSpan)\"/>" }
+        switch cell.verticalMerge {
+        case .restart: xml += "<w:vMerge w:val=\"restart\"/>"
+        case .continue: xml += "<w:vMerge/>"
+        case nil: break
+        }
+        if let fill = cell.shadingHex { xml += "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"\(fill)\"/>" }
+        return xml + "</w:tcPr>"
+    }
+
+    /// The table's merged cells, as row and column ranges.
+    private func mergedRegions(_ model: ProtoMessage, store: ProtoMessage) -> [(rows: Range<Int>, columns: Range<Int>)] {
+        // Since 2019, each merge is a range reference among the table's formulas.
+        var regions: [(rows: Range<Int>, columns: Range<Int>)] = []
+        for formula in model.message(47)?.message(2)?.messages(3) ?? [] {
+            for node in formula.message(2)?.message(1)?.messages(1) ?? [] {
+                guard let range = node.message(40), let columns = range.message(3), let rows = range.message(4) else { continue }
+                // A damaged range, ending before it starts, merges nothing.
+                func span(_ message: ProtoMessage) -> Range<Int>? {
+                    let first = message.uint(1)
+                    let last = message.optionalUInt(2) ?? first
+                    guard first <= last, last < UInt64(Int.max) else { return nil }
+                    return Int(first)..<(Int(last) + 1)
+                }
+                guard let rowSpan = span(rows), let columnSpan = span(columns) else { continue }
+                regions.append((rowSpan, columnSpan))
+            }
+        }
+        // Before, a map of ranges, each corner and size packed as row and column halves.
+        if regions.isEmpty, let map = archive[store.reference(13)]?.message {
+            for range in map.messages(1) {
+                guard let origin = range.message(1)?.optionalUInt(1), let size = range.message(2)?.optionalUInt(1) else { continue }
+                let row = Int(origin & 0xFFFF)
+                let column = Int(origin >> 16 & 0xFFFF)
+                regions.append((row..<(row + Int(size & 0xFFFF)), column..<(column + Int(size >> 16 & 0xFFFF))))
+            }
+        }
+        return regions
+    }
+
+    /// A `TST.TableDataList`'s entries by key: their text, or the rich text they refer to.
+    private func dataList(_ identifier: UInt64?) -> [UInt64: ProtoMessage] {
+        Dictionary(
+            (archive[identifier]?.message.messages(3) ?? []).map { ($0.uint(1), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// The lists a table's cells refer to by key.
+    private struct CellLists {
+        var strings: [UInt64: ProtoMessage]
+        var richText: [UInt64: ProtoMessage]
+        var styles: [UInt64: ProtoMessage]
+        /// Number formats, for cells in the format since 2019 and before.
+        var formats: [UInt64: ProtoMessage]
+        var formatsBefore2019: [UInt64: ProtoMessage]
+    }
+
+    /// What a cell's storage holds.
+    public struct CellValue: Sendable {
+        public var type: UInt8
+        public var decimal: Double?
+        public var double: Double?
+        public var seconds: Double?
+        public var stringKey: UInt64?
+        public var richKey: UInt64?
+        public var styleKey: UInt64?
+        /// Key in the table's styles of the paragraph style a value is set in.
+        public var textStyleKey: UInt64?
+        /// Keys in the table's formats of the format the cell shows a number,
+        /// or an amount of money, in.
+        public var numberFormatKey: UInt64?
+        public var currencyFormatKey: UInt64?
+        /// Key in the table's formats of the format a date is shown in.
+        public var dateFormatKey: UInt64?
+        /// Whether the cell is in the format Pages has written since 2019,
+        /// whose formats are in a list of their own.
+        public var isNewStorage = false
+
+        /// The format Pages has written since 2019: a version byte, the
+        /// value's type, flags at the eighth byte saying which values follow
+        /// from the twelfth, in a fixed order.
+        public init?(newStorage bytes: ArraySlice<UInt8>) {
+            guard bytes.count >= 12, bytes[bytes.startIndex] >= 5 else { return nil }
+            type = bytes[bytes.startIndex + 1]
+            isNewStorage = true
+            let flags = Self.read(bytes, 4, at: 8) ?? 0
+            var offset = 12
+            if flags & 0x1 != 0 { decimal = Self.decimal128(bytes, at: bytes.startIndex + offset); offset += 16 }
+            if flags & 0x2 != 0 { double = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            if flags & 0x4 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            if flags & 0x8 != 0 { stringKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            if flags & 0x10 != 0 { richKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            // A key for each flag after: the cell's style, its text style, on to its formats.
+            var keys: [UInt64: UInt64] = [:]
+            for bit in 5..<32 where flags & (1 << bit) != 0 {
+                keys[1 << bit] = Self.read(bytes, 4, at: offset)
+                offset += 4
+            }
+            styleKey = keys[0x20]
+            textStyleKey = keys[0x40]
+            numberFormatKey = keys[0x2000]
+            currencyFormatKey = keys[0x4000]
+            dateFormatKey = keys[0x8000]
+        }
+
+        /// The format before: the version, then the type, at the second byte
+        /// from version 4 and the third before it, flags at the fifth, and the
+        /// values after the keys the flags ask for.
+        public init?(oldStorage bytes: ArraySlice<UInt8>) {
+            guard bytes.count >= 8 else { return nil }
+            let version = bytes[bytes.startIndex]
+            guard (1...4).contains(version) else { return nil }
+            type = bytes[bytes.startIndex + (version >= 4 ? 1 : 2)]
+            let flags = Self.read(bytes, 4, at: 4) ?? 0
+            var offset = (version > 1 ? 12 : 8) + (flags & (version > 1 ? 0x0D8E : 0x018E)).nonzeroBitCount * 4
+            if flags & 0x200 != 0 { richKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            offset += (flags & (version > 1 ? 0x3000 : 0x1000)).nonzeroBitCount * 4
+            if flags & 0x10 != 0 { stringKey = Self.read(bytes, 4, at: offset); offset += 4 }
+            if flags & 0x20 != 0 { double = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            if flags & 0x40 != 0 { seconds = Self.read(bytes, 8, at: offset).map { Double(bitPattern: $0) }; offset += 8 }
+            // From version 2, the third word's high half flags the keys of the cell's formats, which follow.
+            guard version > 1, let formats = Self.read(bytes, 2, at: 10) else { return }
+            for bit in 0..<16 where formats & (1 << bit) != 0 {
+                let key = Self.read(bytes, 4, at: offset)
+                offset += 4
+                if bit == 0 { numberFormatKey = key }
+                if bit == 3 { currencyFormatKey = key }
+            }
+        }
+
+        private static func read(_ bytes: ArraySlice<UInt8>, _ count: Int, at offset: Int) -> UInt64? {
+            let start = bytes.startIndex + offset
+            guard start + count <= bytes.endIndex else { return nil }
+            return bytes[start..<(start + count)].reversed().reduce(0) { $0 << 8 | UInt64($1) }
+        }
+
+        /// An IEEE 754 decimal128 in binary integer form, as cells store numbers.
+        private static func decimal128(_ bytes: ArraySlice<UInt8>, at start: Int) -> Double? {
+            guard start + 16 <= bytes.endIndex else { return nil }
+            let exponent = (Int(bytes[start + 15] & 0x7F) << 7 | Int(bytes[start + 14]) >> 1) - 0x1820
+            var mantissa = Double(bytes[start + 14] & 1)
+            for index in stride(from: 13, through: 0, by: -1) { mantissa = mantissa * 256 + Double(bytes[start + index]) }
+            let value = mantissa * pow(10, Double(exponent))
+            return bytes[start + 15] & 0x80 != 0 ? -value : value
+        }
+    }
+
+    private mutating func cell(
+        _ value: CellValue, lists: CellLists, regionFill: String?, regionTextStyle: UInt64?
+    ) -> TableCell {
+        let shading = value.styleKey.flatMap { lists.styles[$0]?.reference(4) }.flatMap { cellFill($0) } ?? regionFill
+        let text: String?
+        switch value.type {
+        case 3:
+            text = value.stringKey.flatMap { lists.strings[$0]?.string(3) }
+        case 9:
+            if let payload = archive[value.richKey.flatMap { lists.richText[$0]?.reference(9) }],
+               let storage = archive[payload.message.reference(1)], storage.type == PagesReader.Types.storage {
+                return TableCell(blocks: blocks(from: storage.message), shadingHex: shading)
+            }
+            text = nil
+        case 2, 10:
+            let formats = value.isNewStorage ? lists.formats : lists.formatsBefore2019
+            let keys = value.type == 10 ? [value.currencyFormatKey, value.numberFormatKey] : [value.numberFormatKey, value.currencyFormatKey]
+            let format = keys.lazy.compactMap { $0.flatMap { formats[$0]?.message(6) } }.first.map(PagesNumberFormat.init)
+            text = (value.decimal ?? value.double).map { format?.text($0, locale: locale) ?? Self.numberText($0) }
+        case 5:
+            let formats = value.isNewStorage ? lists.formats : lists.formatsBefore2019
+            let pattern = value.dateFormatKey.flatMap { formats[$0]?.message(6)?.string(14) }
+            if let seconds = value.seconds {
+                text = Self.dateText(seconds, pattern: pattern, locale: locale, formatters: &dateFormatters)
+            } else {
+                text = nil
+            }
+        case 6:
+            text = (value.double ?? value.decimal).map { $0 != 0 ? "TRUE" : "FALSE" }
+        case 7:
+            text = (value.double ?? value.seconds ?? value.decimal).map(Self.durationText)
+        default:
+            text = nil
+        }
+        guard let text else { return TableCell(blocks: [], shadingHex: shading) }
+        let textStyle = value.textStyleKey.flatMap { lists.styles[$0]?.reference(4) } ?? regionTextStyle
+        let (paragraphFormat, characters) = textStyle.map { paragraphStyle($0) } ?? (PagesParagraphProperties(), PagesCharacterProperties())
+        var paragraph = Paragraph(properties: paragraphFormat.paragraphProperties)
+        paragraph.properties.lineSpacing = paragraphFormat.lineSpacing(fontSize: characters.fontSize)
+        paragraph.inlines = [Inline(.text(text), format: RunFormat(style: characters.runStyle))]
+        return TableCell(blocks: [.paragraph(paragraph)], shadingHex: shading)
+    }
+
+    /// A date as a cell shows it: in the pattern the cell's format gives, or
+    /// else as a short date, with the time if it has one. Pages keeps the
+    /// date and time as they were typed, as seconds since 2001 in GMT, so they
+    /// are shown in GMT, whatever the time zone they are read in.
+    public static func dateText(
+        _ seconds: Double, pattern: String?, locale: Locale, formatters: inout [String: DateFormatter]
+    ) -> String {
+        guard seconds.isFinite else { return "" }
+        let hasTime = seconds.truncatingRemainder(dividingBy: 86400) != 0
+        // Patterns as Unicode spells them are shown as they are; others, as a short date, or date and time.
+        let key = pattern.flatMap { $0.isEmpty || $0.contains("%") ? nil : $0 } ?? (hasTime ? "short+time" : "short")
+        let date = Date(timeIntervalSinceReferenceDate: seconds)
+        if let formatter = formatters[key] { return formatter.string(from: date) }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        switch key {
+        case "short": formatter.dateStyle = .short
+        case "short+time": formatter.dateStyle = .short; formatter.timeStyle = .short
+        default: formatter.dateFormat = key
+        }
+        formatters[key] = formatter
+        return formatter.string(from: date)
+    }
+
+    /// The fill of a `TST.CellStyleArchive`, or of the style it is a variation
+    /// of: `.some(nil)` for none, and `nil` if neither says.
+    private mutating func cellFill(_ identifier: UInt64) -> String?? {
+        if let known = cellFills[identifier] { return known }
+        var fill: String??
+        var next: UInt64? = identifier
+        var depth = 0
+        while let current = next, let style = archive[current], depth < 32 {
+            // An empty fill takes away the one the style it varies has.
+            if let own = style.message.message(11)?.message(1) {
+                if let color = own.message(1), color.float(6) != 0 { fill = .some(Self.hex(color)) } else { fill = .some(nil) }
+                break
+            }
+            next = style.message.message(1)?.reference(3)
+            depth += 1
+        }
+        cellFills[identifier] = .some(fill)
+        return fill
+    }
+
+    /// A duration, kept in seconds, as Pages shows one by default: each unit
+    /// from weeks to seconds it has, such as 1h 30m.
+    public static func durationText(_ seconds: Double) -> String {
+        guard seconds.isFinite, abs(seconds) < 1e15 else { return numberText(seconds) }
+        let units: [(String, Double)] = [("w", 604_800), ("d", 86400), ("h", 3600), ("m", 60)]
+        var remaining = abs(seconds)
+        var parts: [String] = []
+        for (name, length) in units where remaining >= length {
+            let count = (remaining / length).rounded(.down)
+            parts.append(numberText(count) + name)
+            remaining -= count * length
+        }
+        // Seconds to the thousandth, as Pages keeps them.
+        remaining = (remaining * 1000).rounded() / 1000
+        if remaining > 0 || parts.isEmpty { parts.append(numberText(remaining) + "s") }
+        return (seconds < 0 ? "-" : "") + parts.joined(separator: " ")
+    }
+
+    /// A number as Pages shows it with no format: as many places as it has.
+    public static func numberText(_ value: Double) -> String {
+        if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
+        return String(value)
+    }
+
+    // MARK: Headers and footers
+
+    /// Gives each of the body's sections its page: the paragraph that ends
+    /// at its section break, or, for the last, the document.
+    private mutating func readSections(_ body: ProtoMessage) {
+        let sections = AttributeTable(body.message(17))
+        var previous = document.pageSetup
+        for (block, character) in sectionBreaks {
+            guard case .paragraph(var paragraph) = document.body[block] else { continue }
+            previous = pageSetup(of: sections.object(at: character), previous: previous)
+            paragraph.section = previous
+            document.body[block] = .paragraph(paragraph)
+        }
+        document.pageSetup = pageSetup(of: sections.object(at: Int.max), previous: previous)
+    }
+
+    /// The page of a `TP.SectionArchive`: the document's, which Pages gives
+    /// every section, with the section's headers and footers, from its page
+    /// masters, or the section before's, if it carries them on; and where
+    /// its page numbers start.
+    private mutating func pageSetup(of sectionID: UInt64?, previous: PageSetup) -> PageSetup {
+        var setup = previous
+        guard let section = archive[sectionID], section.type == PagesReader.Types.section else { return setup }
+        // The writer keeps what it does not model of a section, such as where its page numbers start, as it was read.
+        setup.preservedXML = setup.preservedXML?.replacing(#/<w:pgNumType\b[^>]*\/>/#, with: "")
+        if section.message.bool(21) == true, let start = section.message.optionalUInt(22) {
+            setup.preservedXML = (setup.preservedXML ?? "<w:sectPr></w:sectPr>").replacingOccurrences(
+                of: "</w:sectPr>", with: "<w:pgNumType w:start=\"\(Int(clamping: start))\"/></w:sectPr>"
+            )
+        }
+        guard section.message.bool(17) != true else { return setup }
+        setup.headerFooters = HeaderFooterReferences()
+        setup.pageNumberFormat = nil
+        let masters: [(HeaderFooterKind, Int)] = [(.default, 25), (.first, 23), (.even, 24)]
+        let firstPageDiffers = section.message.bool(18) == true
+        let evenPagesDiffer = section.message.bool(19) == true
+        for (kind, field) in masters {
+            if kind == .first, !firstPageDiffers { continue }
+            if kind == .even, !evenPagesDiffer { continue }
+            guard let master = archive[section.message.reference(field)], master.type == PagesReader.Types.pageMaster
+            else { continue }
+            for isFooter in [false, true] {
+                let slots = master.message.messages(isFooter ? 2 : 1).compactMap { $0.optionalUInt(1) }
+                let contentWidth = setup.width - setup.marginLeft - setup.marginRight
+                guard let text = headerFooter(
+                    slots: slots, isFooter: isFooter, contentWidth: contentWidth, pageNumberFormat: &setup.pageNumberFormat
+                ) else { continue }
+                let id = document.unusedHeaderFooterID(isFooter: isFooter)
+                document.headerFooters[id] = text
+                if isFooter {
+                    setup.headerFooters.footers[kind] = id
+                } else {
+                    setup.headerFooters.headers[kind] = id
+                }
+            }
+        }
+        setup.headerFooters.titlePage = firstPageDiffers
+        // Word gives even pages headers of their own in the whole document or none of it.
+        if evenPagesDiffer { document.evenAndOddHeaders = true }
+        return setup
+    }
+
+    /// A header or footer from its left, centre and right parts. One part
+    /// alone is aligned as its text is, or else as where it sits; several are
+    /// set apart by tabs, to tab stops at the centre and right of the line,
+    /// as Word sets out its own. The text takes the format the first part
+    /// starts in, as a header's text is in one format.
+    private mutating func headerFooter(
+        slots: [UInt64], isFooter: Bool, contentWidth: Int, pageNumberFormat: inout String?
+    ) -> HeaderFooterText? {
+        let alignments: [ParagraphAlignment] = [.leading, .center, .trailing]
+        var parts: [(slot: Int, alignment: ParagraphAlignment, text: String)] = []
+        var format: RunFormat?
+        for (index, identifier) in slots.prefix(3).enumerated() {
+            guard let storage = archive[identifier], storage.type == PagesReader.Types.storage else { continue }
+            let text = plainText(of: storage.message)
+            guard !text.isEmpty else { continue }
+            if format == nil {
+                let styleID = AttributeTable(storage.message.message(5)).inheritedObject(at: 0)
+                let base = styleID.map { paragraphStyle($0).1 } ?? PagesCharacterProperties()
+                let characters = AttributeTable(storage.message.message(8)).object(at: 0).map { characterStyle($0) }
+                format = RunFormat(style: base.overlaid(with: characters ?? PagesCharacterProperties()).runStyle)
+            }
+            for object in AttributeTable(storage.message.message(9)).objects {
+                guard let field = archive[object], field.type == PagesReader.Types.pageNumber,
+                      field.message.message(1)?.uint(2) != 1,
+                      let format = field.message.string(4).flatMap(Self.pageNumberFormat) else { continue }
+                pageNumberFormat = format
+            }
+            let styleID = AttributeTable(storage.message.message(5)).inheritedObject(at: 0)
+            let own = styleID.flatMap { paragraphStyle($0).0.alignment }
+            switch own {
+            case 0, 3: parts.append((index, .leading, text))
+            case 1: parts.append((index, .trailing, text))
+            case 2: parts.append((index, .center, text))
+            default: parts.append((index, alignments[index], text))
+            }
+        }
+        guard let first = parts.first, let last = parts.last else { return nil }
+        var text: HeaderFooterText
+        if parts.count == 1 {
+            text = HeaderFooterText(text: first.text, alignment: first.alignment, isFooter: isFooter)
+        } else {
+            // Each part in its place: one left empty still takes its tab, so the next is not drawn into its place.
+            let placed = (0...last.slot).map { slot in parts.first { $0.slot == slot }?.text ?? "" }
+            text = HeaderFooterText(text: placed.joined(separator: "\t"), alignment: .leading, isFooter: isFooter)
+            text.paragraphPropertiesXML = """
+                <w:pPr><w:tabs><w:tab w:val="center" w:pos="\(contentWidth / 2)"/>\
+                <w:tab w:val="right" w:pos="\(contentWidth)"/></w:tabs></w:pPr>
+                """
+        }
+        text.runPropertiesXML = format.flatMap { DOCXPatcher.runPropertiesXML(for: $0) }
+        text.isEdited = true
+        return text
+    }
+
+    // MARK: Helpers
+
+    /// The list format Word numbers pages in for a page number's format in
+    /// Pages; `nil` for 1, 2, 3.
+    public static func pageNumberFormat(_ format: String) -> String? {
+        switch format {
+        case "lower-roman": "lowerRoman"
+        case "upper-roman": "upperRoman"
+        case "lower-alpha": "lowerLetter"
+        case "upper-alpha": "upperLetter"
+        default: nil
+        }
+    }
+
+    /// Six-digit RGB for a `TSP.Color`.
+    public static func hex(_ color: ProtoMessage) -> String? {
+        let components: [Double]
+        switch color.uint(1) {
+        case 1:
+            components = [color.float(3) ?? 0, color.float(4) ?? 0, color.float(5) ?? 0]
+        case 2:
+            let black = color.float(10) ?? 0
+            components = [7, 8, 9].map { (1 - (color.float($0) ?? 0)) * (1 - black) }
+        case 3:
+            let white = color.float(11) ?? 0
+            components = [white, white, white]
+        default:
+            return nil
+        }
+        return components.map { String(format: "%02X", Int(rounding: min(max($0, 0), 1) * 255)) }.joined()
+    }
+
+    /// Whether the typeface a PostScript name names is bold or italic.
+    public static func fontTraits(_ postScriptName: String) -> (isBold: Bool, isItalic: Bool) {
+        if let font = PagesFontCache.shared.installed(postScriptName) { return (font.isBold, font.isItalic) }
+        // Not installed: go by the style the name ends with.
+        guard let dash = postScriptName.lastIndex(of: "-") else { return (false, false) }
+        let style = postScriptName[postScriptName.index(after: dash)...].lowercased()
+        return (
+            ["bold", "black", "heavy"].contains { style.contains($0) },
+            ["italic", "oblique"].contains { style.contains($0) }
+        )
+    }
+
+    /// A font's family name, as Word names fonts, from the PostScript name Pages records.
+    public static func familyName(_ postScriptName: String) -> String {
+        if let font = PagesFontCache.shared.installed(postScriptName) { return font.family }
+        // Not installed: take the name apart as PostScript names are usually put together.
+        var family = postScriptName.split(separator: "-").first.map(String.init) ?? postScriptName
+        for suffix in ["PSMT", "MT", "PS"] where family.hasSuffix(suffix) && family.count > suffix.count {
+            family.removeLast(suffix.count)
+            break
+        }
+        var spaced = ""
+        for (index, character) in family.enumerated() {
+            if index > 0, character.isUppercase, let previous = spaced.last, previous.isLowercase { spaced.append(" ") }
+            spaced.append(character)
+        }
+        return spaced
+    }
+}
+
+private extension Int {
+    /// A measurement from a file, rounded to a whole number: none for one
+    /// that is not a number, and one out of range held in it, so a damaged
+    /// file cannot trap.
+    init(rounding value: Double) {
+        self = value.isFinite ? Int(Swift.min(Swift.max(value.rounded(), -1e15), 1e15)) : 0
+    }
+}
+
+/// What the installed fonts are, by PostScript name, as looking a font up
+/// for every run of text is slow.
+private final class PagesFontCache: @unchecked Sendable {
+    static let shared = PagesFontCache()
+    private let lock = NSLock()
+    private var fonts: [String: (family: String, isBold: Bool, isItalic: Bool)?] = [:]
+
+    /// The family and traits of the font a PostScript name names; `nil` if it is not installed.
+    func installed(_ postScriptName: String) -> (family: String, isBold: Bool, isItalic: Bool)? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let known = fonts[postScriptName] { return known }
+        let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
+        var result: (family: String, isBold: Bool, isItalic: Bool)?
+        if CTFontCopyPostScriptName(font) as String == postScriptName {
+            let traits = CTFontGetSymbolicTraits(font)
+            result = (CTFontCopyFamilyName(font) as String, traits.contains(.traitBold), traits.contains(.traitItalic))
+        }
+        fonts[postScriptName] = .some(result)
+        return result
+    }
+}
+
+/// A `TSWP.ObjectAttributeTable`: objects that apply from a character index on.
+private struct AttributeTable {
+    private let entries: [(index: Int, object: UInt64?)]
+
+    init(_ message: ProtoMessage?) {
+        entries = (message?.messages(1) ?? []).map { (Int(clamping: $0.uint(1)), $0.reference(2)) }
+    }
+
+    /// Every object the table refers to, in order.
+    var objects: [UInt64] { entries.compactMap(\.object) }
+
+    /// The object in effect at `index`; an entry with none means none.
+    func object(at index: Int) -> UInt64? {
+        entry(at: index).flatMap { entries[$0].object }
+    }
+
+    /// The object in effect at `index`, where an entry with none carries on the one before.
+    func inheritedObject(at index: Int) -> UInt64? {
+        guard let last = entry(at: index) else { return nil }
+        return entries[...last].reversed().lazy.compactMap(\.object).first
+    }
+
+    private func entry(at index: Int) -> Int? {
+        var low = 0
+        var high = entries.count
+        while low < high {
+            let middle = (low + high) / 2
+            if entries[middle].index <= index { low = middle + 1 } else { high = middle }
+        }
+        return low == 0 ? nil : low - 1
+    }
+}
+
+extension WordDocument {
+    /// Makes the Normal and heading styles look as a Pages document's own
+    /// do, so what takes its formatting from them, such as headers,
+    /// footnotes and list numbers, looks as it did in Pages.
+    public mutating func adoptPagesStyles(
+        body: (PagesParagraphProperties, PagesCharacterProperties)?,
+        headings: [Int: (PagesParagraphProperties, PagesCharacterProperties)]
+    ) {
+        if let (paragraph, characters) = body {
+            let id = styles.defaultParagraphStyleID ?? "Normal"
+            adopt(paragraph, characters, into: id, isHeading: false)
+            // Text Pages gives no colour, or black, is black, not the colour Normal now has.
+            if let color = styles.styles[id]?.runStyle.colorHex, color != "000000" {
+                self.body = Self.blackening(self.body, normalStyleID: id)
+            }
+        }
+        let choices: [ParagraphStyleChoice] = [.heading1, .heading2, .heading3]
+        for (level, (paragraph, characters)) in headings where choices.indices.contains(level) {
+            adopt(paragraph, characters, into: choices[level].defaultID, isHeading: true)
+        }
+    }
+
+    /// The blocks with the text of Normal paragraphs that has no colour of its own set in black.
+    private static func blackening(_ blocks: [Block], normalStyleID: String) -> [Block] {
+        blocks.map { block in
+            switch block {
+            case .paragraph(var paragraph):
+                // Other styles' paragraphs take their style's colour, as they did in Pages.
+                guard paragraph.properties.styleID == nil || paragraph.properties.styleID == normalStyleID else { return block }
+                for index in paragraph.inlines.indices where paragraph.inlines[index].format.style.colorHex == nil {
+                    paragraph.inlines[index].format.style.colorHex = "000000"
+                }
+                return .paragraph(paragraph)
+            case .table(var table):
+                for row in table.rows.indices {
+                    for column in table.rows[row].cells.indices {
+                        table.rows[row].cells[column].blocks = blackening(table.rows[row].cells[column].blocks, normalStyleID: normalStyleID)
+                    }
+                }
+                return .table(table)
+            case .preserved:
+                return block
+            }
+        }
+    }
+
+    private mutating func adopt(
+        _ paragraph: PagesParagraphProperties, _ characters: PagesCharacterProperties, into id: String, isHeading: Bool
+    ) {
+        guard var style = styles.styles[id] else { return }
+        let run = characters.runStyle
+        style.runStyle.fontName = run.fontName ?? style.runStyle.fontName
+        style.runStyle.fontSize = run.fontSize ?? style.runStyle.fontSize
+        // A heading's own colour is replaced even by black, which the body leaves automatic.
+        if let colorHex = run.colorHex ?? (isHeading ? "000000" : nil) { style.runStyle.colorHex = colorHex }
+        // Pages leaves out spacing it has none of.
+        style.paragraphProperties.spacingBefore = Int(rounding: (paragraph.spaceBefore ?? 0) * 20)
+        style.paragraphProperties.spacingAfter = Int(rounding: (paragraph.spaceAfter ?? 0) * 20)
+        style.paragraphProperties.lineSpacing = paragraph.lineSpacing(fontSize: characters.fontSize) ?? LineSpacing(line: 240, rule: .auto)
+        if isHeading {
+            // Word's headings keep with the next paragraph and their lines together; Pages' only if they say so.
+            style.paragraphProperties.keepNext = paragraph.keepWithNext == true ? true : nil
+            style.paragraphProperties.keepLines = paragraph.keepLinesTogether == true ? true : nil
+        }
+        styles.styles[id] = style
+    }
+}

@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 import UniformTypeIdentifiers
 @testable import Libretto
+@testable import LibrettoEngine
 
 @Suite("Syntax highlighting")
 struct SyntaxHighlighterTests {

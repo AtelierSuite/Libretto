@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Finding one's way about the document: its headings, as an outline, and

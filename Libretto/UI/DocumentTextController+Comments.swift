@@ -1,3 +1,4 @@
+import LibrettoEngine
 import UIKit
 
 extension DocumentTextController {

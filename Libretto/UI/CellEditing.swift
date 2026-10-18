@@ -1,3 +1,4 @@
+import LibrettoEngine
 import UIKit
 
 /// Editing a table cell where it is on the page: a text view laid over the

@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// The document's comments, thread by thread in the order they come in the

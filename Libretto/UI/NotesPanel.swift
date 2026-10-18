@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// The document's footnotes and endnotes, numbered as the text refers to

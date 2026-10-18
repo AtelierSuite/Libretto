@@ -6,6 +6,16 @@ LANGS = ["en", "ja", "ko", "zh-Hans", "zh-Hant"]
 here = os.path.dirname(os.path.abspath(__file__))
 tables_path = os.path.join(here, "..", "..", "Tables", "Tables", "Support", "Localizable.xcstrings")
 out_path = os.path.join(here, "..", "Libretto", "Support", "Localizable.xcstrings")
+engine_path = os.path.join(here, "..", "LibrettoEngine", "Localizable.xcstrings")
+
+# What the engine says itself, from its own bundle, for either app. Those the
+# iOS app says as well are in both catalogs.
+ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignment.Right",
+          "Block.Preserved.Placeholder", "Comment.DefaultAuthor", "Contents.Empty", "Error.MissingBody",
+          "Error.MissingMainDocument", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
+          "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
+          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
+SHARED = ["Comment.DefaultAuthor"]
 
 S = {
  "ActionBar.Alignment": ["Alignment", "配置", "정렬", "对齐", "對齊"],
@@ -448,7 +458,11 @@ for key in reuse:
     if missing:
         sys.exit(f"{key} lacks {missing}")
 
-catalog = {"sourceLanguage": "en", "strings": dict(sorted(strings.items())), "version": "1.0"}
-with open(out_path, "w") as f:
-    json.dump(catalog, f, ensure_ascii=False, indent=2)
-print(len(strings), "strings")
+def write(path, entries):
+    catalog = {"sourceLanguage": "en", "strings": dict(sorted(entries.items())), "version": "1.0"}
+    with open(path, "w") as f:
+        json.dump(catalog, f, ensure_ascii=False, indent=2)
+    print(len(entries), "strings in", os.path.relpath(path, os.path.join(here, "..")))
+
+write(engine_path, {key: strings[key] for key in ENGINE})
+write(out_path, {key: value for key, value in strings.items() if key not in ENGINE or key in SHARED})

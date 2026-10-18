@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Libretto
+@testable import LibrettoEngine
 
 /// Reads `Sample.pages`, which Pages saved from a Word document with a
 /// heading, mixed formatting, lists, a footnote, a table, a picture, a page

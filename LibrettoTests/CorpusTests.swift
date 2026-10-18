@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import UIKit
 @testable import Libretto
+@testable import LibrettoEngine
 
 /// Runs every `.docx` in a folder through reading, the editor's text,
 /// saving, editing and saving again, the reader and PDF export.

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Libretto
+@testable import LibrettoEngine
 
 @Suite("Headers and footers")
 struct HeaderFooterTests {

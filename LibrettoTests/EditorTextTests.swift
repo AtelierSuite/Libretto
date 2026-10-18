@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import UIKit
 @testable import Libretto
+@testable import LibrettoEngine
 
 @Suite("Editor text")
 struct EditorTextTests {

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import UIKit
 @testable import Libretto
+@testable import LibrettoEngine
 
 /// Reads a document in the XML Pages '09 saved, built here in the shape of
 /// one Pages wrote: named styles inheriting from one another, anonymous ones

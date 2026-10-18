@@ -1,3 +1,4 @@
+import LibrettoEngine
 import UIKit
 
 /// A zoomable column of pages, with the document's one text view laid over

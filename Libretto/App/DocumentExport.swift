@@ -1,5 +1,6 @@
 import CoreTransferable
 import Foundation
+import LibrettoEngine
 import UniformTypeIdentifiers
 
 /// Wraps a document so it can be handed to `ShareLink`. The file is written
