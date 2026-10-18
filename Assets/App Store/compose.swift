@@ -9,17 +9,23 @@ let languages = ["en", "ja"]
 enum Device: String {
     case iPhone
     case iPad
+    case mac = "Mac"
 
-    /// 6.5" iPhone and 13" iPad, the sizes App Store Connect asks for.
+    /// 6.5" iPhone, 13" iPad and the largest Mac size, the sizes App Store Connect asks for.
     var canvasSize: NSSize {
         switch self {
         case .iPhone: NSSize(width: 1242, height: 2688)
         case .iPad: NSSize(width: 2064, height: 2752)
+        case .mac: NSSize(width: 2880, height: 1800)
         }
     }
 
-    /// Text and margins are laid out for the iPhone canvas and scaled up by width.
-    var scale: CGFloat { canvasSize.width / Device.iPhone.canvasSize.width }
+    /// Text and margins are laid out for the iPhone canvas and scaled up by width;
+    /// the Mac's wide canvas has its text sized as the iPad's is.
+    var scale: CGFloat {
+        let width = self == .mac ? Device.iPad.canvasSize.width : canvasSize.width
+        return width / Device.iPhone.canvasSize.width
+    }
 
     func rawDir(_ language: String) -> URL {
         scriptDir.appendingPathComponent("Raw").appendingPathComponent(rawValue)
@@ -111,6 +117,18 @@ let iPadScreenshots = [
     Screenshot(name: "04-equations", copy: equationsCopy),
     Screenshot(name: "05-code", copy: codeCopy),
     Screenshot(name: "06-dark", copy: darkCopy),
+]
+
+let macScreenshots = [
+    Screenshot(
+        name: "01-document",
+        copy: [
+            "en": Copy(header: "Word documents, page by page", caption: "Open and edit .docx files as Word lays them out"),
+            "ja": Copy(header: "Wordの書類を、ページのままに", caption: "docxファイルをWordと同じレイアウトで編集"),
+        ]
+    ),
+    Screenshot(name: "02-review", copy: reviewCopy),
+    Screenshot(name: "03-code", copy: codeCopy),
 ]
 
 // MARK: - Text
@@ -250,6 +268,8 @@ func deviceAspect(_ device: Device) -> CGFloat {
     case .iPad:
         let screenHeight = (1 - 2 * iPadBezel) / iPadScreenAspect
         return 1 / (screenHeight + 2 * iPadBezel)
+    case .mac:
+        return 1440 / 900
     }
 }
 
@@ -283,6 +303,33 @@ func drawiPad(raw: NSImage, in rect: NSRect) {
     NSBezierPath(roundedRect: screenRect, xRadius: screenRadius, yRadius: screenRadius).addClip()
     drawFilled(cgImage(of: raw), in: screenRect, context: ctx)
     ctx.restoreGState()
+}
+
+/// A Mac window, as the app drew it, with the corners and shadow the window server would give it.
+func drawMacWindow(raw: NSImage, in rect: NSRect) {
+    let radius = rect.width * 0.012
+    let outline = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+
+    NSGraphicsContext.current?.saveGraphicsState()
+    let shadow = NSShadow()
+    shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
+    shadow.shadowBlurRadius = 70
+    shadow.shadowOffset = NSSize(width: 0, height: -28)
+    shadow.set()
+    NSColor.white.setFill()
+    outline.fill()
+    NSGraphicsContext.current?.restoreGraphicsState()
+
+    let ctx = NSGraphicsContext.current!.cgContext
+    ctx.saveGState()
+    outline.addClip()
+    drawFilled(cgImage(of: raw), in: rect, context: ctx)
+    ctx.restoreGState()
+
+    // The fine edge a window has against what is behind it.
+    NSColor.black.withAlphaComponent(0.18).setStroke()
+    outline.lineWidth = 2
+    outline.stroke()
 }
 
 // MARK: - Composition
@@ -337,6 +384,14 @@ func compose(_ shot: Screenshot, language: String, device: Device) -> Bool {
         deviceSize = NSSize(width: canvasSize.width - 140 * s, height: (canvasSize.width - 140 * s) / aspect)
         deviceTop = canvasSize.height - 300 * s
         deviceBottom = deviceTop - deviceSize.height
+    case .mac:
+        // The window, whole, in what is left below a band that holds the text.
+        let textPadding = 64 * s
+        let bottomMargin = 80 * s
+        deviceTop = canvasSize.height - inkHeight - 2 * textPadding
+        let height = deviceTop - bottomMargin
+        deviceSize = NSSize(width: height * aspect, height: height)
+        deviceBottom = bottomMargin
     }
 
     // The text's ink is centered in the band between the top of the canvas and the device.
@@ -365,6 +420,8 @@ func compose(_ shot: Screenshot, language: String, device: Device) -> Bool {
         maskedScreen(raw: raw).draw(in: deviceRect)
     case .iPad:
         drawiPad(raw: raw, in: deviceRect)
+    case .mac:
+        drawMacWindow(raw: raw, in: deviceRect)
     }
 
     image.unlockFocus()
@@ -403,6 +460,9 @@ for language in languages {
     }
     for shot in iPadScreenshots {
         allOK = compose(shot, language: language, device: .iPad) && allOK
+    }
+    for shot in macScreenshots {
+        allOK = compose(shot, language: language, device: .mac) && allOK
     }
 }
 exit(allOK ? 0 : 1)
