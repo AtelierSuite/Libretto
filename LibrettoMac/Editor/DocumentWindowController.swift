@@ -366,13 +366,14 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var alignmentControl: NSSegmentedControl?
     private var trackItem: NSToolbarItem?
 
+    /// Quick formatting on the left, what can be added on the right; the rest of the formatting is in the inspector.
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Item.style, Item.font, Item.alignment, Item.lists, .flexibleSpace, Item.insert, Item.comment, Item.track,
+        [Item.style, Item.font, .flexibleSpace, Item.insert, Item.comment, Item.track,
          Item.unsupported, .inspectorTrackingSeparator, .flexibleSpace, .toggleInspector]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar) + [.space, .print]
+        toolbarDefaultItemIdentifiers(toolbar) + [Item.alignment, Item.lists, .space, .print]
     }
 
     func toolbar(
