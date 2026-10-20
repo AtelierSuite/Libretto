@@ -144,13 +144,16 @@ class InspectorPane: NSStackView {
         if let last = views.last { setCustomSpacing(14, after: last) }
     }
 
-    /// A row of a label and a control.
-    func row(_ title: String, _ control: NSView) -> NSView {
+    /// A row of a label and a control at its end. Controls that fill take the same share of every row,
+    /// so they line up down the pane; the rest keep their own size.
+    func row(_ title: String, _ control: NSView, fills: Bool = true) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.setContentHuggingPriority(.required, for: .horizontal)
-        let row = NSStackView(views: [label, control])
-        row.distribution = .fill
-        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = NSStackView()
+        row.addView(label, in: .leading)
+        row.addView(control, in: .trailing)
+        if fills { control.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: 0.62).isActive = true }
         return row
     }
 
@@ -291,7 +294,7 @@ private final class FormatInspector: InspectorPane {
         addSection(String(localized: "ActionBar.Style"), [style])
         addSection(String(localized: "Format.Section.Text"), [
             font, row(String(localized: "Format.Text.Size"), size), traits,
-            row(String(localized: "Mac.Format.Colour"), color),
+            row(String(localized: "Mac.Format.Colour"), color, fills: false),
             row(String(localized: "Format.Section.Highlight"), highlight),
         ])
         addSection(String(localized: "ActionBar.Paragraph"), [
