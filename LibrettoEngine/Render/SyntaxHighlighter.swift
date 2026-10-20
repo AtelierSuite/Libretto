@@ -116,54 +116,144 @@ private struct CodeRules {
         public var escapes = true
     }
 
-    var lineComment: String?
+    var lineComments: [String] = []
     var blockComment: (open: String, close: String)?
     /// Longest delimiters first, so `"""` is not taken for an empty string.
     var strings: [StringRule]
     var keywords: Set<String>
+    /// Names of built-in types that are not capitalised, like C's `int`.
+    var types: Set<String> = []
     /// Capitalised names are types, as they are by convention.
     var capitalisedTypes = true
+    /// SQL: keywords in any case, held here in lower case.
+    var ignoresCase = false
     /// Characters that make the name after them an attribute: `@` for Swift
     /// attributes and decorators.
     var attributePrefix: Character?
     /// Characters that make the name after them a keyword: `#` for Swift's
-    /// compiler directives.
+    /// compiler directives and C's preprocessor.
     var directivePrefix: Character?
-    /// Shell: `#` only starts a comment at the start of a word, and `$` starts a variable.
+    /// The character that starts a variable: `$` in shell scripts, PHP and Ruby.
+    var variablePrefix: Character?
+    /// Shell and YAML: a comment only starts at the start of a word, and words run on through hyphens.
+    var commentsStartWords = false
+    /// Shell: `$?`, `$@` and the like are variables too.
     var isShell = false
+    /// JSON and YAML: a string or name before a colon is a key, coloured as a property.
+    var colonsMarkKeys = false
 
     init(_ language: SourceLanguage) {
         let quoted = [StringRule(delimiter: "\"", spansLines: false), StringRule(delimiter: "'", spansLines: false)]
+        let cStyle = (open: "/*", close: "*/")
         switch language {
         case .swift:
-            lineComment = "//"
-            blockComment = ("/*", "*/")
+            lineComments = ["//"]
+            blockComment = cStyle
             strings = [StringRule(delimiter: "\"\"\"", spansLines: true), quoted[0]]
             keywords = Self.swift
             attributePrefix = "@"
             directivePrefix = "#"
         case .python:
-            lineComment = "#"
+            lineComments = ["#"]
             strings = [
                 StringRule(delimiter: "\"\"\"", spansLines: true), StringRule(delimiter: "'''", spansLines: true),
             ] + quoted
             keywords = Self.python
             attributePrefix = "@"
         case .javaScript, .typeScript:
-            lineComment = "//"
-            blockComment = ("/*", "*/")
+            lineComments = ["//"]
+            blockComment = cStyle
             strings = quoted + [StringRule(delimiter: "`", spansLines: true)]
             keywords = language == .typeScript ? Self.javaScript.union(Self.typeScript) : Self.javaScript
             attributePrefix = language == .typeScript ? "@" : nil
         case .shell:
-            lineComment = "#"
+            lineComments = ["#"]
             strings = [
                 StringRule(delimiter: "\"", spansLines: true),
                 StringRule(delimiter: "'", spansLines: true, escapes: false),
             ]
             keywords = Self.shell
             capitalisedTypes = false
+            variablePrefix = "$"
+            commentsStartWords = true
             isShell = true
+        case .c, .cPlusPlus, .objectiveC:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = quoted
+            keywords = switch language {
+            case .cPlusPlus: Self.c.union(Self.cPlusPlus)
+            case .objectiveC: Self.c.union(Self.objectiveC)
+            default: Self.c
+            }
+            types = Self.cTypes
+            directivePrefix = "#"
+            // Objective-C's `@interface`, `@property` and the rest.
+            attributePrefix = language == .objectiveC ? "@" : nil
+        case .cSharp:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = [StringRule(delimiter: "\"\"\"", spansLines: true)] + quoted
+            keywords = Self.cSharp
+            types = Self.cSharpTypes
+            directivePrefix = "#"
+        case .java, .kotlin:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = [StringRule(delimiter: "\"\"\"", spansLines: true, escapes: language == .java)] + quoted
+            keywords = language == .java ? Self.java : Self.kotlin
+            types = language == .java ? Self.javaTypes : []
+            attributePrefix = "@"
+        case .go:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = quoted + [StringRule(delimiter: "`", spansLines: true, escapes: false)]
+            keywords = Self.go
+            types = Self.goTypes
+            // Capitals mark what a package exports, not its types.
+            capitalisedTypes = false
+        case .rust:
+            lineComments = ["//"]
+            blockComment = cStyle
+            // `'` starts lifetimes as well as characters, so only double quotes make strings.
+            strings = [StringRule(delimiter: "\"", spansLines: true)]
+            keywords = Self.rust
+            types = Self.rustTypes
+        case .ruby:
+            lineComments = ["#"]
+            strings = quoted
+            keywords = Self.ruby
+            // Instance variables, coloured as attributes are elsewhere.
+            attributePrefix = "@"
+            variablePrefix = "$"
+        case .php:
+            lineComments = ["//", "#"]
+            blockComment = cStyle
+            strings = [
+                StringRule(delimiter: "\"", spansLines: true),
+                StringRule(delimiter: "'", spansLines: true),
+            ]
+            keywords = Self.php
+            variablePrefix = "$"
+        case .sql:
+            lineComments = ["--"]
+            blockComment = cStyle
+            strings = quoted
+            keywords = Self.sql
+            capitalisedTypes = false
+            ignoresCase = true
+        case .json:
+            strings = [quoted[0]]
+            keywords = ["true", "false", "null"]
+            capitalisedTypes = false
+            colonsMarkKeys = true
+        case .yaml:
+            lineComments = ["#"]
+            strings = [quoted[0], StringRule(delimiter: "'", spansLines: false, escapes: false)]
+            keywords = ["true", "false", "null", "yes", "no", "on", "off"]
+            capitalisedTypes = false
+            commentsStartWords = true
+            colonsMarkKeys = true
         case .plainText, .html, .css:
             strings = quoted
             keywords = []
@@ -201,6 +291,96 @@ private struct CodeRules {
         "exec", "exit", "export", "false", "fi", "for", "function", "if", "in", "local", "printf", "read",
         "readonly", "return", "select", "set", "shift", "source", "then", "time", "trap", "true", "typeset",
         "unset", "until", "while",
+    ]
+    static let c: Set<String> = [
+        "auto", "break", "case", "const", "continue", "default", "do", "else", "enum", "extern", "false", "for",
+        "goto", "if", "inline", "NULL", "register", "restrict", "return", "sizeof", "static", "struct", "switch",
+        "true", "typedef", "union", "volatile", "while",
+    ]
+    static let cTypes: Set<String> = [
+        "bool", "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void", "size_t",
+        "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+    ]
+    static let cPlusPlus: Set<String> = [
+        "alignas", "alignof", "catch", "class", "constexpr", "consteval", "constinit", "const_cast", "co_await",
+        "co_return", "co_yield", "decltype", "delete", "dynamic_cast", "explicit", "export", "final", "friend",
+        "mutable", "namespace", "new", "noexcept", "nullptr", "operator", "override", "private", "protected",
+        "public", "reinterpret_cast", "static_assert", "static_cast", "template", "this", "throw", "try",
+        "typename", "using", "virtual",
+    ]
+    static let objectiveC: Set<String> = [
+        "id", "instancetype", "nil", "Nil", "self", "super", "YES", "NO", "BOOL", "SEL", "IMP",
+        "nonatomic", "atomic", "strong", "weak", "copy", "assign", "readonly", "readwrite", "nullable", "nonnull",
+    ]
+    static let cSharp: Set<String> = [
+        "abstract", "as", "async", "await", "base", "break", "case", "catch", "checked", "class", "const",
+        "continue", "default", "delegate", "do", "else", "enum", "event", "explicit", "extern", "false", "finally",
+        "fixed", "for", "foreach", "get", "goto", "if", "implicit", "in", "init", "interface", "internal", "is",
+        "lock", "namespace", "new", "null", "operator", "out", "override", "params", "partial", "private",
+        "protected", "public", "readonly", "record", "ref", "return", "sealed", "set", "sizeof", "stackalloc",
+        "static", "struct", "switch", "this", "throw", "true", "try", "typeof", "unchecked", "unsafe", "using",
+        "value", "var", "virtual", "volatile", "when", "where", "while", "yield",
+    ]
+    static let cSharpTypes: Set<String> = [
+        "bool", "byte", "char", "decimal", "double", "dynamic", "float", "int", "long", "object", "sbyte", "short",
+        "string", "uint", "ulong", "ushort", "void",
+    ]
+    static let java: Set<String> = [
+        "abstract", "assert", "break", "case", "catch", "class", "const", "continue", "default", "do", "else",
+        "enum", "extends", "false", "final", "finally", "for", "goto", "if", "implements", "import", "instanceof",
+        "interface", "native", "new", "null", "package", "permits", "private", "protected", "public", "record",
+        "return", "sealed", "static", "strictfp", "super", "switch", "synchronized", "this", "throw", "throws",
+        "transient", "true", "try", "var", "volatile", "while", "yield",
+    ]
+    static let javaTypes: Set<String> = ["boolean", "byte", "char", "double", "float", "int", "long", "short", "void"]
+    static let kotlin: Set<String> = [
+        "abstract", "annotation", "as", "break", "by", "catch", "class", "companion", "const", "constructor",
+        "continue", "crossinline", "data", "do", "else", "enum", "external", "false", "final", "finally", "for",
+        "fun", "get", "if", "import", "in", "infix", "init", "inline", "inner", "interface", "internal", "is",
+        "lateinit", "noinline", "null", "object", "open", "operator", "out", "override", "package", "private",
+        "protected", "public", "reified", "return", "sealed", "set", "super", "suspend", "this", "throw", "true",
+        "try", "typealias", "val", "value", "var", "vararg", "when", "where", "while",
+    ]
+    static let go: Set<String> = [
+        "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough", "false", "for",
+        "func", "go", "goto", "if", "import", "interface", "iota", "map", "nil", "package", "range", "return",
+        "select", "struct", "switch", "true", "type", "var",
+    ]
+    static let goTypes: Set<String> = [
+        "any", "bool", "byte", "complex64", "complex128", "error", "float32", "float64", "int", "int8", "int16",
+        "int32", "int64", "rune", "string", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+    ]
+    static let rust: Set<String> = [
+        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
+        "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+        "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+    ]
+    static let rustTypes: Set<String> = [
+        "bool", "char", "f32", "f64", "i8", "i16", "i32", "i64", "i128", "isize", "str", "u8", "u16", "u32", "u64",
+        "u128", "usize",
+    ]
+    static let ruby: Set<String> = [
+        "alias", "and", "begin", "break", "case", "class", "def", "do", "else", "elsif", "end",
+        "ensure", "false", "for", "if", "in", "module", "next", "nil", "not", "or", "redo", "require", "rescue",
+        "retry", "return", "self", "super", "then", "true", "undef", "unless", "until", "when", "while", "yield",
+    ]
+    static let php: Set<String> = [
+        "abstract", "and", "array", "as", "break", "callable", "case", "catch", "class", "clone", "const",
+        "continue", "declare", "default", "do", "echo", "else", "elseif", "empty", "enum", "extends", "false",
+        "final", "finally", "fn", "for", "foreach", "function", "global", "if", "implements", "include",
+        "include_once", "instanceof", "interface", "isset", "list", "match", "namespace", "new", "null", "or",
+        "php", "print", "private", "protected", "public", "readonly", "require", "require_once", "return",
+        "static", "switch", "throw", "trait", "true", "try", "unset", "use", "var", "while", "yield",
+    ]
+    static let sql: Set<String> = [
+        "add", "all", "alter", "and", "as", "asc", "between", "by", "case", "check", "column", "constraint",
+        "create", "cross", "database", "default", "delete", "desc", "distinct", "drop", "else", "end", "exists",
+        "false", "foreign", "from", "full", "group", "having", "if", "in", "index", "inner", "insert", "into", "is",
+        "join", "key", "left", "like", "limit", "not", "null", "offset", "on", "or", "order", "outer", "primary",
+        "references", "right", "select", "set", "table", "then", "true", "union", "unique", "update", "values",
+        "view", "when", "where", "with",
+        "bigint", "blob", "boolean", "char", "date", "datetime", "decimal", "double", "float", "int", "integer",
+        "numeric", "real", "smallint", "text", "time", "timestamp", "varchar",
     ]
 }
 
@@ -340,16 +520,17 @@ private struct Scanner {
                 index = stop
                 continue
             }
-            if let comment = rules.lineComment, matches(comment, at: index),
-               !rules.isShell || isSpace(previous) || index == range.lowerBound {
+            for comment in rules.lineComments where matches(comment, at: index)
+                && (!rules.commentsStartWords || isSpace(previous) || index == range.lowerBound) {
                 let stop = lineEnd(from: index, before: end)
                 add(index..<stop, .comment)
                 index = stop
-                continue
+                continue scanning
             }
             for rule in rules.strings where matches(rule.delimiter, at: index) {
                 let stop = stringEnd(rule, from: index, before: end)
-                add(index..<stop, .string)
+                let marksKey = rules.colonsMarkKeys && isKey(endingAt: stop, before: end, spaced: true)
+                add(index..<stop, marksKey ? .property : .string)
                 index = stop
                 continue scanning
             }
@@ -359,7 +540,8 @@ private struct Scanner {
                 index = stop
                 continue
             }
-            if rules.isShell, current == Self.ascii("$"), let next = unit(index + 1), index + 1 < end {
+            if let prefix = rules.variablePrefix, current == Self.ascii(prefix), let next = unit(index + 1),
+               index + 1 < end, rules.isShell || isLetter(next) || next == Self.ascii("{") {
                 let stop: Int
                 if next == Self.ascii("{") {
                     stop = min((first("}", from: index + 2, before: end) ?? end - 1) + 1, end)
@@ -383,10 +565,15 @@ private struct Scanner {
             }
             if isLetter(current), !isNamePart(previous) {
                 // Shell words run on through hyphens, as in `set -e` or `my-script`.
-                let stop = nameEnd(from: index, before: end, extra: rules.isShell ? [Self.ascii("-")] : [])
+                let stop = nameEnd(from: index, before: end, extra: rules.commentsStartWords ? [Self.ascii("-")] : [])
                 let name = word(index..<stop)
-                if rules.keywords.contains(name), previous != Self.ascii(".") {
+                if rules.colonsMarkKeys, isKey(endingAt: stop, before: end, spaced: false) {
+                    add(index..<stop, .property)
+                } else if rules.keywords.contains(rules.ignoresCase ? name.lowercased() : name),
+                          previous != Self.ascii(".") {
                     add(index..<stop, .keyword)
+                } else if rules.types.contains(name) {
+                    add(index..<stop, .type)
                 } else if rules.capitalisedTypes, let first = name.unicodeScalars.first,
                           CharacterSet.uppercaseLetters.contains(first) {
                     add(index..<stop, .type)
@@ -396,6 +583,18 @@ private struct Scanner {
             }
             index += 1
         }
+    }
+
+    /// Whether a colon follows `index`, making what ends there a key. A
+    /// string may have spaces before its colon; a bare name, as in YAML,
+    /// needs a space or the line's end after it, so `http://` is no key.
+    private func isKey(endingAt index: Int, before end: Int, spaced: Bool) -> Bool {
+        var position = index
+        if spaced {
+            while position < end, units[position] == 0x20 || units[position] == 0x09 { position += 1 }
+        }
+        guard position < end, units[position] == Self.ascii(":") else { return false }
+        return spaced || position + 1 >= end || isSpace(units[position + 1])
     }
 
     // MARK: HTML

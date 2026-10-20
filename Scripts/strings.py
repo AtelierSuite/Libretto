@@ -13,7 +13,7 @@ mac_path = os.path.join(here, "..", "LibrettoMac", "Support", "Localizable.xcstr
 # iOS app says as well are in both catalogs.
 ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignment.Right",
           "Block.Preserved.Placeholder", "Comment.DefaultAuthor", "Contents.Empty", "Error.MissingBody",
-          "Error.MissingMainDocument", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
+          "Error.MissingMainDocument", "Language.PlainText", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
           "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
           "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
 SHARED = ["Comment.DefaultAuthor"]
@@ -99,6 +99,7 @@ S = {
  "Style.Heading3": ["Heading 3", "見出し 3", "제목 3", "标题 3", "標題 3"],
  "Style.Quote": ["Quote", "引用文", "인용", "引用", "引文"],
  "Style.Subtitle": ["Subtitle", "副題", "부제", "副标题", "副標題"],
+ "Language.PlainText": ["Plain Text", "標準テキスト", "일반 텍스트", "纯文本", "純文字"],
  "Style.Title": ["Title", "表題", "제목", "标题", "標題"],
  "Table.None": ["No Table Selected", "表が選択されていません", "선택된 표 없음", "未选择表格", "未選取表格"],
  "Toolbar.Share.Label": ["Share Document", "書類を共有", "문서 공유", "共享文稿", "分享文件"],
