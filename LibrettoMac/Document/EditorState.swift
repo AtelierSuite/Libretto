@@ -5,6 +5,7 @@ import LibrettoEngine
 enum EditScope: Equatable {
     case typing
     case formatting
+    case textColor
     case paragraphStyle
     case list
     case insertion
@@ -14,13 +15,14 @@ enum EditScope: Equatable {
     case review
     case other
 
-    /// Typing, and editing a table's text, arrive a keystroke at a time.
-    var coalesces: Bool { self == .typing || self == .table }
+    /// Typing, and editing a table's text, arrive a keystroke at a time; a
+    /// colour dragged about in the Colours window, a colour at a time.
+    var coalesces: Bool { self == .typing || self == .table || self == .textColor }
 
     var actionName: String {
         switch self {
         case .typing: return String(localized: "Undo.Typing")
-        case .formatting: return String(localized: "Undo.Formatting")
+        case .formatting, .textColor: return String(localized: "Undo.Formatting")
         case .paragraphStyle: return String(localized: "Undo.ParagraphStyle")
         case .list: return String(localized: "Undo.List")
         case .insertion: return String(localized: "Undo.Insertion")

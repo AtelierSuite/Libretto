@@ -471,7 +471,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
     // MARK: - Character formatting
 
     /// Changes the run formatting of the selection, or of what is typed next when nothing is selected.
-    func editRuns(_ change: (inout RunStyle, _ paragraphStyleID: String?) -> Void) {
+    func editRuns(scope: EditScope = .formatting, _ change: (inout RunStyle, _ paragraphStyleID: String?) -> Void) {
         let current = selection
         if current.length == 0 {
             let paragraph = paragraphModel(for: paragraphRange(at: current.location))
@@ -494,7 +494,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
             )
         }
         storage.endEditing()
-        commit(restyling: current, scope: .formatting)
+        commit(restyling: current, scope: scope)
     }
 
     /// Sets an on/off property, leaving it to the style where the style already says the same.
@@ -620,7 +620,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
     }
 
     func setTextColor(_ hex: String?) {
-        editRuns { style, _ in style.colorHex = hex.map { String($0.suffix(6)).uppercased() } }
+        editRuns(scope: .textColor) { style, _ in style.colorHex = hex.map { String($0.suffix(6)).uppercased() } }
     }
 
     func setHighlight(_ name: String?) {
