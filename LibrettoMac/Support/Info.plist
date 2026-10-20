@@ -65,6 +65,22 @@
 				<string>public.html</string>
 				<string>public.css</string>
 				<string>public.shell-script</string>
+				<string>public.c-source</string>
+				<string>public.c-header</string>
+				<string>public.c-plus-plus-source</string>
+				<string>public.c-plus-plus-header</string>
+				<string>public.objective-c-source</string>
+				<string>public.objective-c-plus-plus-source</string>
+				<string>com.microsoft.c-sharp</string>
+				<string>com.sun.java-source</string>
+				<string>org.kotlinlang.source</string>
+				<string>org.golang.go-script</string>
+				<string>org.rust-lang.rust-script</string>
+				<string>public.ruby-script</string>
+				<string>public.php-script</string>
+				<string>org.iso.sql</string>
+				<string>public.json</string>
+				<string>public.yaml</string>
 			</array>
 			<key>NSDocumentClass</key>
 			<string>$(PRODUCT_MODULE_NAME).Document</string>
@@ -209,6 +225,133 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/typescript</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>C# Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.c-sharp</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cs</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-csharp</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Java Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.sun.java-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>java</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-java-source</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Kotlin Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.kotlinlang.source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>kt</string>
+					<string>kts</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-kotlin</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Go Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.golang.go-script</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>go</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-go</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Rust Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.rust-lang.rust-script</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rs</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-rust</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>SQL Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.iso.sql</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sql</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/sql</string>
 				</array>
 			</dict>
 		</dict>
