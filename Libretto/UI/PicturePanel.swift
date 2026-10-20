@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// The picture the selection is on: its size, its crop, how text wraps

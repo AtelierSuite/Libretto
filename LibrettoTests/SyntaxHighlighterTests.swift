@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 import UniformTypeIdentifiers
 @testable import Libretto
+@testable import LibrettoEngine
 
 @Suite("Syntax highlighting")
 struct SyntaxHighlighterTests {
@@ -100,8 +101,85 @@ struct SyntaxHighlighterTests {
         #expect(found["!important"] == .keyword)
     }
 
+    @Test("C's preprocessor and built-in types, and C++'s own keywords")
+    func cFamily() {
+        let found = tokens("#include <stdio.h>\nstatic int count = 0; // c\nnamespace a {}", .cPlusPlus)
+        #expect(found["#include"] == .keyword)
+        #expect(found["static"] == .keyword)
+        #expect(found["int"] == .type)
+        #expect(found["0"] == .number)
+        #expect(found["// c"] == .comment)
+        #expect(found["namespace"] == .keyword)
+        #expect(tokens("namespace a {}", .c)["namespace"] == nil)
+        #expect(tokens("@interface View : NSObject", .objectiveC)["@interface"] == .attribute)
+    }
+
+    @Test("Go's raw strings, and capitals that mark exports rather than types")
+    func go() {
+        let found = tokens("func Run(n int) string {\n\treturn `a\nb`\n}", .go)
+        #expect(found["func"] == .keyword)
+        #expect(found["Run"] == nil)
+        #expect(found["int"] == .type)
+        #expect(found["`a\nb`"] == .string)
+    }
+
+    @Test("Rust lifetimes are not strings")
+    func rust() {
+        let found = tokens("fn first<'a>(s: &'a str) -> Option<u8> { None }", .rust)
+        #expect(found["fn"] == .keyword)
+        #expect(found["str"] == .type)
+        #expect(found["Option"] == .type)
+        #expect(found.keys.contains { $0.hasPrefix("'") } == false)
+    }
+
+    @Test("PHP variables, and both its line comments")
+    func php() {
+        let found = tokens("<?php\n$name = 'a'; // one\n# two\necho $name;", .php)
+        #expect(found["$name"] == .variable)
+        #expect(found["'a'"] == .string)
+        #expect(found["// one"] == .comment)
+        #expect(found["# two"] == .comment)
+        #expect(found["echo"] == .keyword)
+    }
+
+    @Test("SQL keywords in any case")
+    func sql() {
+        let found = tokens("SELECT name FROM users where id = 1 -- first", .sql)
+        #expect(found["SELECT"] == .keyword)
+        #expect(found["where"] == .keyword)
+        #expect(found["users"] == nil)
+        #expect(found["-- first"] == .comment)
+    }
+
+    @Test("JSON and YAML keys apart from their values")
+    func data() {
+        let json = tokens("{\"name\" : \"Libretto\", \"open\": true, \"count\": 3}", .json)
+        #expect(json["\"name\""] == .property)
+        #expect(json["\"Libretto\""] == .string)
+        #expect(json["true"] == .keyword)
+        #expect(json["3"] == .number)
+        let yaml = tokens("name: Libretto # app\nurl: http://example.com\nshared: yes\n", .yaml)
+        #expect(yaml["name"] == .property)
+        #expect(yaml["# app"] == .comment)
+        #expect(yaml["http"] == nil)
+        #expect(yaml["yes"] == .keyword)
+    }
+
+    @Test("Every language has a name for the menu")
+    func names() {
+        #expect(SourceLanguage.allCases.first == .plainText)
+        #expect(SourceLanguage.cPlusPlus.displayName == "C++")
+        #expect(SourceLanguage.allCases.allSatisfy { !$0.displayName.isEmpty })
+    }
+
     @Test("A file's language comes from its name, or its type")
     func languages() {
+        #expect(SourceLanguage(contentType: .plainText, filename: "main.cpp") == .cPlusPlus)
+        #expect(SourceLanguage(contentType: .plainText, filename: "View.m") == .objectiveC)
+        #expect(SourceLanguage(contentType: .plainText, filename: "config.yml") == .yaml)
+        #expect(SourceLanguage(contentType: .json, filename: nil) == .json)
+        #expect(SourceLanguage(contentType: .cHeader, filename: nil) == .c)
+        #expect(SourceLanguage(contentType: .goSource, filename: nil) == .go)
         #expect(SourceLanguage(contentType: .mpeg2TransportStream, filename: "app.ts") == .typeScript)
         #expect(SourceLanguage(contentType: .plainText, filename: "run.sh") == .shell)
         #expect(SourceLanguage(contentType: .pythonScript, filename: nil) == .python)

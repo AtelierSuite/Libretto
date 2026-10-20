@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// The paragraph panel's sections for page breaks, borders and shading,

@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Refers to a heading or a bookmark elsewhere in the document: its text,

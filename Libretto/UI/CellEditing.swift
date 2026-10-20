@@ -1,3 +1,4 @@
+import LibrettoEngine
 import UIKit
 
 /// Editing a table cell where it is on the page: a text view laid over the
@@ -161,7 +162,7 @@ extension DocumentTextController: UIGestureRecognizerDelegate {
             tableID: table.id, position: position, text: rendered.string, finalParagraph: rendered.finalParagraph
         )
         session.controller = self
-        if let fill = appearance.fillHex.flatMap({ AdaptiveColor.uiColor(hex: $0, for: scheme, isText: false) }) {
+        if let fill = appearance.fillHex.flatMap({ AdaptiveColor.platformColor(hex: $0, for: scheme, isText: false) }) {
             session.editor.backgroundColor = fill
         }
         cellSession = session

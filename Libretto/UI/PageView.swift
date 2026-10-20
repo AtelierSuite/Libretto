@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Full document mode: the document's pages at their own size, editable.

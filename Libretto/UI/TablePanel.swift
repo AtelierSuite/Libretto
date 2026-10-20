@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Edits the table the selection is on: its cells' text, its rows and

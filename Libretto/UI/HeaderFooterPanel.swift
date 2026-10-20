@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Edits the headers and footers: their text, the page number and count in

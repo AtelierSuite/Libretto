@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Symbols and special characters to put in at the selection, the ones used

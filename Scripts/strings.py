@@ -6,6 +6,17 @@ LANGS = ["en", "ja", "ko", "zh-Hans", "zh-Hant"]
 here = os.path.dirname(os.path.abspath(__file__))
 tables_path = os.path.join(here, "..", "..", "Tables", "Tables", "Support", "Localizable.xcstrings")
 out_path = os.path.join(here, "..", "Libretto", "Support", "Localizable.xcstrings")
+engine_path = os.path.join(here, "..", "LibrettoEngine", "Localizable.xcstrings")
+mac_path = os.path.join(here, "..", "LibrettoMac", "Support", "Localizable.xcstrings")
+
+# What the engine says itself, from its own bundle, for either app. Those the
+# iOS app says as well are in both catalogs.
+ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignment.Right",
+          "Block.Preserved.Placeholder", "Comment.DefaultAuthor", "Contents.Empty", "Error.MissingBody",
+          "Error.MissingMainDocument", "Language.PlainText", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
+          "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
+          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
+SHARED = ["Comment.DefaultAuthor"]
 
 S = {
  "ActionBar.Alignment": ["Alignment", "配置", "정렬", "对齐", "對齊"],
@@ -88,6 +99,7 @@ S = {
  "Style.Heading3": ["Heading 3", "見出し 3", "제목 3", "标题 3", "標題 3"],
  "Style.Quote": ["Quote", "引用文", "인용", "引用", "引文"],
  "Style.Subtitle": ["Subtitle", "副題", "부제", "副标题", "副標題"],
+ "Language.PlainText": ["Plain Text", "標準テキスト", "일반 텍스트", "纯文本", "純文字"],
  "Style.Title": ["Title", "表題", "제목", "标题", "標題"],
  "Table.None": ["No Table Selected", "表が選択されていません", "선택된 표 없음", "未选择表格", "未選取表格"],
  "Toolbar.Share.Label": ["Share Document", "書類を共有", "문서 공유", "共享文稿", "分享文件"],
@@ -421,6 +433,125 @@ S = {
  "Equation.Delete": ["Delete Equation", "数式を削除", "수식 삭제", "删除公式", "刪除方程式"],
 }
 
+# The Mac app's own words: its menus, inspector and notices.
+MAC = {
+ "Mac.Format.Colour": ["Colour", "カラー", "색상", "颜色", "顏色"],
+ "Mac.Format.List": ["List", "リスト", "목록", "列表", "列表"],
+ "Mac.Format.SystemFont": ["System Font", "システムフォント", "시스템 서체", "系统字体", "系統字體"],
+ "Mac.Format.SpacingAfter": ["Space After", "段落後の間隔", "단락 뒤 간격", "段后间距", "段落後間距"],
+ "Mac.Format.SpacingBefore": ["Space Before", "段落前の間隔", "단락 앞 간격", "段前间距", "段落前間距"],
+ "Mac.InsertTable.Columns": ["Columns", "列", "열", "列", "欄"],
+ "Mac.InsertTable.Rows": ["Rows", "行", "행", "行", "列"],
+ "Mac.List.None": ["None", "なし", "없음", "无", "無"],
+ "Mac.Menu.About": ["About %@", "%@について", "%@에 관하여", "关于%@", "關於%@"],
+ "Mac.Menu.ActualSize": ["Actual Size", "実際のサイズ", "실제 크기", "实际大小", "實際大小"],
+ "Mac.Menu.AlignCenter": ["Centre", "中央揃え", "가운데 정렬", "居中", "置中"],
+ "Mac.Menu.AlignJustified": ["Justify", "両端揃え", "양쪽 정렬", "两端对齐", "左右對齊"],
+ "Mac.Menu.AlignLeft": ["Align Left", "左揃え", "왼쪽 정렬", "左对齐", "靠左對齊"],
+ "Mac.Menu.AlignRight": ["Align Right", "右揃え", "오른쪽 정렬", "右对齐", "靠右對齊"],
+ "Mac.Menu.App": ["Libretto", "Libretto", "Libretto", "Libretto", "Libretto"],
+ "Mac.Menu.Baseline": ["Baseline", "ベースライン", "기준선", "基线", "基線"],
+ "Mac.Menu.Baseline.Default": ["Use Default", "デフォルトを使用", "기본값 사용", "使用默认", "使用預設值"],
+ "Mac.Menu.BringAllToFront": ["Bring All to Front", "すべてを手前に移動", "모두 앞으로 가져오기", "前置全部窗口", "將此程式所有視窗移至最前"],
+ "Mac.Menu.ClearRecent": ["Clear Menu", "メニューを消去", "메뉴 지우기", "清除菜单", "清除選單"],
+ "Mac.Menu.Close": ["Close", "閉じる", "닫기", "关闭", "關閉"],
+ "Mac.Menu.CustomizeToolbar": ["Customise Toolbar…", "ツールバーをカスタマイズ…", "도구 막대 사용자화…", "自定工具栏…", "自訂工具列…"],
+ "Mac.Menu.DecreaseIndent": ["Decrease Indent", "インデントを減らす", "들여쓰기 줄이기", "减少缩进", "減少縮排"],
+ "Mac.Menu.Delete": ["Delete", "削除", "삭제", "删除", "刪除"],
+ "Mac.Menu.Duplicate": ["Duplicate", "複製", "복제", "复制", "複製"],
+ "Mac.Menu.Edit": ["Edit", "編集", "편집", "编辑", "編輯"],
+ "Mac.Menu.ExportPDF": ["Export as PDF…", "PDFとして書き出す…", "PDF로 내보내기…", "导出为PDF…", "輸出為PDF…"],
+ "Mac.Menu.File": ["File", "ファイル", "파일", "文件", "檔案"],
+ "Mac.Menu.Find": ["Find", "検索", "찾기", "查找", "尋找"],
+ "Mac.Menu.Find.Find": ["Find…", "検索…", "찾기…", "查找…", "尋找…"],
+ "Mac.Menu.Find.FindReplace": ["Find and Replace…", "検索と置換…", "찾기 및 대치…", "查找并替换…", "尋找與取代…"],
+ "Mac.Menu.Find.JumpToSelection": ["Jump to Selection", "選択部分へジャンプ", "선택 항목으로 이동", "跳到所选内容", "跳至所選範圍"],
+ "Mac.Menu.Find.Next": ["Find Next", "次を検索", "다음 찾기", "查找下一个", "找下一個"],
+ "Mac.Menu.Find.Previous": ["Find Previous", "前を検索", "이전 찾기", "查找上一个", "找上一個"],
+ "Mac.Menu.Find.UseSelection": ["Use Selection for Find", "選択部分を検索に使用", "선택 항목으로 찾기", "用所选内容查找", "使用所選範圍尋找"],
+ "Mac.Menu.Font": ["Font", "フォント", "서체", "字体", "字體"],
+ "Mac.Menu.FullScreen": ["Enter Full Screen", "フルスクリーンにする", "전체 화면 시작", "进入全屏幕", "進入全螢幕"],
+ "Mac.Menu.Help": ["Help", "ヘルプ", "도움말", "帮助", "輔助說明"],
+ "Mac.Menu.Hide": ["Hide %@", "%@を非表示", "%@ 가리기", "隐藏%@", "隱藏%@"],
+ "Mac.Menu.HideOthers": ["Hide Others", "ほかを非表示", "기타 가리기", "隐藏其他", "隱藏其他"],
+ "Mac.Menu.IncreaseIndent": ["Increase Indent", "インデントを増やす", "들여쓰기 늘리기", "增加缩进", "增加縮排"],
+ "Mac.Menu.InsertLink": ["Link…", "リンク…", "링크…", "链接…", "連結…"],
+ "Mac.Menu.Minimize": ["Minimise", "しまう", "최소화", "最小化", "縮到最小"],
+ "Mac.Menu.MoveTo": ["Move To…", "移動…", "이동…", "移到…", "移至…"],
+ "Mac.Menu.New": ["New", "新規", "새로운 문서", "新建", "新增"],
+ "Mac.Menu.Open": ["Open…", "開く…", "열기…", "打开…", "打開…"],
+ "Mac.Menu.OpenRecent": ["Open Recent", "最近使った項目を開く", "최근 사용 열기", "打开最近使用", "打開最近使用過的檔案"],
+ "Mac.Menu.PageSetup": ["Page Setup…", "ページ設定…", "페이지 설정…", "页面设置…", "頁面設定…"],
+ "Mac.Menu.Print": ["Print…", "プリント…", "프린트…", "打印…", "列印…"],
+ "Mac.Menu.Quit": ["Quit %@", "%@を終了", "%@ 종료", "退出%@", "結束%@"],
+ "Mac.Menu.Rename": ["Rename…", "名称変更…", "이름 변경…", "重新命名…", "重新命名…"],
+ "Mac.Menu.Revert": ["Revert to Saved", "最後に保存した状態に戻す", "마지막으로 저장된 상태로 복귀", "复原到上次存储的版本", "回復成上次儲存的版本"],
+ "Mac.Menu.Save": ["Save…", "保存…", "저장…", "存储…", "儲存…"],
+ "Mac.Menu.SaveAsWord": ["Save a Copy as Word Document…", "Word書類としてコピーを保存…", "Word 문서로 사본 저장…", "将副本存储为 Word 文稿…", "將拷貝儲存為 Word 文件…"],
+ "Mac.Menu.SelectAll": ["Select All", "すべてを選択", "전체 선택", "全选", "全選"],
+ "Mac.Menu.Services": ["Services", "サービス", "서비스", "服务", "服務"],
+ "Mac.Menu.ShowAll": ["Show All", "すべてを表示", "모두 보기", "全部显示", "顯示全部"],
+ "Mac.Menu.ShowColours": ["Show Colours", "カラーを表示", "색상 보기", "显示颜色", "顯示顏色"],
+ "Mac.Menu.ShowFonts": ["Show Fonts", "フォントを表示", "서체 보기", "显示字体", "顯示字體"],
+ "Mac.Menu.ShowInspector": ["Show Inspector", "インスペクタを表示", "속성 보기", "显示检查器", "顯示檢閱器"],
+ "Mac.Menu.ShowToolbar": ["Show Toolbar", "ツールバーを表示", "도구 막대 보기", "显示工具栏", "顯示工具列"],
+ "Mac.Menu.SourceCode": ["Source Code", "ソースコード", "소스 코드", "源代码", "原始碼"],
+ "Mac.Menu.Spelling": ["Spelling and Grammar", "スペルと文法", "철자법 및 문법", "拼写和语法", "拼字與文法"],
+ "Mac.Menu.Spelling.Check": ["Check Document Now", "書類を今すぐチェック", "지금 문서 검사", "立即检查文稿", "立即檢查文件"],
+ "Mac.Menu.Spelling.Correct": ["Correct Spelling Automatically", "スペルを自動的に修正", "자동으로 철자 정정", "自动纠正拼写", "自動更正拼字"],
+ "Mac.Menu.Spelling.Grammar": ["Check Grammar With Spelling", "スペルと一緒に文法をチェック", "철자와 함께 문법 검사", "检查拼写和语法", "檢查拼字與文法"],
+ "Mac.Menu.Spelling.Show": ["Show Spelling and Grammar", "スペルと文法を表示", "철자법 및 문법 보기", "显示拼写和语法", "顯示拼字與文法"],
+ "Mac.Menu.Spelling.WhileTyping": ["Check Spelling While Typing", "入力中にスペルチェック", "입력하는 동안 철자 검사", "键入时检查拼写", "輸入時檢查拼字"],
+ "Mac.Menu.Substitutions": ["Substitutions", "自動置換", "대치", "替换", "替代"],
+ "Mac.Menu.Substitutions.Dashes": ["Smart Dashes", "スマートダッシュ", "스마트 대시", "智能破折号", "智慧型破折號"],
+ "Mac.Menu.Substitutions.Quotes": ["Smart Quotes", "スマート引用符", "스마트 인용", "智能引号", "智慧型引號"],
+ "Mac.Menu.Substitutions.Show": ["Show Substitutions", "自動置換を表示", "대치 보기", "显示替换", "顯示替代"],
+ "Mac.Menu.Substitutions.Text": ["Text Replacement", "テキストの置き換え", "텍스트 대치", "文本替换", "文字替代"],
+ "Mac.Menu.Text": ["Text", "テキスト", "텍스트", "文本", "文字"],
+ "Mac.Menu.View": ["View", "表示", "보기", "显示", "顯示方式"],
+ "Mac.Menu.Window": ["Window", "ウインドウ", "윈도우", "窗口", "視窗"],
+ "Mac.Menu.Zoom": ["Zoom", "拡大/縮小", "확대/축소", "缩放", "縮放"],
+ "Mac.Menu.ZoomIn": ["Zoom In", "拡大", "확대", "放大", "放大"],
+ "Mac.Menu.ZoomOut": ["Zoom Out", "縮小", "축소", "缩小", "縮小"],
+ "Mac.Notice.Converted": ["Converted from a format Libretto can’t save in. Saving keeps it as a Word document.", "Librettoで保存できないフォーマットから変換されました。保存するとWord書類になります。", "Libretto에서 저장할 수 없는 포맷에서 변환되었습니다. 저장하면 Word 문서로 보관됩니다.", "已从 Libretto 无法存储的格式转换。存储后将保留为 Word 文稿。", "已從 Libretto 無法儲存的格式轉換。儲存後將保留為 Word 文件。"],
+ "Mac.Notice.SaveAs": ["Save…", "保存…", "저장…", "存储…", "儲存…"],
+ "Mac.Page.Bottom": ["Bottom", "下", "아래", "下", "下"],
+ "Mac.Page.Left": ["Left", "左", "왼쪽", "左", "左"],
+ "Mac.Page.Right": ["Right", "右", "오른쪽", "右", "右"],
+ "Mac.Page.Top": ["Top", "上", "위", "上", "上"],
+ "Mac.Table.AddColumn": ["Add Column", "列を追加", "열 추가", "添加列", "加入欄"],
+ "Mac.Table.AddRow": ["Add Row", "行を追加", "행 추가", "添加行", "加入列"],
+ "Mac.Table.DeleteColumn": ["Delete Column", "列を削除", "열 삭제", "删除列", "刪除欄"],
+ "Mac.Table.DeleteRow": ["Delete Row", "行を削除", "행 삭제", "删除行", "刪除列"],
+ "Mac.Toolbar.Language": ["Language", "言語", "언어", "语言", "語言"],
+ "Mac.Toolbar.Lists": ["Lists", "リスト", "목록", "列表", "列表"],
+ "Mac.Unit.Points": ["pt", "pt", "pt", "pt", "pt"],
+}
+
+# What the Mac app says in the iOS app's words.
+MAC_REUSE = [
+   "ActionBar.Alignment", "ActionBar.Bullets", "ActionBar.DeleteTable", "ActionBar.Format", "ActionBar.Insert",
+   "ActionBar.Numbering", "ActionBar.PageSetup", "ActionBar.Paragraph", "ActionBar.Style", "Comment.DefaultAuthor",
+   "Comments.Add", "Comments.Delete", "Comments.Edit", "Comments.New.Placeholder", "Comments.None",
+   "Comments.Reopen", "Comments.Reply", "Comments.Resolve", "Comments.YourName", "Common.Cancel", "Common.OK",
+   "Document.DefaultName", "Format.ClearAll", "Format.Section.Highlight", "Format.Section.Text", "Format.Subscript",
+   "Format.Superscript", "Format.Text.Size", "Format.Text.Size.Decrease", "Format.Text.Size.Increase",
+   "Highlight.None", "Highlight.blue", "Highlight.cyan", "Highlight.green", "Highlight.lightGray",
+   "Highlight.magenta", "Highlight.red", "Highlight.yellow", "Insert.PageBreak", "Insert.Picture", "Insert.Table",
+   "InsertTable.Insert", "Link.Address", "Link.Insert", "Link.Remove", "Link.Text", "Link.Update",
+   "Notice.Imported.Save", "Notice.Pages.Unsaved", "Notice.UnsupportedFeatures.ImportedMessage",
+   "Notice.UnsupportedFeatures.Message", "Notice.UnsupportedFeatures.PagesMessage",
+   "Notice.UnsupportedFeatures.Title", "PageSetup.Landscape", "PageSetup.Paper.Legal", "PageSetup.Paper.Letter",
+   "PageSetup.Portrait", "PageSetup.Section.Margins", "PageSetup.Section.Paper", "Panel.Comments.Title",
+   "Panel.InsertTable.Title", "Panel.Link.Title", "Panel.Review.Title", "Panel.Table.Title", "Paragraph.LineSpacing",
+   "Review.Accept", "Review.AcceptAll", "Review.Next", "Review.Previous", "Review.Reject", "Review.RejectAll",
+   "Review.Section.Changes", "Review.TrackChanges", "Table.Look.HeaderRow", "Toolbar.Bold", "Toolbar.Copy",
+   "Toolbar.Cut", "Toolbar.Italic", "Toolbar.Paste", "Toolbar.Redo", "Toolbar.Strikethrough", "Toolbar.Underline",
+   "Toolbar.Undo", "Toolbar.UnsupportedFeatures.Label", "Undo.Comment", "Undo.Edit", "Undo.Formatting",
+   "Undo.Insertion", "Undo.List", "Undo.PageSetup", "Undo.ParagraphStyle", "Undo.Review", "Undo.Table",
+   "Undo.Typing",
+]
+
 reuse = ["Alert.Error.Title", "Common.OK", "Format.ClearAll", "Format.Section.Text", "Format.Text.Size",
          "Format.Text.Size.Decrease", "Format.Text.Size.Increase", "Toolbar.Bold", "Toolbar.Italic",
          "Toolbar.Redo", "Toolbar.Strikethrough", "Toolbar.Underline", "Toolbar.Undo",
@@ -448,7 +579,18 @@ for key in reuse:
     if missing:
         sys.exit(f"{key} lacks {missing}")
 
-catalog = {"sourceLanguage": "en", "strings": dict(sorted(strings.items())), "version": "1.0"}
-with open(out_path, "w") as f:
-    json.dump(catalog, f, ensure_ascii=False, indent=2)
-print(len(strings), "strings")
+def write(path, entries):
+    catalog = {"sourceLanguage": "en", "strings": dict(sorted(entries.items())), "version": "1.0"}
+    with open(path, "w") as f:
+        json.dump(catalog, f, ensure_ascii=False, indent=2)
+    print(len(entries), "strings in", os.path.relpath(path, os.path.join(here, "..")))
+
+write(engine_path, {key: strings[key] for key in ENGINE})
+# From the catalog as it stands, which has words added to it by hand as well.
+current = json.load(open(out_path))["strings"] if os.path.exists(out_path) else {}
+mac = {key: strings.get(key) or current[key] for key in MAC_REUSE}
+mac.update({key: {"extractionState": "manual", "localizations": {
+    lang: {"stringUnit": {"state": "translated", "value": value}} for lang, value in zip(LANGS, values)}}
+    for key, values in MAC.items()})
+write(mac_path, mac)
+write(out_path, {key: value for key, value in strings.items() if key not in ENGINE or key in SHARED})

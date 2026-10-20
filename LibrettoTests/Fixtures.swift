@@ -1,5 +1,6 @@
 import Foundation
 @testable import Libretto
+@testable import LibrettoEngine
 
 /// Packages shaped like the ones Word writes, built in code so each test
 /// can see exactly what it is reading.

@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// A modal panel presented over the document, as a sheet.

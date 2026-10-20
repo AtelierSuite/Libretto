@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Libretto
+@testable import LibrettoEngine
 
 /// Saves edits to Pages documents back into them.
 @Suite("Pages writing")

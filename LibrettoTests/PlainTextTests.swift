@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Libretto
+@testable import LibrettoEngine
 
 @Suite("Plain text")
 struct PlainTextTests {

@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Tracked changes: recording them, stepping through them, and accepting or

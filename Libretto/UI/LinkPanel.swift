@@ -1,3 +1,4 @@
+import LibrettoEngine
 import SwiftUI
 
 /// Makes a link of the selection, edits the link it is in, or takes it away.
