@@ -235,6 +235,7 @@ private final class FormatInspector: InspectorPane {
     private let highlight = NSPopUpButton()
     private let alignmentControl = NSSegmentedControl()
     private let list = NSPopUpButton()
+    private let indents = NSSegmentedControl()
     private let before = PointsField(range: 0...1584, step: 6)
     private let after = PointsField(range: 0...1584, step: 6)
     private let lineSpacing = NSPopUpButton()
@@ -286,10 +287,18 @@ private final class FormatInspector: InspectorPane {
         }
         lineSpacing.target = self
         lineSpacing.action = #selector(lineSpacingChosen)
-        let indents = buttons([
-            button(String(localized: "Mac.Menu.DecreaseIndent"), #selector(decreaseIndent)),
-            button(String(localized: "Mac.Menu.IncreaseIndent"), #selector(increaseIndent)),
-        ])
+        indents.segmentCount = 2
+        indents.trackingMode = .momentary
+        for (index, item) in [("decrease.indent", "Mac.Menu.DecreaseIndent"), ("increase.indent", "Mac.Menu.IncreaseIndent")].enumerated() {
+            let label = String(localized: String.LocalizationValue(item.1))
+            indents.setImage(NSImage(systemSymbolName: item.0, accessibilityDescription: label), forSegment: index)
+            indents.setToolTip(label, forSegment: index)
+        }
+        indents.target = self
+        indents.action = #selector(indentChosen)
+        indents.setContentHuggingPriority(.required, for: .horizontal)
+        let listRow = NSStackView(views: [list, indents])
+        list.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         addSection(String(localized: "ActionBar.Style"), [style])
         addSection(String(localized: "Format.Section.Text"), [
@@ -298,7 +307,7 @@ private final class FormatInspector: InspectorPane {
             row(String(localized: "Format.Section.Highlight"), highlight),
         ])
         addSection(String(localized: "ActionBar.Paragraph"), [
-            alignmentControl, row(String(localized: "Mac.Format.List"), list), indents,
+            alignmentControl, row(String(localized: "Mac.Format.List"), listRow),
             row(String(localized: "Mac.Format.SpacingBefore"), before),
             row(String(localized: "Mac.Format.SpacingAfter"), after),
             row(String(localized: "Paragraph.LineSpacing"), lineSpacing),
@@ -314,7 +323,7 @@ private final class FormatInspector: InspectorPane {
 
     override func refresh(editor: PageEditor?, state: EditorState) {
         let format = state.selectionFormat
-        for control in [style, font, highlight, list, lineSpacing] as [NSControl] + [traits, alignmentControl, color] {
+        for control in [style, font, highlight, list, lineSpacing] as [NSControl] + [traits, alignmentControl, indents, color] {
             control.isEnabled = editor != nil
         }
         guard let editor else { return }
@@ -409,8 +418,9 @@ private final class FormatInspector: InspectorPane {
         }
     }
 
-    @objc private func increaseIndent() { editor?.indent(by: 1) }
-    @objc private func decreaseIndent() { editor?.indent(by: -1) }
+    @objc private func indentChosen() {
+        editor?.indent(by: indents.selectedSegment == 1 ? 1 : -1)
+    }
 
     @objc private func lineSpacingChosen() {
         editor?.setSpacing(lineMultiple: Self.lineSpacings[max(0, lineSpacing.indexOfSelectedItem)])
