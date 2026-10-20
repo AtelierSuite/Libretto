@@ -7,6 +7,8 @@ import LibrettoEngine
 /// Colours window, alignment — change the model, by way of the editor.
 final class DocumentTextView: NSTextView {
     weak var editor: PageEditor?
+    /// Set while the Colours window is shown the selection's colour, which it sends straight back.
+    private var isUpdatingPanels = false
 
     override init(frame: NSRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -90,8 +92,31 @@ final class DocumentTextView: NSTextView {
 
     /// A colour picked in the Colours window colours the text.
     override func changeColor(_ sender: Any?) {
-        guard let panel = sender as? NSColorPanel else { return }
+        guard !isUpdatingPanels, let panel = sender as? NSColorPanel else { return }
         editor?.setTextColor(panel.color.rgbHex)
+    }
+
+    /// The Fonts and Colours windows show the selection's formatting as the
+    /// model has it, not as the text draws it — which marks revisions and
+    /// suits the colours to the appearance — so that sending it back changes nothing.
+    override func updateFontPanel() {
+        guard let editor else { return super.updateFontPanel() }
+        guard window?.firstResponder === self else { return }
+        let runs = editor.selectedRunStyles()
+        guard let first = runs.first else { return }
+        let manager = NSFontManager.shared
+        let fonts = runs.map(editor.panelFont(for:))
+        manager.setSelectedFont(fonts[0], isMultiple: fonts.contains { $0 != fonts[0] })
+        let attributes = editor.panelAttributes(for: first)
+        let isMixed = runs.contains {
+            $0.underline != first.underline || $0.isStruckThrough != first.isStruckThrough || $0.colorHex != first.colorHex
+        }
+        manager.setSelectedAttributes(attributes, isMultiple: isMixed)
+        if NSColorPanel.sharedColorPanelExists, let color = attributes[NSAttributedString.Key.foregroundColor.rawValue] as? NSColor {
+            isUpdatingPanels = true
+            defer { isUpdatingPanels = false }
+            NSColorPanel.shared.color = color
+        }
     }
 
     // MARK: - Paragraph formatting

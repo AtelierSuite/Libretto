@@ -557,6 +557,26 @@ final class PageEditor: NSObject, NSTextViewDelegate {
         }
     }
 
+    /// The selection's runs, resolved through their styles, in order; with
+    /// nothing selected, the formatting of what is typed next.
+    func selectedRunStyles() -> [RunStyle] {
+        let current = selection
+        let styles = document.styles
+        func resolved(_ format: RunFormat, at location: Int) -> RunStyle {
+            let paragraph = paragraphModel(for: paragraphRange(at: location))
+            return styles.resolvedRunStyle(format.style, paragraphStyleID: paragraph.properties.styleID)
+        }
+        guard current.length > 0 else {
+            return [resolved(runBox(forTypingAt: current.location).format, at: current.location)]
+        }
+        var runs: [RunStyle] = []
+        storage.enumerateAttribute(.librettoRun, in: current) { value, range, _ in
+            if storage.attribute(.attachment, at: range.location, effectiveRange: nil) is BlockAttachment { return }
+            runs.append(resolved((value as? RunBox)?.format ?? RunFormat(), at: range.location))
+        }
+        return runs
+    }
+
     /// A run's font as the Fonts window sees it: at its own size, before a raised or lowered run shrinks it.
     func panelFont(for resolved: RunStyle) -> NSFont {
         var style = resolved
