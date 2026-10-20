@@ -538,14 +538,30 @@ final class PageEditor: NSObject, NSTextViewDelegate {
         editRuns { style, _ in style.fontName = name }
     }
 
-    /// What a font chosen in the Fonts window changed: its family, size and traits, each only if changed.
-    func applyFontChange(family: String?, points: Double?, bold: Bool?, italic: Bool?) {
-        editRuns { style, _ in
-            if let family { style.fontName = family }
-            if let points { style.fontSize = min(3276, max(2, Int((points * 2).rounded()))) }
-            if let bold { style.isBold = bold }
-            if let italic { style.isItalic = italic }
+    /// A change from the Fonts window or the Font menu, made to each run's own
+    /// font, as a text view makes it: whatever of the family, size and traits
+    /// the change touched, each run keeping the rest.
+    func convertFonts(_ convert: (NSFont) -> NSFont) {
+        let styles = document.styles
+        editRuns { style, paragraphStyleID in
+            let current = panelFont(for: styles.resolvedRunStyle(style, paragraphStyleID: paragraphStyleID))
+            let converted = convert(current)
+            if let family = converted.familyName, family != current.familyName { style.fontName = family }
+            if abs(converted.pointSize - current.pointSize) > 0.01 {
+                style.fontSize = min(3276, max(2, Int((converted.pointSize * 2).rounded())))
+            }
+            let before = current.fontDescriptor.symbolicTraits
+            let after = converted.fontDescriptor.symbolicTraits
+            if before.contains(.bold) != after.contains(.bold) { style.isBold = after.contains(.bold) }
+            if before.contains(.italic) != after.contains(.italic) { style.isItalic = after.contains(.italic) }
         }
+    }
+
+    /// A run's font as the Fonts window sees it: at its own size, before a raised or lowered run shrinks it.
+    func panelFont(for resolved: RunStyle) -> NSFont {
+        var style = resolved
+        style.verticalAlignment = nil
+        return Typography.font(for: style, styles: document.styles)
     }
 
     func setTextColor(_ hex: String?) {

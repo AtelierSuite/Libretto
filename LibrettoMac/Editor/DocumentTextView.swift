@@ -75,24 +75,11 @@ final class DocumentTextView: NSTextView {
     @objc func makeTextSmaller(_ sender: Any?) { editor?.adjustFontSize(by: -1) }
     @objc func clearFormatting(_ sender: Any?) { editor?.clearFormatting() }
 
-    /// A font picked in the Fonts window: whatever of its family, size and traits it changed.
+    /// A font picked in the Fonts window or one of its favourites, or a size
+    /// or trait from the Font menu, applied to each run's own font.
     override func changeFont(_ sender: Any?) {
-        guard let editor, let manager = sender as? NSFontManager else { return }
-        let format = editor.state.selectionFormat
-        let current = Typography.font(
-            for: RunStyle(
-                fontName: format.fontName, fontSize: format.fontSize, isBold: format.isBold, isItalic: format.isItalic
-            ),
-            styles: editor.document.styles
-        )
-        let converted = manager.convert(current)
-        let traits = converted.fontDescriptor.symbolicTraits
-        let family = converted.familyName.flatMap { $0 == current.familyName ? nil : $0 }
-        let size = abs(converted.pointSize - current.pointSize) > 0.01 ? Double(converted.pointSize) : nil
-        let bold = traits.contains(.bold) != format.isBold ? traits.contains(.bold) : nil
-        let italic = traits.contains(.italic) != format.isItalic ? traits.contains(.italic) : nil
-        guard family != nil || size != nil || bold != nil || italic != nil else { return }
-        editor.applyFontChange(family: family, points: size, bold: bold, italic: italic)
+        guard let manager = sender as? NSFontManager else { return }
+        editor?.convertFonts { manager.convert($0) }
     }
 
     /// A colour picked in the Colours window colours the text.
