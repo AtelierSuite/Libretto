@@ -21,13 +21,6 @@
 			remoteGlobalIDString = 387A342D3F4BE3DD2131456A;
 			remoteInfo = Libretto;
 		};
-		C25DB08F6D2B5D6DF479F38D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 427FF3554CC0C4D5EE1DED76 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 387A342D3F4BE3DD2131456A;
-			remoteInfo = Libretto;
-		};
 		A1E0000000000000000000EE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 427FF3554CC0C4D5EE1DED76 /* Project object */;
@@ -41,6 +34,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = A1E0000000000000000000E1;
 			remoteInfo = LibrettoEngine;
+		};
+		C25DB08F6D2B5D6DF479F38D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 427FF3554CC0C4D5EE1DED76 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 387A342D3F4BE3DD2131456A;
+			remoteInfo = Libretto;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -71,20 +71,13 @@
 
 /* Begin PBXFileReference section */
 		53853A63CF6761C03238BAB9 /* LibrettoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LibrettoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A89B1FA7EE4511A6BA446481 /* LibrettoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LibrettoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		E42AC0167264BE45C006713C /* Libretto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Libretto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1E0000000000000000000E2 /* LibrettoEngine.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LibrettoEngine.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1F000000000000000000002 /* Libretto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Libretto.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A89B1FA7EE4511A6BA446481 /* LibrettoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LibrettoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E42AC0167264BE45C006713C /* Libretto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Libretto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		DA6C3F3BED0559513768C33F /* Exceptions for "Libretto" folder in "Libretto" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Support/Info.plist,
-			);
-			target = 387A342D3F4BE3DD2131456A /* Libretto */;
-		};
 		A1F00000000000000000000F /* Exceptions for "Libretto" folder in "Libretto for Mac" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -100,6 +93,13 @@
 			);
 			target = A1F000000000000000000001 /* Libretto for Mac */;
 		};
+		DA6C3F3BED0559513768C33F /* Exceptions for "Libretto" folder in "Libretto" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Support/Info.plist,
+			);
+			target = 387A342D3F4BE3DD2131456A /* Libretto */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -113,15 +113,6 @@
 			path = LibrettoTests;
 			sourceTree = "<group>";
 		};
-		DF51DB3A199F5F4143E13F7F /* Libretto */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				DA6C3F3BED0559513768C33F /* Exceptions for "Libretto" folder in "Libretto" target */,
-				A1F00000000000000000000F /* Exceptions for "Libretto" folder in "Libretto for Mac" target */,
-			);
-			path = Libretto;
-			sourceTree = "<group>";
-		};
 		A1E0000000000000000000E3 /* LibrettoEngine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LibrettoEngine;
@@ -133,6 +124,15 @@
 				A1F000000000000000000010 /* Exceptions for "LibrettoMac" folder in "Libretto for Mac" target */,
 			);
 			path = LibrettoMac;
+			sourceTree = "<group>";
+		};
+		DF51DB3A199F5F4143E13F7F /* Libretto */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DA6C3F3BED0559513768C33F /* Exceptions for "Libretto" folder in "Libretto" target */,
+				A1F00000000000000000000F /* Exceptions for "Libretto" folder in "Libretto for Mac" target */,
+			);
+			path = Libretto;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -312,12 +312,6 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					A1F000000000000000000001 = {
-						CreatedOnToolsVersion = 27.1;
-					};
-					A1E0000000000000000000E1 = {
-						CreatedOnToolsVersion = 27.1;
-					};
 					387A342D3F4BE3DD2131456A = {
 						ProvisioningStyle = Automatic;
 					};
@@ -327,6 +321,12 @@
 					};
 					94222E3E56832D50C0E3B3F2 = {
 						ProvisioningStyle = Automatic;
+					};
+					A1E0000000000000000000E1 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					A1F000000000000000000001 = {
+						CreatedOnToolsVersion = 27.1;
 					};
 				};
 			};
@@ -358,13 +358,6 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		F1D3F5F1A35EA070CDE8E00B /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		A1E0000000000000000000E6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -373,6 +366,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A1F000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1D3F5F1A35EA070CDE8E00B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -396,13 +396,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B5C8FEE65CD442327B4B4DB4 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		A1E0000000000000000000E4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -417,6 +410,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B5C8FEE65CD442327B4B4DB4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -424,11 +424,6 @@
 			isa = PBXTargetDependency;
 			target = 387A342D3F4BE3DD2131456A /* Libretto */;
 			targetProxy = C25DB08F6D2B5D6DF479F38D /* PBXContainerItemProxy */;
-		};
-		A681CCBC1494172A4DECDEA2 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 387A342D3F4BE3DD2131456A /* Libretto */;
-			targetProxy = 940BC530EDE5F439E84EA224 /* PBXContainerItemProxy */;
 		};
 		A1E0000000000000000000EF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -439,6 +434,11 @@
 			isa = PBXTargetDependency;
 			target = A1E0000000000000000000E1 /* LibrettoEngine */;
 			targetProxy = A1F00000000000000000000D /* PBXContainerItemProxy */;
+		};
+		A681CCBC1494172A4DECDEA2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 387A342D3F4BE3DD2131456A /* Libretto */;
+			targetProxy = 940BC530EDE5F439E84EA224 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -649,77 +649,6 @@
 			};
 			name = Debug;
 		};
-		CD3E267665BBC0D392A31C40 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YYM4Z6MU8F;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Libretto/Support/Info.plist;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto;
-				PRODUCT_NAME = Libretto;
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		F299671307328EDB6025F464 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				DEVELOPMENT_TEAM = YYM4Z6MU8F;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto.uitests;
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Libretto;
-			};
-			name = Release;
-		};
-		FCCE543C6BED5924309050B5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				DEVELOPMENT_TEAM = YYM4Z6MU8F;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto.uitests;
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Libretto;
-			};
-			name = Debug;
-		};
 		A1E0000000000000000000E8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -864,6 +793,77 @@
 			};
 			name = Release;
 		};
+		CD3E267665BBC0D392A31C40 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Libretto/Support/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto;
+				PRODUCT_NAME = Libretto;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F299671307328EDB6025F464 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto.uitests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Libretto;
+			};
+			name = Release;
+		};
+		FCCE543C6BED5924309050B5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsubuzaki.Libretto.uitests;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Libretto;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -885,24 +885,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		B5AECD9903EB0C5CB7B68A5D /* Build configuration list for PBXNativeTarget "Libretto" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				681A19C0A4100606683214C4 /* Debug */,
-				CD3E267665BBC0D392A31C40 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		CE074F5887329CF8C0B5E382 /* Build configuration list for PBXNativeTarget "LibrettoUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				FCCE543C6BED5924309050B5 /* Debug */,
-				F299671307328EDB6025F464 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		A1E0000000000000000000E7 /* Build configuration list for PBXNativeTarget "LibrettoEngine" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -920,6 +902,24 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		B5AECD9903EB0C5CB7B68A5D /* Build configuration list for PBXNativeTarget "Libretto" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				681A19C0A4100606683214C4 /* Debug */,
+				CD3E267665BBC0D392A31C40 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CE074F5887329CF8C0B5E382 /* Build configuration list for PBXNativeTarget "LibrettoUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FCCE543C6BED5924309050B5 /* Debug */,
+				F299671307328EDB6025F464 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};
