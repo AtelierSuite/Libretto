@@ -23,8 +23,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
     init(document: WordDocument, scheme: ColorScheme) {
         self.document = document
         self.scheme = scheme
-        scrollView = NSTextView.scrollableTextView()
-        textView = scrollView.documentView as! NSTextView
+        (scrollView, textView) = Self.makeTextView()
         super.init()
         textView.delegate = self
         textView.isRichText = false
@@ -37,10 +36,35 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.textContainerInset = CGSize(width: 8, height: 10)
+        textView.textContainerInset = CGSize(width: 4, height: 4)
+        textView.textContainer?.lineFragmentPadding = 0
         textView.setAccessibilityIdentifier("codeText")
         applyFont()
         setText(PlainText.text(of: document))
+    }
+
+    /// A text view wrapping its lines to the width of the window, with the line numbers beside it.
+    /// It lays out with TextKit 1, which the line numbers and the current line read from.
+    private static func makeTextView() -> (NSScrollView, NSTextView) {
+        // Any size to start with, so the text view can follow the scroll view's width as it changes.
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+        let textView = NSTextView(usingTextLayoutManager: false)
+        textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.drawsBackground = true
+        textView.backgroundColor = .textBackgroundColor
+        scrollView.documentView = textView
+        scrollView.verticalRulerView = LineNumberRuler(textView: textView, scrollView: scrollView)
+        scrollView.hasVerticalRuler = true
+        scrollView.rulersVisible = true
+        return (scrollView, textView)
     }
 
     private var language: SourceLanguage? { document.sourceLanguage }
@@ -131,6 +155,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
         if let storage = textView.textStorage, storage.length > 0 {
             storage.addAttribute(.font, value: font, range: NSRange(location: 0, length: storage.length))
         }
+        (scrollView.verticalRulerView as? LineNumberRuler)?.contentChanged()
     }
 }
 
