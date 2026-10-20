@@ -564,6 +564,41 @@ final class PageEditor: NSObject, NSTextViewDelegate {
         return Typography.font(for: style, styles: document.styles)
     }
 
+    /// A change from the Fonts window's toolbar — underline, strikethrough,
+    /// text colour — made to each run, touching only what the change touched.
+    func convertAttributes(_ convert: ([String: Any]) -> [String: Any]) {
+        let styles = document.styles
+        let colorKey = NSAttributedString.Key.foregroundColor.rawValue
+        editRuns { style, paragraphStyleID in
+            let resolved = styles.resolvedRunStyle(style, paragraphStyleID: paragraphStyleID)
+            let before = panelAttributes(for: resolved)
+            let after = convert(before)
+            func isOn(_ key: NSAttributedString.Key) -> Bool { (after[key.rawValue] as? Int ?? 0) != 0 }
+            if isOn(.underlineStyle) != (resolved.underline == true) { style.underline = isOn(.underlineStyle) }
+            if isOn(.strikethroughStyle) != (resolved.isStruckThrough == true) {
+                style.isStruckThrough = isOn(.strikethroughStyle)
+            }
+            if let color = (after[colorKey] as? NSColor)?.rgbHex, color != (before[colorKey] as? NSColor)?.rgbHex {
+                style.colorHex = color
+            }
+        }
+    }
+
+    /// A run's underline, strikethrough and colour as the Fonts window shows them:
+    /// the model's, not the text's, which shows revisions and suits the appearance.
+    func panelAttributes(for resolved: RunStyle) -> [String: Any] {
+        var attributes: [String: Any] = [
+            NSAttributedString.Key.foregroundColor.rawValue: resolved.colorHex.flatMap { NSColor(hex: $0) } ?? NSColor.black,
+        ]
+        if resolved.underline == true {
+            attributes[NSAttributedString.Key.underlineStyle.rawValue] = NSUnderlineStyle.single.rawValue
+        }
+        if resolved.isStruckThrough == true {
+            attributes[NSAttributedString.Key.strikethroughStyle.rawValue] = NSUnderlineStyle.single.rawValue
+        }
+        return attributes
+    }
+
     func setTextColor(_ hex: String?) {
         editRuns { style, _ in style.colorHex = hex.map { String($0.suffix(6)).uppercased() } }
     }

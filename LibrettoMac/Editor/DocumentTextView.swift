@@ -82,6 +82,12 @@ final class DocumentTextView: NSTextView {
         editor?.convertFonts { manager.convert($0) }
     }
 
+    /// Underline, strikethrough or a text colour from the Fonts window's toolbar.
+    override func changeAttributes(_ sender: Any?) {
+        guard let manager = sender as? NSFontManager else { return }
+        editor?.convertAttributes { manager.convertAttributes($0) }
+    }
+
     /// A colour picked in the Colours window colours the text.
     override func changeColor(_ sender: Any?) {
         guard let panel = sender as? NSColorPanel else { return }
