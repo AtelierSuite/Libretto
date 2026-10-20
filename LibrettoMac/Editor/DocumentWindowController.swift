@@ -355,6 +355,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         static let comment = NSToolbarItem.Identifier("comment")
         static let track = NSToolbarItem.Identifier("track")
         static let unsupported = NSToolbarItem.Identifier("unsupported")
+        static let language = NSToolbarItem.Identifier("language")
     }
 
     /// The items that only do something to pages, hidden while editing source code.
@@ -362,6 +363,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         Item.style, Item.font, Item.alignment, Item.lists, Item.insert, Item.comment, Item.track, .toggleInspector,
     ]
 
+    private var languageButton: NSPopUpButton?
     private var fontControl: NSSegmentedControl?
     private var alignmentControl: NSSegmentedControl?
     private var trackItem: NSToolbarItem?
@@ -369,7 +371,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Quick formatting on the left, what can be added on the right; the rest of the formatting is in the inspector.
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [Item.style, Item.font, .flexibleSpace, Item.insert, Item.comment, Item.track,
-         Item.unsupported, .inspectorTrackingSeparator, .flexibleSpace, .toggleInspector]
+         Item.unsupported, Item.language, .inspectorTrackingSeparator, .flexibleSpace, .toggleInspector]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -381,6 +383,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     ) -> NSToolbarItem? {
         let item = makeToolbarItem(identifier)
         if Self.pageItems.contains(identifier) { item?.isHidden = codeEditor != nil }
+        if identifier == Item.language { item?.isHidden = codeEditor == nil }
         return item
     }
 
@@ -440,6 +443,22 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
                               action: #selector(DocumentTextView.toggleTrackChanges(_:)))
             trackItem = item
             return item
+        case Item.language:
+            let popUp = NSPopUpButton(frame: .zero, pullsDown: false)
+            for language in SourceLanguage.allCases {
+                popUp.addItem(withTitle: language.displayName)
+                popUp.lastItem?.representedObject = language.rawValue
+            }
+            popUp.target = self
+            popUp.action = #selector(languageChosen(_:))
+            languageButton = popUp
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = String(localized: "Mac.Toolbar.Language")
+            item.paletteLabel = item.label
+            item.toolTip = item.label
+            item.view = popUp
+            updateToolbarState()
+            return item
         case Item.unsupported:
             return button(identifier, label: String(localized: "Toolbar.UnsupportedFeatures.Label"),
                           symbol: "exclamationmark.triangle", action: #selector(showUnsupportedFeatures(_:)))
@@ -487,6 +506,12 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         updateToolbarState()
     }
 
+    @objc private func languageChosen(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String,
+              let language = SourceLanguage(rawValue: raw) else { return }
+        codeEditor?.setLanguage(language)
+    }
+
     @objc private func alignmentSegment(_ sender: NSSegmentedControl) {
         let alignments: [ParagraphAlignment] = [.leading, .center, .trailing, .justified]
         guard alignments.indices.contains(sender.selectedSegment) else { return }
@@ -496,8 +521,12 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     private func updateToolbarState() {
         let format = state.selectionFormat
         let isPages = pageEditor != nil
-        for item in window?.toolbar?.items ?? [] where Self.pageItems.contains(item.itemIdentifier) {
-            item.isHidden = codeEditor != nil
+        for item in window?.toolbar?.items ?? [] {
+            if Self.pageItems.contains(item.itemIdentifier) { item.isHidden = codeEditor != nil }
+            if item.itemIdentifier == Item.language { item.isHidden = codeEditor == nil }
+        }
+        if let languageButton, let codeEditor {
+            languageButton.selectItem(at: SourceLanguage.allCases.firstIndex(of: codeEditor.language) ?? 0)
         }
         if let fontControl {
             fontControl.isEnabled = isPages

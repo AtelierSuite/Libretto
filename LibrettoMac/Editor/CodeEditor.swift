@@ -67,7 +67,15 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
         return (scrollView, textView)
     }
 
-    private var language: SourceLanguage? { document.sourceLanguage }
+    /// The language the text is coloured as: the file's own, until another is chosen for it.
+    private(set) lazy var language: SourceLanguage = document.sourceLanguage ?? .plainText
+
+    /// Colours the text as another language, leaving the file as it is.
+    func setLanguage(_ new: SourceLanguage) {
+        guard new != language else { return }
+        language = new
+        highlight()
+    }
 
     private var textAttributes: [NSAttributedString.Key: Any] {
         [.font: NSFont.monospacedSystemFont(ofSize: pointSize, weight: .regular), .foregroundColor: NSColor.textColor]
@@ -110,9 +118,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
 
     private func highlight() {
         guard let storage = textView.textStorage else { return }
-        if let language {
-            SyntaxHighlighter.apply(language, to: storage, scheme: scheme, plainColor: .textColor)
-        }
+        SyntaxHighlighter.apply(language, to: storage, scheme: scheme, plainColor: .textColor)
     }
 
     func textDidChange(_ notification: Notification) {

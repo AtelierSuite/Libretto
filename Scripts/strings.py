@@ -523,6 +523,7 @@ MAC = {
  "Mac.Table.AddRow": ["Add Row", "行を追加", "행 추가", "添加行", "加入列"],
  "Mac.Table.DeleteColumn": ["Delete Column", "列を削除", "열 삭제", "删除列", "刪除欄"],
  "Mac.Table.DeleteRow": ["Delete Row", "行を削除", "행 삭제", "删除行", "刪除列"],
+ "Mac.Toolbar.Language": ["Language", "言語", "언어", "语言", "語言"],
  "Mac.Toolbar.Lists": ["Lists", "リスト", "목록", "列表", "列表"],
  "Mac.Unit.Points": ["pt", "pt", "pt", "pt", "pt"],
 }
