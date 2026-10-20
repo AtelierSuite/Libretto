@@ -50,7 +50,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .noBorder
-        let textView = NSTextView(usingTextLayoutManager: false)
+        let textView = CodeTextView(usingTextLayoutManager: false)
         textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
