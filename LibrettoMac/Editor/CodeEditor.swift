@@ -56,7 +56,9 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         textView.setAccessibilityIdentifier("codeText")
         (textView as? CodeTextView)?.language = language
         applyFont()
-        setText(PlainText.text(of: document))
+        let text = PlainText.text(of: document)
+        (textView as? CodeTextView)?.indentUnit = IndentUnit.detect(in: text) ?? .standard
+        setText(text)
         updateStatusBar()
     }
 

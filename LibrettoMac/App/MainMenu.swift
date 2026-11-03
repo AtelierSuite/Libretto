@@ -1,4 +1,5 @@
 import AppKit
+import LibrettoEngine
 
 /// The menu bar, built in code, every title from the string catalog.
 @MainActor
@@ -188,10 +189,13 @@ enum MainMenu {
             item("Mac.Menu.IncreaseIndent", #selector(DocumentTextView.increaseIndent(_:)), "]"),
             item("Mac.Menu.DecreaseIndent", #selector(DocumentTextView.decreaseIndent(_:)), "["),
         ])
+        let indentation = NSMenu(title: String(localized: "Mac.Menu.Indentation"))
+        indentation.delegate = IndentationMenu.shared
+        IndentationMenu.shared.menuNeedsUpdate(indentation)
         let style = StyleMenu.make { (NSApp.keyWindow?.windowController as? DocumentWindowController)?.editor }
         style.title = String(localized: "ActionBar.Style")
         return menu("ActionBar.Format", [
-            with(font), with(text), with(lists), with(style),
+            with(font), with(text), with(lists), with(indentation), with(style),
             .separator(),
             item("Format.ClearAll", #selector(DocumentTextView.clearFormatting(_:))),
         ])
@@ -235,5 +239,23 @@ enum MainMenu {
             .separator(),
             item("Mac.Menu.BringAllToFront", #selector(NSApplication.arrangeInFront(_:))),
         ])
+    }
+}
+
+/// The units the code editor can indent with, listed afresh each time the
+/// menu opens so a file's own unit is among them. The editor ticks the one
+/// it has.
+@MainActor
+private final class IndentationMenu: NSObject, NSMenuDelegate {
+    static let shared = IndentationMenu()
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let unit = (NSApp.keyWindow?.firstResponder as? CodeTextView)?.indentUnit ?? .standard
+        menu.removeAllItems()
+        for choice in unit.choices {
+            let item = NSMenuItem(title: choice.displayName, action: #selector(CodeTextView.chooseIndentUnit(_:)), keyEquivalent: "")
+            item.tag = choice.id
+            menu.addItem(item)
+        }
     }
 }
