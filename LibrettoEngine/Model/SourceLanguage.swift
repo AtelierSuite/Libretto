@@ -21,6 +21,14 @@ extension UTType {
     public static let javaProperties = UTType(importedAs: "com.sun.java-properties", conformingTo: .plainText)
     public static let dockerfile = UTType(importedAs: "com.docker.dockerfile", conformingTo: .sourceCode)
     public static let makefile = UTType(importedAs: "org.gnu.makefile", conformingTo: .sourceCode)
+    public static let luaSource = UTType(importedAs: "org.lua.lua-source", conformingTo: .sourceCode)
+    public static let dartSource = UTType(importedAs: "org.dartlang.dart-source", conformingTo: .sourceCode)
+    public static let scalaSource = UTType(importedAs: "org.scala-lang.scala-source", conformingTo: .sourceCode)
+    public static let rSource = UTType(importedAs: "org.r-project.r-source", conformingTo: .sourceCode)
+    public static let zigSource = UTType(importedAs: "org.ziglang.zig-source", conformingTo: .sourceCode)
+    public static let elixirSource = UTType(importedAs: "org.elixir-lang.elixir-source", conformingTo: .sourceCode)
+    public static let haskellSource = UTType(importedAs: "org.haskell.haskell-source", conformingTo: .sourceCode)
+    public static let graphQLSource = UTType(importedAs: "org.graphql.graphql-source", conformingTo: .sourceCode)
     public static let jsonWithComments = UTType(importedAs: "com.microsoft.jsonc", conformingTo: .json)
     public static let json5 = UTType(importedAs: "org.json5", conformingTo: .json)
     public static let interfaceBuilderDocument = UTType(
@@ -39,8 +47,12 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case cPlusPlus
     case cSharp
     case css
+    case dart
     case dockerfile
+    case elixir
     case go
+    case graphQL
+    case haskell
     case html
     case ini
     case java
@@ -48,12 +60,16 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case json
     case kotlin
     case less
+    case lua
     case makefile
     case objectiveC
+    case perl
     case php
     case python
+    case r
     case ruby
     case rust
+    case scala
     case scss
     case shell
     case sql
@@ -62,13 +78,15 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case typeScript
     case xml
     case yaml
+    case zig
 
     /// The types Libretto opens as source, most particular first.
     public static let contentTypes: [UTType] = [
-        .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .scssSource, .lessSource,
-        .css, .shellScript, .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader,
-        .cSource, .cHeader, .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript,
-        .phpScript, .sqlSource, .dockerfile, .makefile, .jsonWithComments, .json5, .json, .yaml, .toml, .ini,
+        .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .scssSource, .lessSource, .css,
+        .shellScript, .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader, .cSource,
+        .cHeader, .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript,
+        .perlScript, .sqlSource, .luaSource, .dartSource, .scalaSource, .rSource, .zigSource, .elixirSource,
+        .haskellSource, .graphQLSource, .dockerfile, .makefile, .jsonWithComments, .json5, .json, .yaml, .toml, .ini,
         .javaProperties, .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml,
         .mpeg2TransportStream,
     ]
@@ -81,8 +99,12 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .cPlusPlus: return "C++"
         case .cSharp: return "C#"
         case .css: return "CSS"
+        case .dart: return "Dart"
         case .dockerfile: return "Dockerfile"
+        case .elixir: return "Elixir"
         case .go: return "Go"
+        case .graphQL: return "GraphQL"
+        case .haskell: return "Haskell"
         case .html: return "HTML"
         case .ini: return "INI"
         case .java: return "Java"
@@ -90,12 +112,16 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .json: return "JSON"
         case .kotlin: return "Kotlin"
         case .less: return "Less"
+        case .lua: return "Lua"
         case .makefile: return "Makefile"
         case .objectiveC: return "Objective-C"
+        case .perl: return "Perl"
         case .php: return "PHP"
         case .python: return "Python"
+        case .r: return "R"
         case .ruby: return "Ruby"
         case .rust: return "Rust"
+        case .scala: return "Scala"
         case .scss: return "SCSS"
         case .shell: return "Shell"
         case .sql: return "SQL"
@@ -104,6 +130,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .typeScript: return "TypeScript"
         case .xml: return "XML"
         case .yaml: return "YAML"
+        case .zig: return "Zig"
         }
     }
 
@@ -114,8 +141,12 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .cPlusPlus: return ["cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp"]
         case .cSharp: return ["cs"]
         case .css: return ["css"]
+        case .dart: return ["dart"]
         case .dockerfile: return ["dockerfile", "containerfile"]
+        case .elixir: return ["ex", "exs"]
         case .go: return ["go"]
+        case .graphQL: return ["graphql", "gql"]
+        case .haskell: return ["hs"]
         case .html: return ["html", "htm"]
         case .ini: return ["ini", "cfg", "properties"]
         case .java: return ["java"]
@@ -123,12 +154,16 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .json: return ["json", "jsonc", "json5"]
         case .kotlin: return ["kt", "kts"]
         case .less: return ["less"]
+        case .lua: return ["lua"]
         case .makefile: return ["mk", "mak"]
         case .objectiveC: return ["m", "mm"]
+        case .perl: return ["pl", "pm"]
         case .php: return ["php", "phtml"]
         case .python: return ["py", "pyi", "pyw"]
+        case .r: return ["r"]
         case .ruby: return ["rb", "rake", "gemspec", "ru"]
         case .rust: return ["rs"]
+        case .scala: return ["scala", "sc"]
         case .scss: return ["scss"]
         case .shell: return ["sh", "bash", "zsh", "ksh"]
         case .sql: return ["sql"]
@@ -137,6 +172,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .typeScript: return ["ts", "mts", "cts", "tsx"]
         case .xml: return ["xml", "plist", "svg", "xib", "storyboard", "csproj", "vbproj", "fsproj"]
         case .yaml: return ["yaml", "yml"]
+        case .zig: return ["zig", "zon"]
         }
     }
 
@@ -184,6 +220,8 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
             (.objectiveCPlusPlusSource, .objectiveC), (.cPlusPlusSource, .cPlusPlus), (.cPlusPlusHeader, .cPlusPlus),
             (.cSource, .c), (.cHeader, .c), (.cSharpSource, .cSharp), (.javaSource, .java), (.kotlinSource, .kotlin),
             (.goSource, .go), (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql),
+            (.perlScript, .perl), (.luaSource, .lua), (.dartSource, .dart), (.scalaSource, .scala), (.rSource, .r),
+            (.zigSource, .zig), (.elixirSource, .elixir), (.haskellSource, .haskell), (.graphQLSource, .graphQL),
             (.dockerfile, .dockerfile), (.makefile, .makefile),
             (.yaml, .yaml), (.toml, .toml), (.ini, .ini), (.javaProperties, .ini), (.propertyList, .xml),
             (.svg, .xml), (.xml, .xml), (.shellScript, .shell),

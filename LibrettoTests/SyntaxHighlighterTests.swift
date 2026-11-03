@@ -273,6 +273,102 @@ struct SyntaxHighlighterTests {
         #expect(found["-- first"] == .comment)
     }
 
+    @Test("Lua's long comments and long strings")
+    func lua() {
+        let found = tokens("local s = [[a\nb]] -- note\n--[[ long\ncomment ]]\nfunction f() return nil end", .lua)
+        #expect(found["local"] == .keyword)
+        #expect(found["[[a\nb]]"] == .string)
+        #expect(found["-- note"] == .comment)
+        #expect(found["--[[ long\ncomment ]]"] == .comment)
+        #expect(found["function"] == .keyword)
+        #expect(found["end"] == .keyword)
+    }
+
+    @Test("Lua's long strings open with brackets, which are no quotes")
+    func luaQuotes() {
+        #expect(SyntaxHighlighter.quotes(for: .lua) == [0x22, 0x27])
+    }
+
+    @Test("Dart and Scala keywords, types and annotations")
+    func dartAndScala() {
+        let dart = tokens("@override\nfinal int count = 0; // c\nlate String name = '''a\nb''';", .dart)
+        #expect(dart["@override"] == .attribute)
+        #expect(dart["final"] == .keyword)
+        #expect(dart["int"] == .type)
+        #expect(dart["String"] == .type)
+        #expect(dart["'''a\nb'''"] == .string)
+        #expect(dart["// c"] == .comment)
+        let scala = tokens("case class Point(x: Int) extends Shape /* s */\nval s = \"\"\"raw\\n\"\"\"", .scala)
+        #expect(scala["case"] == .keyword)
+        #expect(scala["val"] == .keyword)
+        #expect(scala["Int"] == .type)
+        #expect(scala["/* s */"] == .comment)
+        #expect(scala["\"\"\"raw\\n\"\"\""] == .string)
+    }
+
+    @Test("Perl's scalars, arrays and hashes")
+    func perl() {
+        let found = tokens(
+            "my @items = qw(a b); my %seen; # c\nforeach my $item (@items) { print \"$item\\n\" }", .perl
+        )
+        #expect(found["my"] == .keyword)
+        #expect(found["@items"] == .variable)
+        #expect(found["%seen"] == .variable)
+        #expect(found["$item"] == .variable)
+        #expect(found["# c"] == .comment)
+        #expect(found["foreach"] == .keyword)
+        #expect(tokens("$a % 2", .perl)["% 2"] == nil)
+    }
+
+    @Test("R, Zig and Elixir keywords, comments and strings")
+    func rZigElixir() {
+        let r = tokens("f <- function(x) { if (is.na(x)) NULL else TRUE } # r", .r)
+        #expect(r["function"] == .keyword)
+        #expect(r["NULL"] == .keyword)
+        #expect(r["TRUE"] == .keyword)
+        #expect(r["# r"] == .comment)
+        let zig = tokens("const std = @import(\"std\");\npub fn main() !void { var n: u32 = 0; }", .zig)
+        #expect(zig["const"] == .keyword)
+        #expect(zig["@import"] == .attribute)
+        #expect(zig["\"std\""] == .string)
+        #expect(zig["void"] == .type)
+        #expect(zig["u32"] == .type)
+        let elixir = tokens(
+            "defmodule Greeter do\n  @doc \"\"\"\n  Hi\n  \"\"\"\n  def hi(name), do: name # e\nend", .elixir
+        )
+        #expect(elixir["defmodule"] == .keyword)
+        #expect(elixir["Greeter"] == .type)
+        #expect(elixir["@doc"] == .attribute)
+        #expect(elixir["\"\"\"\n  Hi\n  \"\"\""] == .string)
+        #expect(elixir["# e"] == .comment)
+        #expect(elixir["end"] == .keyword)
+    }
+
+    @Test("Haskell's comments, and the primes in its names")
+    func haskell() {
+        let found = tokens(
+            "{-# LANGUAGE GADTs #-}\nmodule Main where -- m\nsum' :: [Int] -> Int\nsum' = foldl' (+) 0", .haskell
+        )
+        #expect(found["{-# LANGUAGE GADTs #-}"] == .comment)
+        #expect(found["module"] == .keyword)
+        #expect(found["where"] == .keyword)
+        #expect(found["-- m"] == .comment)
+        #expect(found["Int"] == .type)
+        #expect(found.values.contains(.string) == false)
+    }
+
+    @Test("GraphQL operations, variables and directives")
+    func graphQL() {
+        let found = tokens("query Book($id: ID!) { # q\n  book(id: $id) @include(if: true) { title } }", .graphQL)
+        #expect(found["query"] == .keyword)
+        #expect(found["Book"] == .type)
+        #expect(found["$id"] == .variable)
+        #expect(found["ID"] == .type)
+        #expect(found["# q"] == .comment)
+        #expect(found["@include"] == .attribute)
+        #expect(found["true"] == .keyword)
+    }
+
     @Test("JSON and YAML keys apart from their values")
     func data() {
         let json = tokens("{\"name\" : \"Libretto\", \"open\": true, \"count\": 3}", .json)
@@ -414,6 +510,16 @@ struct SyntaxHighlighterTests {
         #expect(SourceLanguage(contentType: .mpeg2TransportStream, filename: "app.ts") == .typeScript)
         #expect(SourceLanguage(contentType: .plainText, filename: "run.sh") == .shell)
         #expect(SourceLanguage(contentType: .pythonScript, filename: nil) == .python)
+        #expect(SourceLanguage(contentType: .plainText, filename: "init.lua") == .lua)
+        #expect(SourceLanguage(contentType: .plainText, filename: "main.dart") == .dart)
+        #expect(SourceLanguage(contentType: .plainText, filename: "App.scala") == .scala)
+        #expect(SourceLanguage(contentType: .plainText, filename: "build.pl") == .perl)
+        #expect(SourceLanguage(contentType: .perlScript, filename: nil) == .perl)
+        #expect(SourceLanguage(contentType: .plainText, filename: "plot.R") == .r)
+        #expect(SourceLanguage(contentType: .plainText, filename: "main.zig") == .zig)
+        #expect(SourceLanguage(contentType: .plainText, filename: "mix.exs") == .elixir)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Main.hs") == .haskell)
+        #expect(SourceLanguage(contentType: .plainText, filename: "schema.graphql") == .graphQL)
         #expect(SourceLanguage(contentType: .plainText, filename: "notes.txt") == .plainText)
         #expect(SourceLanguage(contentType: .plainText, filename: "NOTES.TXT") == .plainText)
         #expect(SourceLanguage(contentType: .plainText, filename: nil) == .plainText)
@@ -491,6 +597,15 @@ struct SyntaxHighlighterTests {
         .ini: "; c\n[core]\nname = Libretto\nexport HOME=$HOME:/bin\nurl: \"http://x\" # not\n! bang\n",
         .dockerfile: "FROM swift:6 AS build # c\nRUN apt-get update \\\n  && echo \"$HOME\n\"\nCOPY . /app\n",
         .makefile: ".PHONY: all\nSRC := $(wildcard *.c) # c\nall: $(SRC)\n\tcc -o $@ $^ \"a\nb\"\n-include deps.mk\nx ?= 1\n",
+        .lua: "--[[ block\n comment ]] local s = [[long\nstring]] -- c\nfunction f() return 'a' end\n",
+        .dart: "@override\nString f() => '''a\nb''' /* c\n */ + \"x\"; // d\n",
+        .scala: "@main def run(): Unit = { val s = \"\"\"raw\\\nline\"\"\" /* c\n */ }\n",
+        .perl: "my %h = (a => 1); # c\nmy @list = `ls`;\nprint \"$name\n\";\n",
+        .r: "f <- function(x) { `odd name` + 'a\n' } # c\nTRUE\n",
+        .zig: "const std = @import(\"std\"); // c\npub fn main() u8 { return 'a'; }\n",
+        .elixir: "defmodule A do\n  @doc \"\"\"\n  many\n  \"\"\" # c\n  def f, do: :ok\nend\n",
+        .haskell: "{- block\n comment -} main :: IO () -- c\nmain = foldl' f 0 \"a\"\n",
+        .graphQL: "\"\"\"\ndoc\n\"\"\" type Query @key { user(id: $id): User } # c\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.

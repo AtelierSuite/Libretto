@@ -45,12 +45,14 @@ public enum SyntaxHighlighter: Sendable {
     }
 
     /// The quotes that start a string in `language`: the first character of
-    /// each of its string delimiters. Plain text has none.
+    /// each of its string delimiters that close as they open, so not Lua's
+    /// `[[`. Plain text has none.
     public static func quotes(for language: SourceLanguage) -> Set<UInt16> {
         switch language {
         case .plainText: return []
         case .html, .xml, .css, .scss, .less: return [0x22, 0x27]
-        default: return Set(CodeRules(language).strings.compactMap { $0.delimiter.utf16.first })
+        default:
+            return Set(CodeRules(language).strings.filter { $0.closing == nil }.compactMap { $0.delimiter.utf16.first })
         }
     }
 
@@ -321,6 +323,8 @@ private struct CodeRules {
         public var delimiter: String
         public var spansLines: Bool
         public var escapes = true
+        /// Where it closes with something other than how it opens, as Lua's `[[` closes with `]]`.
+        public var closing: String?
     }
 
     var lineComments: [String] = []
@@ -340,8 +344,8 @@ private struct CodeRules {
     /// Characters that make the name after them a keyword: `#` for Swift's
     /// compiler directives and C's preprocessor.
     var directivePrefix: Character?
-    /// The character that starts a variable: `$` in shell scripts, PHP and Ruby.
-    var variablePrefix: Character?
+    /// The characters that start a variable: `$` in shell scripts, PHP and Ruby, and `@` and `%` too in Perl.
+    var variablePrefixes = ""
     /// Shell and YAML: a comment only starts at the start of a word, and words run on through hyphens.
     var commentsStartWords = false
     /// Shell and Makefiles: `$?`, `$@` and the like are variables too.
@@ -394,7 +398,7 @@ private struct CodeRules {
             // A Dockerfile's instructions, around commands that are the shell's.
             keywords = language == .dockerfile ? Self.shell.union(Self.dockerfile) : Self.shell
             capitalisedTypes = false
-            variablePrefix = "$"
+            variablePrefixes = "$"
             commentsStartWords = true
             isShell = true
         case .c, .cPlusPlus, .objectiveC:
@@ -445,7 +449,7 @@ private struct CodeRules {
             keywords = Self.ruby
             // Instance variables, coloured as attributes are elsewhere.
             attributePrefix = "@"
-            variablePrefix = "$"
+            variablePrefixes = "$"
         case .php:
             lineComments = ["//", "#"]
             blockComment = cStyle
@@ -454,7 +458,7 @@ private struct CodeRules {
                 StringRule(delimiter: "'", spansLines: true),
             ]
             keywords = Self.php
-            variablePrefix = "$"
+            variablePrefixes = "$"
         case .sql:
             lineComments = ["--"]
             blockComment = cStyle
@@ -494,7 +498,7 @@ private struct CodeRules {
             strings = quoted
             keywords = ["true", "false", "yes", "no", "on", "off", "null"]
             capitalisedTypes = false
-            variablePrefix = "$"
+            variablePrefixes = "$"
             keySeparators = "=:"
             keyPrefixes = ["export "]
             sectionHeaders = true
@@ -504,10 +508,70 @@ private struct CodeRules {
             strings = quoted
             keywords = Self.make
             capitalisedTypes = false
-            variablePrefix = "$"
+            variablePrefixes = "$"
             isShell = true
             variableParentheses = true
             makeRules = true
+        case .lua:
+            lineComments = ["--"]
+            blockComment = (open: "--[[", close: "]]")
+            strings = [StringRule(delimiter: "[[", spansLines: true, escapes: false, closing: "]]")] + quoted
+            keywords = Self.lua
+            capitalisedTypes = false
+        case .dart:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = [
+                StringRule(delimiter: "\"\"\"", spansLines: true), StringRule(delimiter: "'''", spansLines: true),
+            ] + quoted
+            keywords = Self.dart
+            types = Self.dartTypes
+            attributePrefix = "@"
+        case .scala:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = [StringRule(delimiter: "\"\"\"", spansLines: true, escapes: false)] + quoted
+            keywords = Self.scala
+            attributePrefix = "@"
+        case .perl:
+            lineComments = ["#"]
+            strings = quoted + [StringRule(delimiter: "`", spansLines: false)]
+            keywords = Self.perl
+            capitalisedTypes = false
+            // Scalars, arrays and hashes.
+            variablePrefixes = "$@%"
+        case .r:
+            lineComments = ["#"]
+            strings = quoted + [StringRule(delimiter: "`", spansLines: false, escapes: false)]
+            keywords = Self.r
+            capitalisedTypes = false
+        case .zig:
+            lineComments = ["//"]
+            strings = quoted
+            keywords = Self.zig
+            types = Self.zigTypes
+            // Built-in functions, as in `@import`.
+            attributePrefix = "@"
+        case .elixir:
+            lineComments = ["#"]
+            strings = [
+                StringRule(delimiter: "\"\"\"", spansLines: true), StringRule(delimiter: "'''", spansLines: true),
+            ] + quoted
+            keywords = Self.elixir
+            // Module attributes, as in `@doc`.
+            attributePrefix = "@"
+        case .haskell:
+            lineComments = ["--"]
+            blockComment = (open: "{-", close: "-}")
+            // `'` ends names, as in `foldl'`, as well as starting characters.
+            strings = [quoted[0]]
+            keywords = Self.haskell
+        case .graphQL:
+            lineComments = ["#"]
+            strings = [StringRule(delimiter: "\"\"\"", spansLines: true), quoted[0]]
+            keywords = Self.graphQL
+            attributePrefix = "@"
+            variablePrefixes = "$"
         case .plainText, .html, .css, .less, .scss, .xml:
             // HTML, XML and CSS and its dialects are scanned on their own; their comments are here for commenting
             // lines out, with SCSS's and Less's `//`.
@@ -651,6 +715,66 @@ private struct CodeRules {
         "view", "when", "where", "with",
         "bigint", "blob", "boolean", "char", "date", "datetime", "decimal", "double", "float", "int", "integer",
         "numeric", "real", "smallint", "text", "time", "timestamp", "varchar",
+    ]
+    static let lua: Set<String> = [
+        "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in", "local",
+        "nil", "not", "or", "repeat", "return", "self", "then", "true", "until", "while",
+    ]
+    static let dart: Set<String> = [
+        "abstract", "as", "assert", "async", "await", "base", "break", "case", "catch", "class", "const",
+        "continue", "covariant", "default", "deferred", "do", "else", "enum", "export", "extends", "extension",
+        "external", "factory", "false", "final", "finally", "for", "get", "hide", "if", "implements", "import",
+        "in", "interface", "is", "late", "library", "mixin", "new", "null", "of", "on", "operator", "part",
+        "required", "rethrow", "return", "sealed", "set", "show", "static", "super", "switch", "sync", "this",
+        "throw", "true", "try", "typedef", "var", "when", "while", "with", "yield",
+    ]
+    static let dartTypes: Set<String> = ["bool", "double", "dynamic", "int", "num", "void"]
+    static let scala: Set<String> = [
+        "abstract", "case", "catch", "class", "def", "derives", "do", "else", "end", "enum", "export", "extends",
+        "extension", "false", "final", "finally", "for", "given", "if", "implicit", "import", "inline", "lazy",
+        "match", "new", "null", "object", "opaque", "open", "override", "package", "private", "protected",
+        "return", "sealed", "super", "then", "this", "throw", "trait", "transparent", "true", "try", "type",
+        "using", "val", "var", "while", "with", "yield",
+    ]
+    static let perl: Set<String> = [
+        "and", "BEGIN", "bless", "cmp", "defined", "delete", "die", "do", "each", "else", "elsif", "END", "eq",
+        "eval", "exists", "for", "foreach", "ge", "grep", "gt", "if", "keys", "last", "le", "local", "lt", "map",
+        "my", "ne", "next", "no", "not", "or", "our", "package", "pop", "print", "printf", "push", "q", "qq", "qw",
+        "redo", "ref", "require", "return", "say", "scalar", "shift", "sort", "sub", "undef", "unless", "until",
+        "use", "values", "wantarray", "warn", "while",
+    ]
+    static let r: Set<String> = [
+        "break", "else", "FALSE", "for", "function", "if", "in", "Inf", "library", "NA", "NA_character_",
+        "NA_integer_", "NA_real_", "NaN", "next", "NULL", "repeat", "require", "return", "TRUE", "while",
+    ]
+    static let zig: Set<String> = [
+        "addrspace", "align", "allowzero", "and", "anyframe", "anytype", "asm", "async", "await", "break",
+        "callconv", "catch", "comptime", "const", "continue", "defer", "else", "enum", "errdefer", "error",
+        "export", "extern", "false", "fn", "for", "if", "inline", "linksection", "noalias", "noinline",
+        "nosuspend", "null", "opaque", "or", "orelse", "packed", "pub", "resume", "return", "struct", "suspend",
+        "switch", "test", "threadlocal", "true", "try", "undefined", "union", "unreachable", "usingnamespace",
+        "var", "volatile", "while",
+    ]
+    static let zigTypes: Set<String> = [
+        "anyerror", "anyopaque", "bool", "c_char", "c_int", "c_long", "c_longlong", "c_short", "c_uint",
+        "c_ulong", "c_ulonglong", "c_ushort", "comptime_float", "comptime_int", "f16", "f32", "f64", "f80",
+        "f128", "i8", "i16", "i32", "i64", "i128", "isize", "noreturn", "type", "u8", "u16", "u32", "u64", "u128",
+        "usize", "void",
+    ]
+    static let elixir: Set<String> = [
+        "after", "alias", "and", "case", "catch", "cond", "def", "defdelegate", "defexception", "defguard",
+        "defimpl", "defmacro", "defmacrop", "defmodule", "defoverridable", "defp", "defprotocol", "defstruct",
+        "do", "else", "end", "false", "fn", "for", "if", "import", "in", "nil", "not", "or", "quote", "raise",
+        "receive", "require", "rescue", "super", "true", "try", "unless", "unquote", "use", "when", "with",
+    ]
+    static let haskell: Set<String> = [
+        "as", "case", "class", "data", "default", "deriving", "do", "else", "family", "forall", "foreign",
+        "hiding", "if", "import", "in", "infix", "infixl", "infixr", "instance", "let", "mdo", "module",
+        "newtype", "of", "qualified", "then", "type", "where",
+    ]
+    static let graphQL: Set<String> = [
+        "directive", "enum", "extend", "false", "fragment", "implements", "input", "interface", "mutation",
+        "null", "on", "query", "repeatable", "scalar", "schema", "subscription", "true", "type", "union",
     ]
 }
 
@@ -846,8 +970,8 @@ private struct Scanner {
 
     /// A quoted string from `index`, which is its opening delimiter.
     private mutating func stringEnd(_ rule: CodeRules.StringRule, from index: Int, before end: Int) -> Int {
-        let delimiter = rule.delimiter
-        var position = index + delimiter.utf16.count
+        let closing = rule.closing ?? rule.delimiter
+        var position = index + rule.delimiter.utf16.count
         while position < end {
             let current = units[position]
             if rule.escapes, current == Self.ascii("\\") {
@@ -856,7 +980,7 @@ private struct Scanner {
                 position += 2
                 continue
             }
-            if matches(delimiter, at: position) { return position + delimiter.utf16.count }
+            if matches(closing, at: position) { return position + closing.utf16.count }
             if !rule.spansLines, isNewline(current) { return position }
             position += 1
         }
@@ -913,7 +1037,7 @@ private struct Scanner {
                 index = stop
                 continue
             }
-            if let prefix = rules.variablePrefix, current == Self.ascii(prefix), let next = unit(index + 1),
+            if rules.variablePrefixes.utf16.contains(current), let next = unit(index + 1),
                index + 1 < end, rules.isShell || isLetter(next) || next == Self.ascii("{") {
                 let stop: Int
                 if next == Self.ascii("{") {

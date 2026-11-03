@@ -84,6 +84,15 @@
 				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
+				<string>public.perl-script</string>
+				<string>org.lua.lua-source</string>
+				<string>org.dartlang.dart-source</string>
+				<string>org.scala-lang.scala-source</string>
+				<string>org.r-project.r-source</string>
+				<string>org.ziglang.zig-source</string>
+				<string>org.elixir-lang.elixir-source</string>
+				<string>org.haskell.haskell-source</string>
+				<string>org.graphql.graphql-source</string>
 				<string>com.docker.dockerfile</string>
 				<string>org.gnu.makefile</string>
 				<string>org.toml-lang.toml</string>
@@ -743,6 +752,178 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>text/x-makefile</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Lua Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.lua.lua-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lua</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-lua</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Dart Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.dartlang.dart-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>dart</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/dart</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Scala Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.scala-lang.scala-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>scala</string>
+					<string>sc</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-scala</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>R Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.r-project.r-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>r</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-r</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Zig Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.ziglang.zig-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>zig</string>
+					<string>zon</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-zig</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Elixir Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.elixir-lang.elixir-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ex</string>
+					<string>exs</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-elixir</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Haskell Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.haskell.haskell-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>hs</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-haskell</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>GraphQL Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.graphql.graphql-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>graphql</string>
+					<string>gql</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/graphql</string>
 				</array>
 			</dict>
 		</dict>
