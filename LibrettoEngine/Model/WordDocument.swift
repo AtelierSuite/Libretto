@@ -47,6 +47,10 @@ public struct WordDocument: Equatable, Sendable {
     /// The language of the file opened in the code editor, including plain
     /// text without syntax colouring. `nil` for word-processing documents.
     public var sourceLanguage: SourceLanguage?
+    /// The encoding a text file is in, and how it ends its lines, as read,
+    /// so it saves back as it came. Changing them changes how it is saved.
+    public var textEncoding = TextEncoding.utf8
+    public var lineEnding = LineEnding.lf
     /// The format the document was converted from, which Libretto reads but
     /// cannot save. `nil` for a document that saves back to its own file.
     public var importedFormat: ImportedFormat?
