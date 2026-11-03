@@ -84,6 +84,12 @@
 				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
+				<string>public.xml</string>
+				<string>public.svg-image</string>
+				<string>com.apple.property-list</string>
+				<string>com.apple.interfacebuilder.document.cocoa</string>
+				<string>com.apple.InterfaceBuilder3.Storyboard.XIB</string>
+				<string>com.microsoft.msbuild-project</string>
 				<string>org.python.python-source</string>
 				<string>org.ruby-lang.ruby-source</string>
 				<string>org.kornshell.ksh-script</string>
@@ -535,6 +541,59 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/x-httpd-php</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Interface Builder Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.interfacebuilder.document.cocoa</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>xib</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Interface Builder Storyboard</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.InterfaceBuilder3.Storyboard.XIB</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>storyboard</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>MSBuild Project</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.msbuild-project</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>csproj</string>
+					<string>vbproj</string>
+					<string>fsproj</string>
 				</array>
 			</dict>
 		</dict>

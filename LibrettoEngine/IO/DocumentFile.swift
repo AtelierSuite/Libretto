@@ -45,8 +45,11 @@ public enum DocumentFile: Sendable {
         }
         let filename = file.filename ?? file.preferredFilename
         if let language = SourceLanguage(contentType: contentType, filename: filename) {
-            // A video sharing TypeScript's extension is no text to open.
+            // A video sharing TypeScript's extension is no text to open, nor is a property list saved as binary.
             if contentType.conforms(to: .mpeg2TransportStream), data.prefix(4096).contains(0) {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if contentType.conforms(to: .propertyList), data.starts(with: Array("bplist".utf8)) {
                 throw CocoaError(.fileReadCorruptFile)
             }
             var document = PlainText.document(from: data, format: PlainText.codeFormat)

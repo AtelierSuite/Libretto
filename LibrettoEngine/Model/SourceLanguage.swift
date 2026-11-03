@@ -16,6 +16,11 @@ extension UTType {
     public static let sqlSource = UTType(importedAs: "org.iso.sql", conformingTo: .sourceCode)
     public static let jsonWithComments = UTType(importedAs: "com.microsoft.jsonc", conformingTo: .json)
     public static let json5 = UTType(importedAs: "org.json5", conformingTo: .json)
+    public static let interfaceBuilderDocument = UTType(
+        importedAs: "com.apple.interfacebuilder.document.cocoa", conformingTo: .xml
+    )
+    public static let storyboard = UTType(importedAs: "com.apple.InterfaceBuilder3.Storyboard.XIB", conformingTo: .xml)
+    public static let msBuildProject = UTType(importedAs: "com.microsoft.msbuild-project", conformingTo: .xml)
 }
 
 /// The language of a file opened in the code editor. Plain text has no syntax colouring.
@@ -42,6 +47,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case sql
     case swift
     case typeScript
+    case xml
     case yaml
 
     /// The types Libretto opens as source, most particular first.
@@ -49,7 +55,8 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .css, .shellScript,
         .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader, .cSource, .cHeader,
         .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript, .sqlSource,
-        .jsonWithComments, .json5, .json, .yaml, .mpeg2TransportStream,
+        .jsonWithComments, .json5, .json, .yaml, .interfaceBuilderDocument, .storyboard, .msBuildProject,
+        .propertyList, .svg, .xml, .mpeg2TransportStream,
     ]
 
     /// The language's name, as a menu of them shows it.
@@ -75,6 +82,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .sql: return "SQL"
         case .swift: return "Swift"
         case .typeScript: return "TypeScript"
+        case .xml: return "XML"
         case .yaml: return "YAML"
         }
     }
@@ -101,6 +109,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .sql: return ["sql"]
         case .swift: return ["swift"]
         case .typeScript: return ["ts", "mts", "cts", "tsx"]
+        case .xml: return ["xml", "plist", "svg", "xib", "storyboard", "csproj", "vbproj", "fsproj"]
         case .yaml: return ["yaml", "yml"]
         }
     }
@@ -137,7 +146,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
             (.cPlusPlusSource, .cPlusPlus), (.cPlusPlusHeader, .cPlusPlus), (.cSource, .c), (.cHeader, .c),
             (.cSharpSource, .cSharp), (.javaSource, .java), (.kotlinSource, .kotlin), (.goSource, .go),
             (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql), (.yaml, .yaml),
-            (.shellScript, .shell),
+            (.propertyList, .xml), (.svg, .xml), (.xml, .xml), (.shellScript, .shell),
         ]
         if let language = types.first(where: { contentType.conforms(to: $0.0) })?.1 {
             self = language

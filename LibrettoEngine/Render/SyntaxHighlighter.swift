@@ -49,7 +49,7 @@ public enum SyntaxHighlighter: Sendable {
     public static func quotes(for language: SourceLanguage) -> Set<UInt16> {
         switch language {
         case .plainText: return []
-        case .html, .css: return [0x22, 0x27]
+        case .html, .xml, .css: return [0x22, 0x27]
         default: return Set(CodeRules(language).strings.compactMap { $0.delimiter.utf16.first })
         }
     }
@@ -464,10 +464,10 @@ private struct CodeRules {
             capitalisedTypes = false
             commentsStartWords = true
             colonsMarkKeys = true
-        case .plainText, .html, .css:
-            // HTML and CSS are scanned on their own; their comments are here for commenting lines out.
+        case .plainText, .html, .css, .xml:
+            // HTML, XML and CSS are scanned on their own; their comments are here for commenting lines out.
             blockComment = switch language {
-            case .html: (open: "<!--", close: "-->")
+            case .html, .xml: (open: "<!--", close: "-->")
             case .css: cStyle
             default: nil
             }
@@ -664,6 +664,7 @@ private struct Scanner {
         let all = 0..<units.count
         switch language {
         case .html: scanHTML(all, from: start?.index ?? 0)
+        case .xml: scanHTML(all, isXML: true, from: start?.index ?? 0)
         case .css: scanCSS(all, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
         default: scanCode(all, rules: CodeRules(language), from: start?.index ?? 0)
         }
@@ -904,9 +905,10 @@ private struct Scanner {
 
     // MARK: HTML
 
-    /// Scans `range` as HTML, from `start`. Checkpoints are only outside
-    /// tags, and so outside scripts and styles too.
-    mutating func scanHTML(_ range: Range<Int>, from start: Int) {
+    /// Scans `range` as HTML, or XML, which has CDATA sections but no script
+    /// or style of its own, from `start`. Checkpoints are only outside tags,
+    /// and so outside scripts and styles too.
+    mutating func scanHTML(_ range: Range<Int>, isXML: Bool = false, from start: Int) {
         let end = range.upperBound
         var index = start
         while index < end {
@@ -915,13 +917,17 @@ private struct Scanner {
                 let stop = min((first("-->", from: index + 4, before: end) ?? end - 3) + 3, end)
                 add(index..<stop, .comment)
                 index = stop
+            } else if isXML, matches("<![CDATA[", at: index) {
+                let stop = min((first("]]>", from: index + 9, before: end) ?? end - 3) + 3, end)
+                add(index..<stop, .string)
+                index = stop
             } else if matches("<!", at: index) || matches("<?", at: index) {
                 let stop = min((first(">", from: index, before: end) ?? end - 1) + 1, end)
                 add(index..<stop, .keyword)
                 index = stop
             } else if units[index] == Self.ascii("<"), let next = unit(index + 1), index + 1 < end,
                       isLetter(next) || next == Self.ascii("/") {
-                index = scanTag(from: index, before: end)
+                index = scanTag(from: index, before: end, isXML: isXML)
             } else if units[index] == Self.ascii("&") {
                 let stop = nameEnd(from: index + 1, before: end, extra: [Self.ascii("#")])
                 if stop > index + 1, unit(stop) == Self.ascii(";"), stop < end {
@@ -937,10 +943,11 @@ private struct Scanner {
     }
 
     /// A tag from its `<`, with its attributes, and the script or style it opens.
-    private mutating func scanTag(from start: Int, before end: Int) -> Int {
+    private mutating func scanTag(from start: Int, before end: Int, isXML: Bool) -> Int {
         let isClosing = units[start + 1] == Self.ascii("/")
         let nameStart = start + (isClosing ? 2 : 1)
-        let nameStop = nameEnd(from: nameStart, before: end, extra: [Self.ascii("-"), Self.ascii(":")])
+        // XML's names may have points in them too, as in `<dict.entry>`.
+        let nameStop = nameEnd(from: nameStart, before: end, extra: [Self.ascii("-"), Self.ascii(":"), Self.ascii(".")])
         add(start..<nameStop, .tag)
         let name = word(nameStart..<nameStop).lowercased()
 
@@ -971,8 +978,8 @@ private struct Scanner {
             }
         }
 
-        // What a script or style element holds is code of its own.
-        guard !isClosing, name == "script" || name == "style" else { return index }
+        // What a script or style element holds is code of its own, in HTML.
+        guard !isXML, !isClosing, name == "script" || name == "style" else { return index }
         let closing = first("</\(name)", from: index, before: end, ignoringCase: true) ?? end
         if name == "script" {
             scanCode(index..<closing, rules: CodeRules(.javaScript))

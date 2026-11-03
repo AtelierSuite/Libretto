@@ -87,6 +87,28 @@ struct SyntaxHighlighterTests {
         #expect(found["color"] == .property)
     }
 
+    @Test("XML tags, attributes and CDATA, with no script or style inside them")
+    func xml() {
+        let found = tokens("""
+            <?xml version="1.0"?>
+            <!-- c --><plist version="1.0"><key>a</key><script>let n = 1</script>
+            <data><![CDATA[<raw> & more]]></data>&lt;</plist>
+            """, .xml)
+        #expect(found["<?xml version=\"1.0\"?>"] == .keyword)
+        #expect(found["<!-- c -->"] == .comment)
+        #expect(found["<plist"] == .tag)
+        #expect(found["version"] == .property)
+        #expect(found["\"1.0\""] == .string)
+        #expect(found["</key"] == .tag)
+        #expect(found["<![CDATA[<raw> & more]]>"] == .string)
+        #expect(found["&lt;"] == .number)
+        #expect(found["let"] == nil)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Info.plist") == .xml)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Main.storyboard") == .xml)
+        #expect(SourceLanguage(contentType: .svg, filename: nil) == .xml)
+        #expect(SourceLanguage(contentType: .xml, filename: nil) == .xml)
+    }
+
     @Test("CSS selectors, properties, numbers and at-rules")
     func css() {
         let found = tokens("@media screen { .card > h1:hover { margin: -4px 1.5em; color: #fff !important; } }", .css)
@@ -300,6 +322,7 @@ struct SyntaxHighlighterTests {
             <p class=x>text</p>
             """,
         .css: "@media screen {\n  .card > h1:hover,\n  a { margin: -4px 1.5em; /* c\n */ color: #fff !important; }\n}\np\n{ content: \"a\" }\n",
+        .xml: "<?xml version=\"1.0\"?>\n<!-- c\n d --><plist><dict>\n<key a='x\ny'>Name</key><![CDATA[a\n<b>]]>\n<script>let a = 1</script></dict>\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.
