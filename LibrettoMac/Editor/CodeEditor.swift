@@ -48,6 +48,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         textView.textContainerInset = CGSize(width: 4, height: 4)
         textView.textContainer?.lineFragmentPadding = 0
         textView.setAccessibilityIdentifier("codeText")
+        (textView as? CodeTextView)?.language = language
         applyFont()
         setText(PlainText.text(of: document))
     }
@@ -84,6 +85,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         guard new != language else { return }
         language = new
         typing.language = new
+        (textView as? CodeTextView)?.language = new
         highlight()
         matchBrackets()
     }

@@ -77,6 +77,7 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
         super.init()
         textView.delegate = self
         textView.textStorage.delegate = self
+        textView.language = language
         setText(PlainText.text(of: document))
     }
 
@@ -510,6 +511,8 @@ final class CodeEditorContainer: UIView {
 /// The editor's text view: plain text only, with none of the help meant for prose.
 final class CodeTextView: UITextView {
     weak var container: CodeEditorContainer?
+    /// Whose comment markers ⌘/ writes.
+    var language = SourceLanguage.plainText
 
     /// Undo is the document's history's, which takes typing as it is handed over.
     private let disabledUndoManager: UndoManager = {
@@ -526,6 +529,10 @@ final class CodeTextView: UITextView {
             UIKeyCommand(input: "=", modifierFlags: .command, action: #selector(biggerCommand)),
             UIKeyCommand(input: "-", modifierFlags: .command, action: #selector(smallerCommand)),
             UIKeyCommand(input: "0", modifierFlags: .command, action: #selector(actualSizeCommand)),
+            UIKeyCommand(
+                title: String(localized: "CodeEditor.ToggleComment"), action: #selector(toggleComment),
+                input: "/", modifierFlags: .command
+            ),
         ].map { command in
             command.wantsPriorityOverSystemBehavior = true
             return command
@@ -535,6 +542,22 @@ final class CodeTextView: UITextView {
     @objc private func biggerCommand() { container?.adjustPointSize(by: 1) }
     @objc private func smallerCommand() { container?.adjustPointSize(by: -1) }
     @objc private func actualSizeCommand() { container?.resetPointSize() }
+
+    /// Comments out the current or selected lines, or uncomments them. The
+    /// change reaches the controller as typing does.
+    @objc func toggleComment() {
+        guard isEditable, let edit = CodeComments.toggle(in: text, selection: selectedRange, language: language),
+              let start = position(from: beginningOfDocument, offset: edit.range.location),
+              let end = position(from: start, offset: edit.range.length),
+              let range = textRange(from: start, to: end) else { return }
+        replace(range, withText: edit.replacement)
+        selectedRange = edit.selection
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(toggleComment) { return isEditable && language.commentMarkers != nil }
+        return super.canPerformAction(action, withSender: sender)
+    }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)

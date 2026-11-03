@@ -77,6 +77,32 @@ struct CodeEditorTests {
         #expect(String(decoding: PlainText.data(from: document), as: UTF8.self) == "func f() {\n    g((\"(\")\n}\n")
     }
 
+    @Test("⌘/ comments the selected lines out and back in, and the change reaches the document")
+    func toggleComment() throws {
+        let (controller, latest) = makeEditor("let a = 1\nlet b = 2\nlet c = 3")
+        let textView = controller.view.textView
+        textView.selectedRange = NSRange(location: 4, length: 10)
+        #expect(textView.canPerformAction(#selector(CodeTextView.toggleComment), withSender: nil))
+        textView.toggleComment()
+        #expect(textView.text == "// let a = 1\n// let b = 2\nlet c = 3")
+        #expect(textView.selectedRange == NSRange(location: 7, length: 13))
+        controller.flush()
+        let document = try #require(latest())
+        #expect(String(decoding: PlainText.data(from: document), as: UTF8.self) == "// let a = 1\n// let b = 2\nlet c = 3\n")
+
+        textView.toggleComment()
+        #expect(textView.text == "let a = 1\nlet b = 2\nlet c = 3")
+    }
+
+    @Test("⌘/ does nothing in plain text, which has no comments")
+    func toggleCommentInPlainText() {
+        let (controller, _) = makeEditor("hello", language: .plainText)
+        let textView = controller.view.textView
+        #expect(!textView.canPerformAction(#selector(CodeTextView.toggleComment), withSender: nil))
+        textView.toggleComment()
+        #expect(textView.text == "hello")
+    }
+
     @Test("A long line makes the text wider than the screen rather than wrapping")
     func longLines() {
         let (controller, _) = makeEditor("let short = 1\nlet long = \"" + String(repeating: "x", count: 200) + "\"")
