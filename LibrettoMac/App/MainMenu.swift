@@ -125,6 +125,8 @@ enum MainMenu {
             item("Mac.Menu.Delete", #selector(NSText.delete(_:))),
             item("Mac.Menu.SelectAll", #selector(NSText.selectAll(_:)), "a"),
             .separator(),
+            item("CodeEditor.ToggleComment", #selector(CodeTextView.toggleComment(_:)), "/"),
+            .separator(),
             with(find), with(spelling), with(substitutions),
         ])
     }

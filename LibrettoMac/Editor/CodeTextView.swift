@@ -1,7 +1,10 @@
 import AppKit
+import LibrettoEngine
 
 /// The code editor's text, with the line the insertion point is on lightly highlighted.
 final class CodeTextView: NSTextView {
+    /// Whose comment markers Toggle Comment writes.
+    var language = SourceLanguage.plainText
     /// Where the current line is drawn, so it can be redrawn when the insertion point leaves it.
     private var highlightedRect: NSRect?
 
@@ -22,6 +25,21 @@ final class CodeTextView: NSTextView {
     override func didChangeText() {
         super.didChangeText()
         refreshCurrentLine()
+    }
+
+    /// Comments out the current or selected lines, or uncomments them. The
+    /// change reaches the delegate as typing does.
+    @objc func toggleComment(_ sender: Any?) {
+        guard isEditable, let edit = CodeComments.toggle(in: string, selection: selectedRange(), language: language),
+              shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+        textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
+        didChangeText()
+        setSelectedRange(edit.selection)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleComment(_:)) { return isEditable && language.commentMarkers != nil }
+        return super.validateMenuItem(menuItem)
     }
 
     private func refreshCurrentLine() {
