@@ -278,6 +278,68 @@ struct SyntaxHighlighterTests {
         #expect(SourceLanguage(contentType: .data, filename: "notes") == nil)
     }
 
+    @Test("TOML's keys, tables, strings and values")
+    func toml() {
+        let found = tokens("""
+            # Cargo
+            [package]
+            name = "libretto"
+            "quoted key" = 'raw\\path'
+            version.major = 1
+            [[bin]]
+            features = [
+              ["a", "b"],
+            ]
+            enabled = true # on
+            """, .toml)
+        #expect(found["# Cargo"] == .comment)
+        #expect(found["[package]"] == .tag)
+        #expect(found["name"] == .property)
+        #expect(found["\"libretto\""] == .string)
+        #expect(found["\"quoted key\""] == .property)
+        #expect(found["'raw\\path'"] == .string)
+        #expect(found["version.major"] == .property)
+        #expect(found["1"] == .number)
+        #expect(found["[[bin]]"] == .tag)
+        #expect(found["[\"a\", \"b\"]"] == nil)
+        #expect(found["\"a\""] == .string)
+        #expect(found["true"] == .keyword)
+        #expect(found["# on"] == .comment)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Cargo.toml") == .toml)
+        #expect(SourceLanguage(contentType: .data, filename: "Pipfile") == .toml)
+    }
+
+    @Test("INI, .properties and .env keys, sections and comments")
+    func ini() {
+        let found = tokens("""
+            ; settings
+            [server]
+            host = example.com
+            path=a;b
+            debug: on
+            # done
+            """, .ini)
+        #expect(found["; settings"] == .comment)
+        #expect(found["[server]"] == .tag)
+        #expect(found["host"] == .property)
+        #expect(found["path"] == .property)
+        #expect(found.keys.contains(";b") == false)
+        #expect(found["debug"] == .property)
+        #expect(found["on"] == .keyword)
+        #expect(found["# done"] == .comment)
+        let env = tokens("export API_KEY=\"abc\"\nHOME_DIR=${HOME}/x\n", .ini)
+        #expect(env["export"] == .keyword)
+        #expect(env["API_KEY"] == .property)
+        #expect(env["\"abc\""] == .string)
+        #expect(env["${HOME}"] == .variable)
+        #expect(tokens("log4j.rootLogger=INFO, stdout", .ini)["log4j.rootLogger"] == .property)
+        #expect(SourceLanguage(contentType: .plainText, filename: "setup.cfg") == .ini)
+        #expect(SourceLanguage(contentType: .plainText, filename: "app.properties") == .ini)
+        #expect(SourceLanguage(contentType: .data, filename: ".env") == .ini)
+        #expect(SourceLanguage(contentType: .data, filename: ".env.local") == .ini)
+        #expect(SourceLanguage(contentType: .data, filename: ".editorconfig") == .ini)
+    }
+
     @Test("Every language has a name for the menu")
     func names() {
         #expect(SourceLanguage.allCases.first == .plainText)
@@ -369,6 +431,8 @@ struct SyntaxHighlighterTests {
         .xml: "<?xml version=\"1.0\"?>\n<!-- c\n d --><plist><dict>\n<key a='x\ny'>Name</key><![CDATA[a\n<b>]]>\n<script>let a = 1</script></dict>\n",
         .scss: "$size: 4px; // c\n.card { &:hover { margin: #{$size} } /* x\n */ }\n%base { color: red }\n",
         .less: "@size: 4px; // c\n@media screen { .card { margin: @size; } }\n.a-@{name} { color: #fff /* x\n */ }\n",
+        .toml: "[server] # c\nname = \"Libretto\"\ntext = \"\"\"\nmany\nlines\"\"\"\n[[bin]]\nports = [ [1, 2], [3] ]\npath = '''a\nb'''\n",
+        .ini: "; c\n[core]\nname = Libretto\nexport HOME=$HOME:/bin\nurl: \"http://x\" # not\n! bang\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.

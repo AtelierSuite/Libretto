@@ -16,6 +16,9 @@ extension UTType {
     public static let sqlSource = UTType(importedAs: "org.iso.sql", conformingTo: .sourceCode)
     public static let scssSource = UTType(importedAs: "org.sass-lang.scss", conformingTo: .sourceCode)
     public static let lessSource = UTType(importedAs: "org.lesscss.less", conformingTo: .sourceCode)
+    public static let toml = UTType(importedAs: "org.toml-lang.toml", conformingTo: .plainText)
+    public static let ini = UTType(importedAs: "com.microsoft.ini", conformingTo: .plainText)
+    public static let javaProperties = UTType(importedAs: "com.sun.java-properties", conformingTo: .plainText)
     public static let jsonWithComments = UTType(importedAs: "com.microsoft.jsonc", conformingTo: .json)
     public static let json5 = UTType(importedAs: "org.json5", conformingTo: .json)
     public static let interfaceBuilderDocument = UTType(
@@ -36,6 +39,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case css
     case go
     case html
+    case ini
     case java
     case javaScript
     case json
@@ -50,6 +54,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case shell
     case sql
     case swift
+    case toml
     case typeScript
     case xml
     case yaml
@@ -58,10 +63,9 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     public static let contentTypes: [UTType] = [
         .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .scssSource, .lessSource,
         .css, .shellScript, .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader,
-        .cSource, .cHeader,
-        .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript, .sqlSource,
-        .jsonWithComments, .json5, .json, .yaml, .interfaceBuilderDocument, .storyboard, .msBuildProject,
-        .propertyList, .svg, .xml, .mpeg2TransportStream,
+        .cSource, .cHeader, .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript,
+        .phpScript, .sqlSource, .jsonWithComments, .json5, .json, .yaml, .toml, .ini, .javaProperties,
+        .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml, .mpeg2TransportStream,
     ]
 
     /// The language's name, as a menu of them shows it.
@@ -74,6 +78,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .css: return "CSS"
         case .go: return "Go"
         case .html: return "HTML"
+        case .ini: return "INI"
         case .java: return "Java"
         case .javaScript: return "JavaScript"
         case .json: return "JSON"
@@ -88,6 +93,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .shell: return "Shell"
         case .sql: return "SQL"
         case .swift: return "Swift"
+        case .toml: return "TOML"
         case .typeScript: return "TypeScript"
         case .xml: return "XML"
         case .yaml: return "YAML"
@@ -103,6 +109,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .css: return ["css"]
         case .go: return ["go"]
         case .html: return ["html", "htm"]
+        case .ini: return ["ini", "cfg", "properties"]
         case .java: return ["java"]
         case .javaScript: return ["js", "mjs", "cjs", "jsx"]
         case .json: return ["json", "jsonc", "json5"]
@@ -117,6 +124,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .shell: return ["sh", "bash", "zsh", "ksh"]
         case .sql: return ["sql"]
         case .swift: return ["swift"]
+        case .toml: return ["toml"]
         case .typeScript: return ["ts", "mts", "cts", "tsx"]
         case .xml: return ["xml", "plist", "svg", "xib", "storyboard", "csproj", "vbproj", "fsproj"]
         case .yaml: return ["yaml", "yml"]
@@ -132,13 +140,23 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         ".kshrc": .shell, "pkgbuild": .shell,
         // Their `#` comments read as the shell's, and little else in them looks like code.
         ".gitignore": .shell, ".gitattributes": .shell, ".dockerignore": .shell, ".npmignore": .shell,
-        ".env": .shell,
+        ".env": .ini, ".editorconfig": .ini, ".gitconfig": .ini, ".gitmodules": .ini, ".npmrc": .ini,
+        "pipfile": .toml, "cargo.lock": .toml, "poetry.lock": .toml, "uv.lock": .toml,
     ]
+
+    /// The language a file's whole name, in lower case, gives it.
+    private static func language(named name: String) -> SourceLanguage? {
+        if let language = filenames[name] { return language }
+        // `.env.local`, `.env.production` and the rest.
+        if name.hasPrefix(".env.") { return .ini }
+        return nil
+    }
 
     /// The language of a file, from its name if it has one, or else its type.
     public init?(contentType: UTType, filename: String?) {
         // A name the language is known by comes before an extension, which `.zshrc` would seem to be.
-        if let name = (filename as NSString?)?.lastPathComponent.lowercased(), let language = Self.filenames[name] {
+        if let name = (filename as NSString?)?.lastPathComponent.lowercased(),
+           let language = Self.language(named: name) {
             self = language
             return
         }
@@ -151,11 +169,12 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         let types: [(UTType, SourceLanguage)] = [
             (.swiftSource, .swift), (.pythonScript, .python), (.typeScriptSource, .typeScript),
             (.mpeg2TransportStream, .typeScript), (.json, .json), (.javaScript, .javaScript), (.html, .html),
-            (.scssSource, .scss), (.lessSource, .less), (.css, .css), (.objectiveCSource, .objectiveC), (.objectiveCPlusPlusSource, .objectiveC),
-            (.cPlusPlusSource, .cPlusPlus), (.cPlusPlusHeader, .cPlusPlus), (.cSource, .c), (.cHeader, .c),
-            (.cSharpSource, .cSharp), (.javaSource, .java), (.kotlinSource, .kotlin), (.goSource, .go),
-            (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql), (.yaml, .yaml),
-            (.propertyList, .xml), (.svg, .xml), (.xml, .xml), (.shellScript, .shell),
+            (.scssSource, .scss), (.lessSource, .less), (.css, .css), (.objectiveCSource, .objectiveC),
+            (.objectiveCPlusPlusSource, .objectiveC), (.cPlusPlusSource, .cPlusPlus), (.cPlusPlusHeader, .cPlusPlus),
+            (.cSource, .c), (.cHeader, .c), (.cSharpSource, .cSharp), (.javaSource, .java), (.kotlinSource, .kotlin),
+            (.goSource, .go), (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql),
+            (.yaml, .yaml), (.toml, .toml), (.ini, .ini), (.javaProperties, .ini), (.propertyList, .xml),
+            (.svg, .xml), (.xml, .xml), (.shellScript, .shell),
         ]
         if let language = types.first(where: { contentType.conforms(to: $0.0) })?.1 {
             self = language

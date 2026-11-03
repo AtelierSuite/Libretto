@@ -348,6 +348,14 @@ private struct CodeRules {
     var isShell = false
     /// JSON and YAML: a string or name before a colon is a key, coloured as a property.
     var colonsMarkKeys = false
+    /// TOML and INI: what starts a line, up to one of these, is a key.
+    var keySeparators = ""
+    /// `.env`: words that may come before a key, as in `export NAME=value`.
+    var keyPrefixes: [String] = []
+    /// TOML and INI: a line of `[section]` or `[[table]]` is a header, coloured as a tag.
+    var sectionHeaders = false
+    /// INI: a comment only starts a line, so a `;` in a value is no comment.
+    var commentsStartLines = false
 
     init(_ language: SourceLanguage) {
         let quoted = [StringRule(delimiter: "\"", spansLines: false), StringRule(delimiter: "'", spansLines: false)]
@@ -464,6 +472,28 @@ private struct CodeRules {
             capitalisedTypes = false
             commentsStartWords = true
             colonsMarkKeys = true
+        case .toml:
+            lineComments = ["#"]
+            strings = [
+                StringRule(delimiter: "\"\"\"", spansLines: true),
+                StringRule(delimiter: "'''", spansLines: true, escapes: false),
+                quoted[0], StringRule(delimiter: "'", spansLines: false, escapes: false),
+            ]
+            keywords = ["true", "false", "inf", "nan"]
+            capitalisedTypes = false
+            keySeparators = "="
+            sectionHeaders = true
+        case .ini:
+            // INI, Java's `.properties`, `.editorconfig` and `.env`.
+            lineComments = ["#", ";", "!"]
+            strings = quoted
+            keywords = ["true", "false", "yes", "no", "on", "off", "null"]
+            capitalisedTypes = false
+            variablePrefix = "$"
+            keySeparators = "=:"
+            keyPrefixes = ["export "]
+            sectionHeaders = true
+            commentsStartLines = true
         case .plainText, .html, .css, .less, .scss, .xml:
             // HTML, XML and CSS and its dialects are scanned on their own; their comments are here for commenting
             // lines out, with SCSS's and Less's `//`.
@@ -831,11 +861,17 @@ private struct Scanner {
                 continue
             }
             for comment in rules.lineComments where matches(comment, at: index)
-                && (!rules.commentsStartWords || isSpace(previous) || index == range.lowerBound) {
+                && (!rules.commentsStartWords || isSpace(previous) || index == range.lowerBound)
+                && (!rules.commentsStartLines || startsLine(index, from: range.lowerBound)) {
                 let stop = lineEnd(from: index, before: end)
                 add(index..<stop, .comment)
                 index = stop
                 continue scanning
+            }
+            if !rules.keySeparators.isEmpty, !isSpace(current), startsLine(index, from: range.lowerBound),
+               let stop = scanLineKey(from: index, before: end, rules: rules) {
+                index = stop
+                continue
             }
             for rule in rules.strings where matches(rule.delimiter, at: index) {
                 let stop = stringEnd(rule, from: index, before: end)
@@ -893,6 +929,42 @@ private struct Scanner {
             }
             index += 1
         }
+    }
+
+    /// Whether only spaces come before `index` on its line.
+    private mutating func startsLine(_ index: Int, from start: Int) -> Bool {
+        var position = index - 1
+        while position >= start, units[position] == 0x20 || units[position] == 0x09 { position -= 1 }
+        return position < start || isNewline(units[position])
+    }
+
+    /// A section header, or a key up to its separator, from the start of a
+    /// line, and where scanning goes on from after it.
+    private mutating func scanLineKey(from start: Int, before end: Int, rules: CodeRules) -> Int? {
+        let stop = lineEnd(from: start, before: end)
+        if rules.sectionHeaders, units[start] == Self.ascii("[") {
+            let close = matches("[[", at: start) ? "]]" : "]"
+            guard let closing = first(close, from: start + 1, before: stop) else { return nil }
+            let after = closing + close.utf16.count
+            // Only a header has nothing but a comment after it, unlike a nested array in TOML.
+            var rest = after
+            while rest < stop, units[rest] == 0x20 || units[rest] == 0x09 { rest += 1 }
+            guard rest == stop || rules.lineComments.contains(where: { matches($0, at: rest) }) else { return nil }
+            add(start..<after, .tag)
+            return after
+        }
+        var keyStart = start
+        for prefix in rules.keyPrefixes where matches(prefix, at: start) {
+            add(start..<(start + prefix.utf16.count - 1), .keyword)
+            keyStart = start + prefix.utf16.count
+        }
+        guard let separator = (keyStart..<stop).first(where: { rules.keySeparators.utf16.contains(units[$0]) }) else {
+            return nil
+        }
+        var keyStop = separator
+        while keyStop > keyStart, units[keyStop - 1] == 0x20 || units[keyStop - 1] == 0x09 { keyStop -= 1 }
+        add(keyStart..<keyStop, .property)
+        return max(separator, start + 1)
     }
 
     /// Whether a colon follows `index`, making what ends there a key. A
