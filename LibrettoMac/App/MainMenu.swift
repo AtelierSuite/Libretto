@@ -100,6 +100,7 @@ enum MainMenu {
             findItem("Mac.Menu.Find.Previous", .previousMatch, "g", [.command, .shift]),
             findItem("Mac.Menu.Find.UseSelection", .setSearchString, "e"),
             item("Mac.Menu.Find.JumpToSelection", #selector(NSResponder.centerSelectionInVisibleArea(_:)), "j"),
+            item("CodeEditor.GoToLine", #selector(DocumentWindowController.goToLine(_:)), "l"),
         ])
         let spelling = menu("Mac.Menu.Spelling", [
             item("Mac.Menu.Spelling.Show", #selector(NSText.showGuessPanel(_:)), ":"),

@@ -302,6 +302,28 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
+    // MARK: - Go to line
+
+    @objc func goToLine(_ sender: Any?) {
+        guard let window, let codeEditor else { return }
+        let field = NSTextField(string: "")
+        field.placeholderString = String(localized: "CodeEditor.GoToLine.Placeholder")
+        field.frame = NSRect(x: 0, y: 0, width: 200, height: 22)
+        field.setAccessibilityIdentifier("lineNumber")
+        let alert = NSAlert()
+        alert.messageText = String(localized: "CodeEditor.GoToLine.Title")
+        alert.informativeText = String(format: String(localized: "CodeEditor.GoToLine.Message"), codeEditor.lineCount)
+        alert.accessoryView = field
+        alert.addButton(withTitle: String(localized: "CodeEditor.GoToLine.Go"))
+        alert.addButton(withTitle: String(localized: "Common.Cancel"))
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            // Anything but a number goes nowhere.
+            guard response == .alertFirstButtonReturn, let number = Int(field.stringValue.trimmed) else { return }
+            self?.codeEditor?.goToLine(number)
+        }
+    }
+
     // MARK: - Zoom
 
     private var pageScrollView: NSScrollView? { pageEditor?.canvas.enclosingScrollView }
@@ -337,6 +359,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         case #selector(insertTable(_:)), #selector(insertPicture(_:)), #selector(editLink(_:)),
              #selector(addComment(_:)), #selector(showFormatInspector(_:)):
             return pageEditor != nil && libretto?.isInViewingMode == false
+        case #selector(goToLine(_:)):
+            return codeEditor != nil
         case #selector(showUnsupportedFeatures(_:)):
             return libretto?.content.unsupportedFeatures.isEmpty == false
         default:
