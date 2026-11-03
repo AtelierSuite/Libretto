@@ -20,6 +20,9 @@ public enum SyntaxKind: Sendable {
     case property
     /// Shell variables.
     case variable
+    /// The lines a diff adds, and those it removes.
+    case added
+    case removed
 }
 
 public struct SyntaxToken: Equatable, Sendable {
@@ -49,7 +52,7 @@ public enum SyntaxHighlighter: Sendable {
     /// `[[`. Plain text has none.
     public static func quotes(for language: SourceLanguage) -> Set<UInt16> {
         switch language {
-        case .plainText: return []
+        case .plainText, .diff: return []
         case .html, .xml, .css, .scss, .less: return [0x22, 0x27]
         default:
             return Set(CodeRules(language).strings.filter { $0.closing == nil }.compactMap { $0.delimiter.utf16.first })
@@ -117,6 +120,8 @@ public enum SyntaxHighlighter: Sendable {
         case .tag: hex = dark ? 0x5DD8FF : 0x0D5786
         case .property: hex = dark ? 0x7CC1B0 : 0x2A5B60
         case .variable: hex = dark ? 0xC8A7F0 : 0x6C36A9
+        case .added: hex = dark ? 0x85DB8F : 0x175E1E
+        case .removed: hex = dark ? 0xFF9C9C : 0x9C1A1F
         }
         return PlatformColor.sRGB(
             red: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255,
@@ -290,10 +295,13 @@ fileprivate extension [Checkpoint] {
 }
 
 /// What the scan holds besides where it is: for CSS, how deep in blocks it
-/// is and whether the statement is a selector.
+/// is and whether the statement is a selector; for a diff, how many lines
+/// are left on each side of the hunk under way.
 fileprivate struct ScanState: Equatable, Sendable {
     var depth = 0
     var isSelector: Bool?
+    var oldLinesLeft = 0
+    var newLinesLeft = 0
 }
 
 // MARK: - Languages
@@ -572,7 +580,7 @@ private struct CodeRules {
             keywords = Self.graphQL
             attributePrefix = "@"
             variablePrefixes = "$"
-        case .plainText, .html, .css, .less, .scss, .xml:
+        case .plainText, .html, .css, .less, .scss, .xml, .diff:
             // HTML, XML and CSS and its dialects are scanned on their own; their comments are here for commenting
             // lines out, with SCSS's and Less's `//`.
             lineComments = language == .scss || language == .less ? ["//"] : []
@@ -843,6 +851,7 @@ private struct Scanner {
         switch language {
         case .html: scanHTML(all, from: start?.index ?? 0)
         case .xml: scanHTML(all, isXML: true, from: start?.index ?? 0)
+        case .diff: scanDiff(all, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
         case .css, .scss, .less:
             let dialect: CSSDialect = language == .scss ? .scss : language == .less ? .less : .css
             scanCSS(all, dialect: dialect, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
@@ -1268,6 +1277,70 @@ private struct Scanner {
             scanCSS(index..<closing)
         }
         return closing
+    }
+
+    // MARK: Diffs
+
+    /// What a header line of a diff starts with, from `diff` and `git diff`.
+    private static let diffHeaders = [
+        "diff ", "index ", "--- ", "+++ ", "old mode ", "new mode ", "deleted file mode ", "new file mode ",
+        "similarity index ", "dissimilarity index ", "rename from ", "rename to ", "copy from ", "copy to ",
+        "Binary files ", "Only in ",
+    ]
+
+    /// A diff, a line at a time: its headers, the lines it adds and removes,
+    /// and the `@@` that starts each hunk of them. From `start` if this is
+    /// the whole text, where it marks checkpoints.
+    mutating func scanDiff(_ range: Range<Int>, from start: Checkpoint? = nil) {
+        let end = range.upperBound
+        var index = start?.index ?? range.lowerBound
+        // The lines left in the hunk under way, as its header counts them, so
+        // that a removed `-- x` is not taken for the header of a file.
+        var oldLeft = start?.state.oldLinesLeft ?? 0
+        var newLeft = start?.state.newLinesLeft ?? 0
+        while index < end {
+            if start != nil, checkpoint(index, ScanState(oldLinesLeft: oldLeft, newLinesLeft: newLeft)) { return }
+            let stop = lineEnd(from: index, before: end)
+            let current = index < stop ? units[index] : 0x20
+            if oldLeft > 0 || newLeft > 0 {
+                switch current {
+                case Self.ascii("+"):
+                    add(index..<stop, .added)
+                    newLeft -= 1
+                case Self.ascii("-"):
+                    add(index..<stop, .removed)
+                    oldLeft -= 1
+                case Self.ascii("\\"):
+                    // `\ No newline at end of file`.
+                    add(index..<stop, .comment)
+                default:
+                    oldLeft -= 1
+                    newLeft -= 1
+                }
+            } else if matches("@@ ", at: index) {
+                let close = first(" @@", from: index + 2, before: stop).map { $0 + 3 } ?? stop
+                add(index..<close, .tag)
+                oldLeft = hunkCount(after: "-", from: index, before: close)
+                newLeft = hunkCount(after: "+", from: index, before: close)
+            } else if Self.diffHeaders.contains(where: { matches($0, at: index) }) {
+                add(index..<stop, .keyword)
+            }
+            index = stop
+            // A line ends at one separator, or at a carriage return and the line feed after it.
+            if index < end { index += matches("\r\n", at: index) ? 2 : 1 }
+        }
+    }
+
+    /// How many lines a hunk's header says it has on one side, from its `-12,5` or its `+12,6`.
+    private mutating func hunkCount(after sign: String, from start: Int, before end: Int) -> Int {
+        guard let signIndex = first(" " + sign, from: start, before: end) else { return 0 }
+        var position = signIndex + 2
+        while position < end, isDigit(units[position]) { position += 1 }
+        guard position < end, units[position] == Self.ascii(",") else { return 1 }
+        let countStart = position + 1
+        position = countStart
+        while position < end, isDigit(units[position]) { position += 1 }
+        return Int(word(countStart..<position)) ?? 0
     }
 
     // MARK: CSS

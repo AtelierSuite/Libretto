@@ -83,7 +83,8 @@ public struct CodeTyping: Sendable {
         replacing range: NSRange, with typed: String, in text: NSString, tokens: [SyntaxToken]
     ) -> CodeEdit? {
         let units = Array(typed.utf16)
-        let isCode = language != .plainText
+        // A diff is lines of text, whatever they were cut from.
+        let isCode = language != .plainText && language != .diff
         let before = range.location > 0 ? text.character(at: range.location - 1) : nil
         let after = NSMaxRange(range) < text.length ? text.character(at: NSMaxRange(range)) : nil
 

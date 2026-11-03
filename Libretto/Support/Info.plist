@@ -78,6 +78,7 @@
 				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
+				<string>org.gnu.diff</string>
 				<string>public.perl-script</string>
 				<string>org.lua.lua-source</string>
 				<string>org.dartlang.dart-source</string>
@@ -930,6 +931,29 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/graphql</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Diff</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.gnu.diff</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>diff</string>
+					<string>patch</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-diff</string>
+					<string>text/x-patch</string>
 				</array>
 			</dict>
 		</dict>

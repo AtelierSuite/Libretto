@@ -369,6 +369,51 @@ struct SyntaxHighlighterTests {
         #expect(found["true"] == .keyword)
     }
 
+    @Test("A diff's headers, hunks, and the lines it adds and removes")
+    func diff() {
+        let found = tokens("""
+            diff --git a/main.lua b/main.lua
+            index 3b18e51..a2c4f9d 100644
+            --- a/main.lua
+            +++ b/main.lua
+            @@ -1,3 +1,3 @@ local function greet()
+             local name = "world"
+            --- say hello
+            +-- say hi
+            \\ No newline at end of file
+             print(name)
+            -- not in a hunk
+            """, .diff)
+        #expect(found["diff --git a/main.lua b/main.lua"] == .keyword)
+        #expect(found["index 3b18e51..a2c4f9d 100644"] == .keyword)
+        #expect(found["--- a/main.lua"] == .keyword)
+        #expect(found["+++ b/main.lua"] == .keyword)
+        #expect(found["@@ -1,3 +1,3 @@"] == .tag)
+        #expect(found["--- say hello"] == .removed)
+        #expect(found["+-- say hi"] == .added)
+        #expect(found["\\ No newline at end of file"] == .comment)
+        #expect(found[" print(name)"] == nil)
+        #expect(found["-- not in a hunk"] == nil)
+        #expect(tokens("@@ -5 +5 @@\n-a\n+b\n-c", .diff)["-c"] == nil)
+        #expect(tokens("@@ -1 +1 @@\r\n-a\r\n+b\r\n", .diff)["+b"] == .added)
+        #expect(SourceLanguage(contentType: .plainText, filename: "fix.patch") == .diff)
+        #expect(SourceLanguage.diff.displayName != "Language.Diff")
+    }
+
+    @Test("Each colour has the contrast of the rest against its background")
+    func diffColours() {
+        func luminance(_ color: UIColor) -> CGFloat {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            let linear = { (value: CGFloat) in value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+        for kind in [SyntaxKind.added, .removed] {
+            #expect(1.05 / (luminance(SyntaxHighlighter.color(for: kind, scheme: .light)) + 0.05) >= 7.5)
+            #expect((luminance(SyntaxHighlighter.color(for: kind, scheme: .dark)) + 0.05) / 0.05 >= 10)
+        }
+    }
+
     @Test("JSON and YAML keys apart from their values")
     func data() {
         let json = tokens("{\"name\" : \"Libretto\", \"open\": true, \"count\": 3}", .json)
@@ -606,6 +651,7 @@ struct SyntaxHighlighterTests {
         .elixir: "defmodule A do\n  @doc \"\"\"\n  many\n  \"\"\" # c\n  def f, do: :ok\nend\n",
         .haskell: "{- block\n comment -} main :: IO () -- c\nmain = foldl' f 0 \"a\"\n",
         .graphQL: "\"\"\"\ndoc\n\"\"\" type Query @key { user(id: $id): User } # c\n",
+        .diff: "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@ f\n x\n--- y\n+++ z\n\\ No newline at end of file\n w\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.
@@ -615,9 +661,17 @@ struct SyntaxHighlighterTests {
         "let", "class", "x", "42", " ", "\t", "é", "", "", "",
     ]
 
+    /// Pieces of diffs: what starts their lines, and hunks' headers, whose counts the lines after them depend on.
+    private static let diffFragments = [
+        "\n", "\n", "\r\n", "+", "-", " ", "\\", "@@ -1,2 +1,3 @@", "@@ -1 +1 @@", "@@ ", " @@", ",", "2", "--- a", "x", "",
+    ]
+
     /// Edits `text` at random, checking after each edit that what was found
     /// again around it is what a scan of the whole text finds.
-    private func checkEdits(_ text: String, _ language: SourceLanguage, count: Int, seed: UInt64) {
+    private func checkEdits(
+        _ text: String, _ language: SourceLanguage, count: Int, seed: UInt64,
+        fragments: [String] = SyntaxHighlighterTests.fragments
+    ) {
         var random = SeededRandom(seed)
         let text = NSMutableString(string: text)
         var highlights = SyntaxHighlights(text as String, language: language)
@@ -627,7 +681,7 @@ struct SyntaxHighlighterTests {
             let location = atEnd ? text.length : Int.random(in: 0...text.length, using: &random)
             let longest = Int.random(in: 0..<8, using: &random) == 0 ? 40 : 3
             let removed = min(Int.random(in: 0...longest, using: &random), text.length - location)
-            let inserted = Self.fragments.randomElement(using: &random)!
+            let inserted = fragments.randomElement(using: &random)!
             let before = text.substring(with: NSRange(location: location, length: removed))
             text.replaceCharacters(in: NSRange(location: location, length: removed), with: inserted)
             let length = (inserted as NSString).length
@@ -650,6 +704,14 @@ struct SyntaxHighlighterTests {
         let text = Array(repeating: sample, count: 6).joined(separator: "\n")
         for seed in 1...8 {
             checkEdits(text, language, count: 150, seed: UInt64(seed * 7919 + language.rawValue.utf16.count))
+        }
+    }
+
+    @Test("Editing a diff's hunks and their headers")
+    func diffEdits() {
+        let text = Array(repeating: Self.samples[.diff]!, count: 6).joined(separator: "\n")
+        for seed in 1...8 {
+            checkEdits(text, .diff, count: 150, seed: UInt64(seed * 104_729), fragments: Self.diffFragments)
         }
     }
 

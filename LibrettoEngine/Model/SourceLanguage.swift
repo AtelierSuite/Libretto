@@ -21,6 +21,7 @@ extension UTType {
     public static let javaProperties = UTType(importedAs: "com.sun.java-properties", conformingTo: .plainText)
     public static let dockerfile = UTType(importedAs: "com.docker.dockerfile", conformingTo: .sourceCode)
     public static let makefile = UTType(importedAs: "org.gnu.makefile", conformingTo: .sourceCode)
+    public static let diff = UTType(importedAs: "org.gnu.diff", conformingTo: .plainText)
     public static let luaSource = UTType(importedAs: "org.lua.lua-source", conformingTo: .sourceCode)
     public static let dartSource = UTType(importedAs: "org.dartlang.dart-source", conformingTo: .sourceCode)
     public static let scalaSource = UTType(importedAs: "org.scala-lang.scala-source", conformingTo: .sourceCode)
@@ -48,6 +49,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case cSharp
     case css
     case dart
+    case diff
     case dockerfile
     case elixir
     case go
@@ -86,8 +88,8 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         .shellScript, .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader, .cSource,
         .cHeader, .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript,
         .perlScript, .sqlSource, .luaSource, .dartSource, .scalaSource, .rSource, .zigSource, .elixirSource,
-        .haskellSource, .graphQLSource, .dockerfile, .makefile, .jsonWithComments, .json5, .json, .yaml, .toml, .ini,
-        .javaProperties, .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml,
+        .haskellSource, .graphQLSource, .dockerfile, .makefile, .diff, .jsonWithComments, .json5, .json, .yaml, .toml,
+        .ini, .javaProperties, .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml,
         .mpeg2TransportStream,
     ]
 
@@ -100,6 +102,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .cSharp: return "C#"
         case .css: return "CSS"
         case .dart: return "Dart"
+        case .diff: return String(localized: "Language.Diff", bundle: .engine)
         case .dockerfile: return "Dockerfile"
         case .elixir: return "Elixir"
         case .go: return "Go"
@@ -142,6 +145,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .cSharp: return ["cs"]
         case .css: return ["css"]
         case .dart: return ["dart"]
+        case .diff: return ["diff", "patch"]
         case .dockerfile: return ["dockerfile", "containerfile"]
         case .elixir: return ["ex", "exs"]
         case .go: return ["go"]
@@ -222,7 +226,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
             (.goSource, .go), (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql),
             (.perlScript, .perl), (.luaSource, .lua), (.dartSource, .dart), (.scalaSource, .scala), (.rSource, .r),
             (.zigSource, .zig), (.elixirSource, .elixir), (.haskellSource, .haskell), (.graphQLSource, .graphQL),
-            (.dockerfile, .dockerfile), (.makefile, .makefile),
+            (.dockerfile, .dockerfile), (.makefile, .makefile), (.diff, .diff),
             (.yaml, .yaml), (.toml, .toml), (.ini, .ini), (.javaProperties, .ini), (.propertyList, .xml),
             (.svg, .xml), (.xml, .xml), (.shellScript, .shell),
         ]

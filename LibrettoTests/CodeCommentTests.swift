@@ -109,6 +109,7 @@ struct CodeCommentTests {
         #expect(SourceLanguage.xml.commentMarkers == CommentMarkers(line: [], blockOpen: "<!--", blockClose: "-->"))
         #expect(SourceLanguage.scss.commentMarkers == CommentMarkers(line: ["//"], blockOpen: "/*", blockClose: "*/"))
         #expect(SourceLanguage.plainText.commentMarkers == nil)
+        #expect(SourceLanguage.diff.commentMarkers == nil)
         #expect(SourceLanguage.json.commentMarkers == CommentMarkers(line: ["//"], blockOpen: "/*", blockClose: "*/"))
     }
 }
