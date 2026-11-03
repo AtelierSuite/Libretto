@@ -103,6 +103,33 @@ struct CodeEditorTests {
         #expect(textView.text == "hello")
     }
 
+    @Test("Typing keeps the file's line endings and encoding, until it types what the encoding cannot write")
+    func textFile() throws {
+        let file = try #require("let a = \"あ\"\r\n".data(using: .shiftJIS))
+        var document = PlainText.document(from: file, format: PlainText.codeFormat)
+        document.sourceLanguage = .swift
+        let controller = CodeEditorController(document: document, language: .swift, scheme: .light)
+        var latest: WordDocument?
+        controller.onChange = { latest = $0 }
+        let textView = controller.view.textView
+
+        textView.selectedRange = NSRange(location: (textView.text as NSString).length, length: 0)
+        textView.insertText("\nlet b = \"い\"")
+        controller.textViewDidChange(textView)
+        controller.flush()
+        var typed = try #require(latest)
+        #expect(typed.lineEnding == .crlf)
+        #expect(typed.textEncoding == .shiftJIS)
+        #expect(PlainText.data(from: typed) == "let a = \"あ\"\r\nlet b = \"い\"\r\n".data(using: .shiftJIS))
+
+        textView.insertText(" // 🙂")
+        controller.textViewDidChange(textView)
+        controller.flush()
+        typed = try #require(latest)
+        #expect(typed.lineEnding == .crlf)
+        #expect(typed.textEncoding == .utf8)
+    }
+
     @Test("A long line makes the text wider than the screen rather than wrapping")
     func longLines() {
         let (controller, _) = makeEditor("let short = 1\nlet long = \"" + String(repeating: "x", count: 200) + "\"")
