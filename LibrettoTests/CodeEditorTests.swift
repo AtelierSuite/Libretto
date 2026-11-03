@@ -88,4 +88,36 @@ struct CodeEditorTests {
         view.resetPointSize()
         #expect(view.pointSize == CodeEditorContainer.defaultPointSize)
     }
+
+    @Test("Typing colours the text as colouring it whole does, comments opened and closed included")
+    func typingColours() {
+        let lines = (0..<200).map { "let value\($0) = \"\($0)\" // \($0)" }
+        let (controller, _) = makeEditor(lines.joined(separator: "\n"))
+        let textView = controller.view.textView
+        let storage = textView.textStorage
+        // Told of each edit, so as to colour only around it.
+        #expect(storage.delegate === controller)
+        for (anchor, typed) in [("let value50", "/* "), ("let value60", "*/ "), ("value70", "x"), ("/* ", "")] {
+            let found = (textView.text as NSString).range(of: anchor)
+            textView.selectedRange = typed.isEmpty ? found : NSRange(location: found.location, length: 0)
+            if typed.isEmpty { textView.deleteBackward() } else { textView.insertText(typed) }
+            controller.textViewDidChange(textView)
+
+            let whole = NSMutableAttributedString(attributedString: storage)
+            SyntaxHighlighter.apply(.swift, to: whole, scheme: .light, plainColor: .label)
+            var same = true
+            storage.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: storage.length)) { color, range, stop in
+                var effective = NSRange()
+                let expected = whole.attribute(.foregroundColor, at: range.location, effectiveRange: &effective) as? UIColor
+                if expected != color as? UIColor || NSMaxRange(effective) < NSMaxRange(range) {
+                    same = false
+                    stop.pointee = true
+                }
+            }
+            #expect(same, "after typing \(typed.debugDescription) at \(anchor)")
+        }
+        let comment = (textView.text as NSString).range(of: "let value55").location
+        #expect(storage.attribute(.foregroundColor, at: comment, effectiveRange: nil) as? UIColor
+            == SyntaxHighlighter.color(for: .keyword, scheme: .light))
+    }
 }

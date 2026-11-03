@@ -49,7 +49,7 @@ struct CodeEditorView: UIViewRepresentable {
 /// later, as a paragraph for each line; a document changed from elsewhere,
 /// such as by an undo, replaces the text.
 @MainActor
-final class CodeEditorController: NSObject, UITextViewDelegate {
+final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTextStorageDelegate {
     private(set) var document: WordDocument
     private let language: SourceLanguage
     private var scheme: ColorScheme
@@ -58,6 +58,8 @@ final class CodeEditorController: NSObject, UITextViewDelegate {
     private var syncTask: Task<Void, Never>?
     /// Set while the editor makes an edit itself, so it is not taken for typing.
     private var isEditing = false
+    /// The syntax colouring, kept so that an edit colours only the lines around it.
+    private var coloring = SyntaxColoring()
 
     /// Hands a changed document to whoever owns it.
     var onChange: ((WordDocument) -> Void)?
@@ -69,6 +71,7 @@ final class CodeEditorController: NSObject, UITextViewDelegate {
         view = CodeEditorContainer()
         super.init()
         textView.delegate = self
+        textView.textStorage.delegate = self
         setText(PlainText.text(of: document))
     }
 
@@ -115,7 +118,7 @@ final class CodeEditorController: NSObject, UITextViewDelegate {
     }
 
     private func highlight() {
-        SyntaxHighlighter.apply(language, to: textView.textStorage, scheme: scheme, plainColor: .label)
+        coloring.apply(language, to: textView.textStorage, scheme: scheme, plainColor: .label)
     }
 
     private func textDidChange() {
@@ -168,6 +171,17 @@ final class CodeEditorController: NSObject, UITextViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         view.gutter.setNeedsDisplay()
+    }
+
+    // MARK: - Text storage
+
+    func textStorage(
+        _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorage.EditActions,
+        range editedRange: NSRange, changeInLength delta: Int
+    ) {
+        // Colouring changes attributes only, which leave the colouring as it is.
+        guard editedMask.contains(.editedCharacters) else { return }
+        coloring.noteEdit(editedRange, changeInLength: delta)
     }
 }
 
