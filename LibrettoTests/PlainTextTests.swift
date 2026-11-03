@@ -116,6 +116,26 @@ struct PlainTextTests {
         #expect(saved.regularFileContents == file)
     }
 
+    @Test("Lines are found by their number, a number past either end taken as the first or last line")
+    func lineLocations() {
+        let text = "one\ntwo\n\nfour"
+        #expect(PlainText.lineCount(of: text) == 4)
+        #expect([1, 2, 3, 4].map { PlainText.location(ofLine: $0, in: text) } == [0, 4, 8, 9])
+        #expect(PlainText.location(ofLine: 0, in: text) == 0)
+        #expect(PlainText.location(ofLine: -3, in: text) == 0)
+        #expect(PlainText.location(ofLine: 99, in: text) == 9)
+
+        // The empty line after a final line break is a line of its own.
+        #expect(PlainText.lineCount(of: "a\n") == 2)
+        #expect(PlainText.location(ofLine: 2, in: "a\n") == 2)
+        #expect(PlainText.location(ofLine: 5, in: "a\n") == 2)
+        #expect(PlainText.lineCount(of: "") == 1)
+        #expect(PlainText.location(ofLine: 3, in: "") == 0)
+
+        // Offsets are UTF-16, as text views count them.
+        #expect(PlainText.location(ofLine: 2, in: "😀é\nx") == 4)
+    }
+
     @Test("Formatting and tables come out as their text")
     func writing() {
         var document = WordDocument()
