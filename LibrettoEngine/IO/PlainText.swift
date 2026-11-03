@@ -14,33 +14,40 @@ public enum PlainText: Sendable {
     }
 
     /// The file's text, in the encoding its byte order mark names or else
-    /// UTF-8, falling back to Latin-1, with every line ending made `\n`.
+    /// UTF-8, falling back to the older encodings, with every line ending made `\n`.
     public static func string(from data: Data) -> String {
-        var text: String
-        if data.starts(with: [0xEF, 0xBB, 0xBF]) {
-            text = String(decoding: data.dropFirst(3), as: UTF8.self)
-        } else if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
-            text = String(data: data, encoding: .utf16) ?? ""
-        } else {
-            text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
-        }
-        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
-        return text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        file(from: data).text
     }
 
-    /// A document of the file's lines, all in `format`.
+    /// The file's text with every line ending made `\n`, and the encoding
+    /// and line ending it was found to have, to save it back with.
+    public static func file(from data: Data) -> (text: String, encoding: TextEncoding, lineEnding: LineEnding) {
+        var (text, encoding) = TextEncoding.decode(data)
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        let lineEnding = LineEnding.most(in: text)
+        return (text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n"), encoding, lineEnding)
+    }
+
+    /// A document of the file's lines, all in `format`, keeping the file's
+    /// encoding and line ending for when it is saved.
     public static func document(from data: Data, format: RunFormat = RunFormat()) -> WordDocument {
-        var text = string(from: data)
+        var (text, encoding, lineEnding) = file(from: data)
         // The newline ending the last line does not start another.
         if text.hasSuffix("\n") { text.removeLast() }
         var document = WordDocument()
         document.body = body(from: text, format: format)
+        document.textEncoding = encoding
+        document.lineEnding = lineEnding
         return document
     }
 
+    /// The document as a text file, in its encoding and with its line
+    /// ending. Should the text have a character the encoding cannot write, it
+    /// is saved in UTF-8 rather than with the character lost.
     public static func data(from document: WordDocument) -> Data {
         let text = text(of: document)
-        return Data((text.isEmpty ? "" : text + "\n").utf8)
+        let file = (text.isEmpty ? "" : text + "\n").replacingOccurrences(of: "\n", with: document.lineEnding.separator)
+        return document.textEncoding.data(for: file) ?? Data(file.utf8)
     }
 
     /// The document's text, its paragraphs as lines.

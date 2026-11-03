@@ -54,6 +54,9 @@ struct DocumentView: View {
                     editButton
                         .padding(.bottom, bottomToolbarInset)
                 }
+            } else {
+                textFileMenu
+                    .padding(.bottom, 8 + bottomToolbarInset)
             }
         }
             .background {
@@ -190,6 +193,62 @@ struct DocumentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
+    }
+
+    /// The file's line ending and encoding, under the code, and the way to
+    /// change what it is saved with.
+    private var textFileMenu: some View {
+        let file = document.document
+        return HStack {
+            Spacer()
+            Menu {
+                Picker(selection: Binding(get: { file.lineEnding }, set: { ending in
+                    changeTextFile { $0.lineEnding = ending }
+                })) {
+                    ForEach(LineEnding.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                } label: {
+                    Label("CodeEditor.LineEndings", systemImage: "return")
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("lineEnding")
+                Picker(selection: Binding(get: { file.textEncoding }, set: { encoding in
+                    changeTextFile { $0.textEncoding = encoding }
+                })) {
+                    ForEach(TextEncoding.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                } label: {
+                    Label("CodeEditor.Encoding", systemImage: "character.textbox")
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("textEncoding")
+            } label: {
+                Text(verbatim: "\(file.lineEnding.name)  \(file.textEncoding.name)")
+                    .font(.footnote.monospaced().weight(.medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .accessibilityLabel(Text("CodeEditor.TextFile"))
+            .accessibilityValue(Text(verbatim: "\(file.lineEnding.displayName), \(file.textEncoding.displayName)"))
+            .accessibilityIdentifier("textFile")
+        }
+        .padding(.horizontal, 20)
+    }
+
+    /// Changes how the file is saved, once typing on its way to the document has reached it.
+    /// An encoding that cannot write all of the text is turned down, the text left as it is.
+    private func changeTextFile(_ change: (inout WordDocument) -> Void) {
+        state.codeEditor?.flush()
+        var changed = document.document
+        change(&changed)
+        guard changed.textEncoding.canEncode(PlainText.text(of: changed)) else {
+            state.errorMessage = String(
+                format: String(localized: "CodeEditor.Encoding.Unwritable"), changed.textEncoding.displayName
+            )
+            return
+        }
+        state.pendingScope = .other
+        document.document = changed
     }
 
     /// Opens a panel, on the pages, where panels act on the selection.

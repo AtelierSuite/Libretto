@@ -3,15 +3,19 @@ import LibrettoEngine
 import SwiftUI
 
 /// The editor for source code and plain text: the file's text, in a fixed
-/// width font, coloured by its syntax, with no pages. Typing is handed to
-/// the document a moment after it stops; a document changed from elsewhere,
-/// such as by an undo, replaces the text.
+/// width font, coloured by its syntax, with no pages, and under it the file's
+/// line endings and encoding. Typing is handed to the document a moment after
+/// it stops; a document changed from elsewhere, such as by an undo, replaces the text.
 @MainActor
 final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDelegate {
     private(set) var document: WordDocument
     private var scheme: ColorScheme
     let scrollView: NSScrollView
     let textView: NSTextView
+    /// The text, and the bar under it.
+    let view: NSView
+    private let lineEndingButton = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let encodingButton = NSPopUpButton(frame: .zero, pullsDown: false)
     private var syncTask: Task<Void, Never>?
     /// The syntax colouring, kept so that an edit colours only the lines around it. Bracket matching
     /// and auto-closing read the tokens it last coloured by.
@@ -32,7 +36,9 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         self.document = document
         self.scheme = scheme
         (scrollView, textView) = Self.makeTextView()
+        view = NSView()
         super.init()
+        makeStatusBar()
         textView.delegate = self
         textView.textStorage?.delegate = self
         textView.isRichText = false
@@ -51,6 +57,92 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         (textView as? CodeTextView)?.language = language
         applyFont()
         setText(PlainText.text(of: document))
+        updateStatusBar()
+    }
+
+    /// The bar under the text, with the file's line endings and encoding in
+    /// menus that change what it is saved with.
+    private func makeStatusBar() {
+        let separator = NSBox()
+        separator.boxType = .separator
+        for (button, items, label, identifier) in [
+            (lineEndingButton, LineEnding.allCases.map { ($0.displayName, $0.rawValue) },
+             String(localized: "Mac.CodeEditor.LineEndings"), "lineEnding"),
+            (encodingButton, TextEncoding.allCases.map { ($0.displayName, $0.rawValue) },
+             String(localized: "Mac.CodeEditor.Encoding"), "textEncoding"),
+        ] {
+            for (title, raw) in items {
+                button.addItem(withTitle: title)
+                button.lastItem?.representedObject = raw
+            }
+            button.isBordered = false
+            button.controlSize = .small
+            button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            button.target = self
+            button.toolTip = label
+            button.setAccessibilityLabel(label)
+            button.setAccessibilityIdentifier(identifier)
+        }
+        lineEndingButton.action = #selector(lineEndingChosen(_:))
+        encodingButton.action = #selector(encodingChosen(_:))
+        let bar = NSStackView(views: [lineEndingButton, encodingButton])
+        bar.spacing = 12
+        bar.edgeInsets = NSEdgeInsets(top: 2, left: 12, bottom: 2, right: 12)
+        bar.setHuggingPriority(.defaultHigh, for: .vertical)
+
+        for subview in [scrollView, separator, bar] as [NSView] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(subview)
+        }
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            separator.topAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            separator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: separator.bottomAnchor),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+
+    private func updateStatusBar() {
+        lineEndingButton.selectItem(at: LineEnding.allCases.firstIndex(of: document.lineEnding) ?? 0)
+        encodingButton.selectItem(at: TextEncoding.allCases.firstIndex(of: document.textEncoding) ?? 0)
+    }
+
+    @objc private func lineEndingChosen(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String,
+              let ending = LineEnding(rawValue: raw) else { return }
+        changeTextFile { $0.lineEnding = ending }
+    }
+
+    @objc private func encodingChosen(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String,
+              let encoding = TextEncoding(rawValue: raw) else { return }
+        changeTextFile { $0.textEncoding = encoding }
+    }
+
+    /// Changes how the file is saved, once typing on its way to the document has reached it.
+    /// An encoding that cannot write all of the text is turned down, the text left as it is.
+    private func changeTextFile(_ change: (inout WordDocument) -> Void) {
+        flush()
+        var changed = document
+        change(&changed)
+        guard changed != document else { return }
+        guard changed.textEncoding.canEncode(textView.string) else {
+            updateStatusBar()
+            let alert = NSAlert()
+            alert.messageText = String(
+                format: String(localized: "Mac.CodeEditor.Encoding.Unwritable"), changed.textEncoding.displayName
+            )
+            alert.informativeText = String(localized: "Mac.CodeEditor.Encoding.Unwritable.Detail")
+            if let window = view.window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+            return
+        }
+        document = changed
+        onChange?(document, .other)
     }
 
     /// A text view wrapping its lines to the width of the window, with the line numbers beside it.
@@ -103,6 +195,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
             return
         }
         document = new
+        updateStatusBar()
         let text = PlainText.text(of: new)
         if text != textView.string {
             // The document's own version wins over typing not yet handed over.
@@ -209,6 +302,9 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         syncTask?.cancel()
         syncTask = nil
         document.body = PlainText.body(from: textView.string, format: PlainText.codeFormat)
+        // A character the file's encoding cannot write makes it UTF-8, as it is saved.
+        document.textEncoding = document.textEncoding.fitting(textView.string)
+        updateStatusBar()
         onChange?(document, .typing)
     }
 

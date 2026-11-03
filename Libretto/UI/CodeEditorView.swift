@@ -160,6 +160,8 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
         syncTask?.cancel()
         syncTask = nil
         document.body = PlainText.body(from: textView.text, format: PlainText.codeFormat)
+        // A character the file's encoding cannot write makes it UTF-8, as it is saved.
+        document.textEncoding = document.textEncoding.fitting(textView.text)
         onChange?(document)
     }
 

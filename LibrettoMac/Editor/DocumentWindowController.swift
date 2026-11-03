@@ -109,7 +109,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
             let editor = CodeEditor(document: content, scheme: scheme)
             editor.onChange = { [weak self] new, scope in self?.editorChanged(new, scope: scope) }
             codeEditor = editor
-            editorHost.show(editor.scrollView)
+            editorHost.show(editor.view)
             inspector.editor = nil
             setInspectorShown(false)
         } else {
