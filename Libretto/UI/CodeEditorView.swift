@@ -19,12 +19,17 @@ struct CodeEditorView: UIViewRepresentable {
         let controller = context.coordinator
         state.codeEditor = controller
         connect(controller)
+        // For the menu that changes it, once this update is over.
+        let detected = controller.indentUnit
+        let state = state
+        Task { if state.codeIndentUnit == nil { state.codeIndentUnit = detected } }
         return controller.view
     }
 
     func updateUIView(_ view: CodeEditorContainer, context: Context) {
         let controller = context.coordinator
         connect(controller)
+        if let unit = state.codeIndentUnit { controller.indentUnit = unit }
         controller.update(document: document, scheme: colorScheme)
     }
 
@@ -68,17 +73,24 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     /// Hands a changed document to whoever owns it.
     var onChange: ((WordDocument) -> Void)?
 
+    /// What Tab and the indent commands put before a line: what the file's
+    /// lines are indented with, unless another is chosen.
+    var indentUnit: IndentUnit
+
     init(document: WordDocument, language: SourceLanguage, scheme: ColorScheme) {
         self.document = document
         self.language = language
         self.scheme = scheme
+        let text = PlainText.text(of: document)
         typing = CodeTyping(language: language)
+        indentUnit = IndentUnit.detect(in: text) ?? .standard
         view = CodeEditorContainer()
         super.init()
         textView.delegate = self
         textView.textStorage.delegate = self
         textView.language = language
-        setText(PlainText.text(of: document))
+        textView.editor = self
+        setText(text)
     }
 
     /// Takes a document from the owner, showing its text if it is not the
@@ -112,6 +124,40 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     func showFind() {
         if !textView.isFirstResponder { textView.becomeFirstResponder() }
         textView.findInteraction?.presentFindNavigator(showingReplace: true)
+    }
+
+    // MARK: - Indent
+
+    /// Tab: indents the selected lines, where the selection runs onto another,
+    /// and otherwise types an indent in place of the selection.
+    func insertTab() {
+        let text = textView.text as NSString
+        let selection = textView.selectedRange
+        if IndentUnit.selectsLines(selection, in: text) {
+            indent()
+        } else {
+            apply(indentUnit.insertion(in: text, at: selection))
+        }
+    }
+
+    /// Puts a level of indent before each line the selection is on.
+    func indent() {
+        apply(indentUnit.indent(textView.text as NSString, selection: textView.selectedRange))
+    }
+
+    /// Takes a level of indent from each line the selection is on.
+    func outdent() {
+        apply(indentUnit.outdent(textView.text as NSString, selection: textView.selectedRange))
+    }
+
+    private func apply(_ edit: IndentEdit?) {
+        guard let edit else { return }
+        let storage = textView.textStorage
+        textView.inputDelegate?.textWillChange(textView)
+        storage.replaceCharacters(in: edit.range, with: NSAttributedString(string: edit.replacement, attributes: view.textAttributes))
+        textView.inputDelegate?.textDidChange(textView)
+        textView.selectedRange = edit.selection
+        textViewDidChange(textView)
     }
 
     private func setText(_ text: String) {
@@ -515,6 +561,7 @@ final class CodeTextView: UITextView {
     weak var container: CodeEditorContainer?
     /// Whose comment markers ⌘/ writes.
     var language = SourceLanguage.plainText
+    weak var editor: CodeEditorController?
 
     /// Undo is the document's history's, which takes typing as it is handed over.
     private let disabledUndoManager: UndoManager = {
@@ -535,6 +582,16 @@ final class CodeTextView: UITextView {
                 title: String(localized: "CodeEditor.ToggleComment"), action: #selector(toggleComment),
                 input: "/", modifierFlags: .command
             ),
+            UIKeyCommand(input: "\t", modifierFlags: [], action: #selector(tabCommand)),
+            UIKeyCommand(input: "\t", modifierFlags: .shift, action: #selector(outdentCommand)),
+            UIKeyCommand(
+                title: String(localized: "Paragraph.Indent.Increase"), action: #selector(indentCommand),
+                input: "]", modifierFlags: .command
+            ),
+            UIKeyCommand(
+                title: String(localized: "Paragraph.Indent.Decrease"), action: #selector(outdentCommand),
+                input: "[", modifierFlags: .command
+            ),
         ].map { command in
             command.wantsPriorityOverSystemBehavior = true
             return command
@@ -544,6 +601,9 @@ final class CodeTextView: UITextView {
     @objc private func biggerCommand() { container?.adjustPointSize(by: 1) }
     @objc private func smallerCommand() { container?.adjustPointSize(by: -1) }
     @objc private func actualSizeCommand() { container?.resetPointSize() }
+    @objc private func tabCommand() { editor?.insertTab() }
+    @objc private func indentCommand() { editor?.indent() }
+    @objc private func outdentCommand() { editor?.outdent() }
 
     /// Comments out the current or selected lines, or uncomments them. The
     /// change reaches the controller as typing does.

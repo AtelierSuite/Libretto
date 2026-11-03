@@ -214,4 +214,89 @@ struct CodeEditorTests {
         #expect(storage.attribute(.foregroundColor, at: comment, effectiveRange: nil) as? UIColor
             == SyntaxHighlighter.color(for: .keyword, scheme: .light))
     }
+
+    // MARK: - Indent
+
+    @Test("The indent unit is what the file's lines are indented with", arguments: [
+        ("func f() {\n\tlet a = 1\n\tif a {\n\t\tg()\n\t}\n}", IndentUnit.tab),
+        ("def f():\n    a = 1\n    if a:\n        g()\n", .spaces(4)),
+        ("a:\n  b:\n    c: 1\n  d: 2\n", .spaces(2)),
+        ("/*\n * A comment\n */\nfunc f() {\n    g(a,\n      b)\n    h()\n}", .spaces(4)),
+    ])
+    func detect(source: String, unit: IndentUnit) {
+        #expect(IndentUnit.detect(in: source) == unit)
+    }
+
+    @Test("A file with no indented lines says nothing of its unit")
+    func detectNothing() {
+        #expect(IndentUnit.detect(in: "") == nil)
+        #expect(IndentUnit.detect(in: "a\nb\n\nc") == nil)
+        let (controller, _) = makeEditor("let a = 1")
+        #expect(controller.indentUnit == .standard)
+    }
+
+    @Test("Tab indents each selected line, blank ones aside, and Shift-Tab takes the indent off again")
+    func indentLines() throws {
+        let source = "func f() {\n\tlet a = 1\n\n\tg()\n}"
+        let (controller, latest) = makeEditor(source)
+        #expect(controller.indentUnit == .tab)
+        let textView = controller.view.textView
+        // From the start of the second line to the start of the last, which is not taken in.
+        let start = ("func f() {\n" as NSString).length
+        textView.selectedRange = NSRange(location: start, length: (source as NSString).length - 1 - start)
+        controller.insertTab()
+        #expect(textView.text == "func f() {\n\t\tlet a = 1\n\n\t\tg()\n}")
+        // The selection still takes in the whole of the lines.
+        #expect(textView.selectedRange == NSRange(location: start, length: ("\t\tlet a = 1\n\n\t\tg()\n" as NSString).length))
+        controller.flush()
+        let document = try #require(latest())
+        #expect(String(decoding: PlainText.data(from: document), as: UTF8.self) == "func f() {\n\t\tlet a = 1\n\n\t\tg()\n}\n")
+
+        controller.outdent()
+        controller.outdent()
+        #expect(textView.text == "func f() {\nlet a = 1\n\ng()\n}")
+        // Nothing left to take off.
+        controller.outdent()
+        #expect(textView.text == "func f() {\nlet a = 1\n\ng()\n}")
+    }
+
+    @Test("Tab within a line types the spaces to the next level, and the indent commands move a caret with its line")
+    func caret() {
+        let (controller, _) = makeEditor("if a {\n    b()\n}")
+        #expect(controller.indentUnit == .spaces(4))
+        let textView = controller.view.textView
+        // After "    b", a column past the level: three spaces reach the next.
+        textView.selectedRange = NSRange(location: ("if a {\n    b" as NSString).length, length: 0)
+        controller.insertTab()
+        #expect(textView.text == "if a {\n    b   ()\n}")
+        #expect(textView.selectedRange == NSRange(location: ("if a {\n    b   " as NSString).length, length: 0))
+
+        controller.indent()
+        #expect(textView.text == "if a {\n        b   ()\n}")
+        #expect(textView.selectedRange == NSRange(location: ("if a {\n        b   " as NSString).length, length: 0))
+        controller.outdent()
+        controller.outdent()
+        #expect(textView.text == "if a {\nb   ()\n}")
+        #expect(textView.selectedRange == NSRange(location: ("if a {\nb   " as NSString).length, length: 0))
+    }
+
+    @Test("Another unit chosen is what lines are indented with, and outdenting takes off a tab or a level of spaces")
+    func chosenUnit() {
+        let (controller, _) = makeEditor("a\n\tb\n  c")
+        let textView = controller.view.textView
+        controller.indentUnit = .spaces(2)
+        textView.selectedRange = NSRange(location: 0, length: (textView.text as NSString).length)
+        controller.insertTab()
+        #expect(textView.text == "  a\n  \tb\n    c")
+        controller.outdent()
+        controller.outdent()
+        #expect(textView.text == "a\nb\nc")
+    }
+
+    @Test("A unit outside the usual ones is offered alongside them")
+    func choices() {
+        #expect(IndentUnit.spaces(4).choices == IndentUnit.choices)
+        #expect(IndentUnit.spaces(3).choices == [.tab, .spaces(2), .spaces(3), .spaces(4), .spaces(8)])
+        #expect(IndentUnit.choices.allSatisfy { IndentUnit(id: $0.id) == $0 })
+    }
 }
