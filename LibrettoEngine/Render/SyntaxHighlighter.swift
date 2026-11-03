@@ -41,15 +41,7 @@ public struct SyntaxToken: Equatable, Sendable {
 /// as a file's.
 public enum SyntaxHighlighter: Sendable {
     public static func tokens(in text: String, language: SourceLanguage) -> [SyntaxToken] {
-        guard language != .plainText else { return [] }
-        var scanner = Scanner(units: Array(text.utf16))
-        let all = 0..<scanner.units.count
-        switch language {
-        case .html: scanner.scanHTML(all)
-        case .css: scanner.scanCSS(all)
-        default: scanner.scanCode(all, rules: CodeRules(language))
-        }
-        return scanner.tokens
+        SyntaxHighlights(text, language: language).tokens
     }
 
     /// Colours `text` by its syntax, and what is not syntax in `plainColor`.
@@ -57,10 +49,24 @@ public enum SyntaxHighlighter: Sendable {
     public static func apply(
         _ language: SourceLanguage, to text: NSMutableAttributedString, scheme: ColorScheme, plainColor: PlatformColor
     ) {
+        let highlights = SyntaxHighlights(text.string, language: language)
+        color(
+            text, with: highlights.tokens[...], in: NSRange(location: 0, length: text.length),
+            scheme: scheme, plainColor: plainColor
+        )
+    }
+
+    /// Colours `range` of `text` by `tokens`, which lie within it, and the
+    /// rest of it in `plainColor`.
+    fileprivate static func color(
+        _ text: NSMutableAttributedString, with tokens: ArraySlice<SyntaxToken>, in range: NSRange,
+        scheme: ColorScheme, plainColor: PlatformColor
+    ) {
         var colors: [SyntaxKind: PlatformColor] = [:]
         var segments: [(range: NSRange, color: PlatformColor)] = []
-        var location = 0
-        for token in tokens(in: text.string, language: language) where NSMaxRange(token.range) > location {
+        var location = range.location
+        let end = NSMaxRange(range)
+        for token in tokens where NSMaxRange(token.range) > location {
             let start = max(location, token.range.location)
             if start > location { segments.append((NSRange(location: location, length: start - location), plainColor)) }
             let color = colors[token.kind] ?? color(for: token.kind, scheme: scheme)
@@ -68,7 +74,7 @@ public enum SyntaxHighlighter: Sendable {
             segments.append((NSRange(location: start, length: NSMaxRange(token.range) - start), color))
             location = NSMaxRange(token.range)
         }
-        if location < text.length { segments.append((NSRange(location: location, length: text.length - location), plainColor)) }
+        if location < end { segments.append((NSRange(location: location, length: end - location), plainColor)) }
 
         text.beginEditing()
         for segment in segments {
@@ -105,6 +111,174 @@ public enum SyntaxHighlighter: Sendable {
             blue: CGFloat(hex & 0xFF) / 255, alpha: 1
         )
     }
+}
+
+/// What a scan of a text found, kept so that after an edit the scan can
+/// start again a little before it and stop a little after it, rather than
+/// read the whole text again.
+public struct SyntaxHighlights: Sendable {
+    public let language: SourceLanguage
+    public fileprivate(set) var tokens: [SyntaxToken]
+    /// UTF-16 units, as `NSString` counts.
+    public fileprivate(set) var length: Int
+    /// Where the scan was at the start of each line it reached outside
+    /// anything that spans lines, in order: the points it can start from
+    /// again, and stop at.
+    fileprivate var checkpoints: [Checkpoint]
+
+    public init(_ text: String, language: SourceLanguage) {
+        self.language = language
+        var scanner = Scanner(units: Scanner.units(of: text))
+        length = scanner.units.count
+        if language != .plainText { scanner.scan(language) }
+        tokens = scanner.tokens
+        checkpoints = scanner.checkpoints
+    }
+
+    /// Scans `text` again after an edit to the text these were found in:
+    /// `range` is what the edit left, in `text`, and `delta` how much longer
+    /// it made it. Only the lines around the edit are read, from where the
+    /// scan last read nothing the edit changed to where it is back where it
+    /// was before; the rest of the tokens stand, moved along by the edit.
+    ///
+    /// Returns which tokens were found again, and the part of `text` they
+    /// lie in, which is all that may be coloured differently.
+    public mutating func update(
+        _ text: String, edited range: NSRange, changeInLength delta: Int
+    ) -> (tokens: Range<Int>, text: NSRange) {
+        let units = Scanner.units(of: text)
+        precondition(units.count == length + delta && NSMaxRange(range) <= units.count, "The edit is not to this text")
+        let oldLength = length
+        length = units.count
+        guard language != .plainText else { return (0..<0, range) }
+
+        // The last line start at or before the edit that the scan reached
+        // reading nothing from the edit on. Running into the end of the text
+        // counts as reading past it, as text added there could change it.
+        let start = range.location
+        var restart = checkpoints.count(atOrBefore: start) - 1
+        while restart >= 0, checkpoints[restart].reach >= min(start, oldLength - 1) { restart -= 1 }
+        let from = restart >= 0 ? checkpoints[restart] : Checkpoint(index: 0, reach: -1, tokenCount: 0)
+
+        var scanner = Scanner(units: units)
+        scanner.units.reach = from.reach
+        scanner.tokenBase = from.tokenCount
+        // It can stop only past the edit. The line's end before each
+        // checkpoint is read there, but any line's end reads the same.
+        scanner.resume = Scanner.Resume(
+            checkpoints: checkpoints, cursor: max(restart, 0), delta: delta, after: NSMaxRange(range)
+        )
+        scanner.scan(language, from: from)
+        let resumed = scanner.resume?.resumed
+        let found = scanner.tokens
+        let marked = scanner.checkpoints
+        let reach = scanner.units.reach
+        scanner = Scanner(units: [])
+
+        // The earlier scan's tokens and checkpoints from where this one
+        // caught up with it, moved along by the edit.
+        let oldTokenEnd = resumed.map { checkpoints[$0].tokenCount } ?? tokens.count
+        let textEnd = resumed.map { checkpoints[$0].index + delta } ?? units.count
+        let tokenShift = found.count - (oldTokenEnd - from.tokenCount)
+        tokens.replaceSubrange(from.tokenCount..<oldTokenEnd, with: found)
+        for index in (from.tokenCount + found.count)..<tokens.count { tokens[index].range.location += delta }
+        let firstMarked = max(restart, 0)
+        checkpoints.replaceSubrange(firstMarked..<(resumed ?? checkpoints.count), with: marked)
+        for index in (firstMarked + marked.count)..<checkpoints.count {
+            checkpoints[index].index += delta
+            checkpoints[index].reach = max(reach, checkpoints[index].reach + delta)
+            checkpoints[index].tokenCount += tokenShift
+        }
+        return (from.tokenCount..<(from.tokenCount + found.count), NSRange(location: from.index, length: textEnd - from.index))
+    }
+}
+
+/// A text's colouring by its syntax, kept from one edit to the next so
+/// that each scans again only the lines around it.
+///
+/// Tell it of each edit as the text storage reports it, and colour the text
+/// once the edits are done.
+public struct SyntaxColoring: Sendable {
+    private var highlights: SyntaxHighlights?
+    private var scheme: ColorScheme?
+    /// What the edits since the last colouring left, in the text as it is
+    /// now, and how much longer they made it.
+    private var edit: (range: NSRange, changeInLength: Int)?
+
+    public init() {}
+
+    /// Notes an edit to the text's characters: `range` is what it left, and
+    /// `delta` how much longer it made the text.
+    public mutating func noteEdit(_ range: NSRange, changeInLength delta: Int) {
+        guard let edit else {
+            self.edit = (range, delta)
+            return
+        }
+        // The edits so far, moved along by this one, and this one.
+        let replacedEnd = NSMaxRange(range) - delta
+        let start = min(edit.range.location, range.location)
+        let end = max(NSMaxRange(edit.range) >= replacedEnd ? NSMaxRange(edit.range) + delta : 0, NSMaxRange(range))
+        self.edit = (NSRange(location: start, length: end - start), edit.changeInLength + delta)
+    }
+
+    /// Colours `text` as `SyntaxHighlighter.apply` does, scanning only
+    /// around the edits since it was last coloured when it can: when the
+    /// language and scheme are the same, and the edits are all accounted for.
+    public mutating func apply(
+        _ language: SourceLanguage, to text: NSMutableAttributedString, scheme: ColorScheme, plainColor: PlatformColor
+    ) {
+        let edit = self.edit
+        self.edit = nil
+        if let edit, var highlights, highlights.language == language, self.scheme == scheme,
+           highlights.length + edit.changeInLength == text.length, NSMaxRange(edit.range) <= text.length {
+            // Held only here while it changes, so it changes in place.
+            self.highlights = nil
+            let changed = highlights.update(text.string, edited: edit.range, changeInLength: edit.changeInLength)
+            SyntaxHighlighter.color(
+                text, with: highlights.tokens[changed.tokens], in: changed.text, scheme: scheme, plainColor: plainColor
+            )
+            self.highlights = highlights
+        } else {
+            let highlights = SyntaxHighlights(text.string, language: language)
+            SyntaxHighlighter.color(
+                text, with: highlights.tokens[...], in: NSRange(location: 0, length: text.length),
+                scheme: scheme, plainColor: plainColor
+            )
+            self.highlights = highlights
+            self.scheme = scheme
+        }
+    }
+}
+
+/// A point the scan reached at the start of a line.
+fileprivate struct Checkpoint: Sendable {
+    var index: Int
+    /// The furthest unit read on the way here, past which what was found
+    /// so far depends on nothing.
+    var reach: Int
+    /// How many tokens were found before here.
+    var tokenCount: Int
+    var state = ScanState()
+}
+
+fileprivate extension [Checkpoint] {
+    /// How many are at `index` or before it.
+    func count(atOrBefore index: Int) -> Int {
+        var low = 0
+        var high = count
+        while low < high {
+            let middle = (low + high) / 2
+            if self[middle].index <= index { low = middle + 1 } else { high = middle }
+        }
+        return low
+    }
+}
+
+/// What the scan holds besides where it is: for CSS, how deep in blocks it
+/// is and whether the statement is a selector.
+fileprivate struct ScanState: Equatable, Sendable {
+    var depth = 0
+    var isSelector: Bool?
 }
 
 // MARK: - Languages
@@ -387,11 +561,70 @@ private struct CodeRules {
 // MARK: - Scanning
 
 private struct Scanner {
-    let units: [UInt16]
+    /// The text, noting how far into it the scan has read.
+    struct Units {
+        let storage: [UInt16]
+        /// The furthest unit read, or looked for past the end.
+        var reach = -1
+
+        var count: Int { storage.count }
+
+        subscript(index: Int) -> UInt16 {
+            mutating get {
+                reach = max(reach, index)
+                return storage[index]
+            }
+        }
+
+        subscript(range: Range<Int>) -> ArraySlice<UInt16> {
+            mutating get {
+                reach = max(reach, range.upperBound - 1)
+                return storage[range]
+            }
+        }
+    }
+
+    /// Where an earlier scan of the text before an edit can be taken up
+    /// again: at a checkpoint past the edit where that scan held what this
+    /// one does.
+    struct Resume {
+        let checkpoints: [Checkpoint]
+        var cursor: Int
+        /// How much longer the edit made the text.
+        let delta: Int
+        /// The first point, in the edited text, it may be taken up at.
+        let after: Int
+        /// The checkpoint it was taken up at.
+        var resumed: Int?
+    }
+
+    var units: Units
     var tokens: [SyntaxToken] = []
+    /// How many tokens were found before this scan started.
+    var tokenBase = 0
+    var checkpoints: [Checkpoint] = []
+    var resume: Resume?
 
     init(units: [UInt16]) {
-        self.units = units
+        self.units = Units(storage: units)
+    }
+
+    static func units(of text: String) -> [UInt16] {
+        // Through `NSString`, which copies a text storage's characters in one go.
+        let string = text as NSString
+        var units = [UInt16](repeating: 0, count: string.length)
+        string.getCharacters(&units, range: NSRange(location: 0, length: string.length))
+        return units
+    }
+
+    /// Scans the text as `language`, from its start or from a checkpoint.
+    mutating func scan(_ language: SourceLanguage, from start: Checkpoint? = nil) {
+        let all = 0..<units.count
+        switch language {
+        case .html: scanHTML(all, from: start?.index ?? 0)
+        case .css: scanCSS(all, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
+        default: scanCode(all, rules: CodeRules(language), from: start?.index ?? 0)
+        }
     }
 
     private mutating func add(_ range: Range<Int>, _ kind: SyntaxKind) {
@@ -399,10 +632,35 @@ private struct Scanner {
         tokens.append(SyntaxToken(range: NSRange(location: range.lowerBound, length: range.count), kind: kind))
     }
 
+    /// At the start of a line, at the top level of the text, notes where
+    /// the scan is for a later one to start from; or, after an edit, stops
+    /// it if the earlier scan was here too, holding the same, to take that
+    /// up from here instead. Whether to stop.
+    private mutating func checkpoint(_ index: Int, _ state: ScanState = ScanState()) -> Bool {
+        // Looking back for the line's start reads nothing the scan goes by.
+        guard index == 0 || isNewline(units.storage[index - 1]) else { return false }
+        if var resume, index >= resume.after {
+            let target = index - resume.delta
+            while resume.cursor < resume.checkpoints.count, resume.checkpoints[resume.cursor].index < target {
+                resume.cursor += 1
+            }
+            if resume.cursor < resume.checkpoints.count, resume.checkpoints[resume.cursor].index == target,
+               resume.checkpoints[resume.cursor].state == state {
+                resume.resumed = resume.cursor
+                self.resume = resume
+                return true
+            }
+            self.resume = resume
+        }
+        checkpoints.append(Checkpoint(index: index, reach: units.reach, tokenCount: tokenBase + tokens.count, state: state))
+        return false
+    }
+
     // MARK: Characters
 
-    private func unit(_ index: Int) -> UInt16? {
-        index >= 0 && index < units.count ? units[index] : nil
+    private mutating func unit(_ index: Int) -> UInt16? {
+        units.reach = max(units.reach, index)
+        return index >= 0 && index < units.count ? units.storage[index] : nil
     }
 
     private static func ascii(_ character: Character) -> UInt16 {
@@ -431,7 +689,7 @@ private struct Scanner {
         isLetter(unit) || isDigit(unit)
     }
 
-    private func matches(_ text: String, at index: Int, ignoringCase: Bool = false) -> Bool {
+    private mutating func matches(_ text: String, at index: Int, ignoringCase: Bool = false) -> Bool {
         var position = index
         for expected in text.utf16 {
             guard let actual = unit(position) else { return false }
@@ -445,7 +703,7 @@ private struct Scanner {
         unit >= 0x41 && unit <= 0x5A ? unit + 0x20 : unit
     }
 
-    private func first(_ text: String, from index: Int, before end: Int, ignoringCase: Bool = false) -> Int? {
+    private mutating func first(_ text: String, from index: Int, before end: Int, ignoringCase: Bool = false) -> Int? {
         var position = index
         while position < end {
             if matches(text, at: position, ignoringCase: ignoringCase) { return position }
@@ -454,25 +712,25 @@ private struct Scanner {
         return nil
     }
 
-    private func lineEnd(from index: Int, before end: Int) -> Int {
+    private mutating func lineEnd(from index: Int, before end: Int) -> Int {
         var position = index
         while position < end, !isNewline(units[position]) { position += 1 }
         return position
     }
 
-    private func nameEnd(from index: Int, before end: Int, extra: Set<UInt16> = []) -> Int {
+    private mutating func nameEnd(from index: Int, before end: Int, extra: Set<UInt16> = []) -> Int {
         var position = index
         while position < end, isNamePart(units[position]) || extra.contains(units[position]) { position += 1 }
         return position
     }
 
-    private func word(_ range: Range<Int>) -> String {
+    private mutating func word(_ range: Range<Int>) -> String {
         String(utf16CodeUnits: Array(units[range]), count: range.count)
     }
 
     /// A number from `index`: digits, with the letters of hex, exponents and
     /// suffixes, and a point only where a digit follows it.
-    private func numberEnd(from index: Int, before end: Int) -> Int {
+    private mutating func numberEnd(from index: Int, before end: Int) -> Int {
         var position = index
         while position < end {
             let current = units[position]
@@ -488,12 +746,14 @@ private struct Scanner {
     }
 
     /// A quoted string from `index`, which is its opening delimiter.
-    private func stringEnd(_ rule: CodeRules.StringRule, from index: Int, before end: Int) -> Int {
+    private mutating func stringEnd(_ rule: CodeRules.StringRule, from index: Int, before end: Int) -> Int {
         let delimiter = rule.delimiter
         var position = index + delimiter.utf16.count
         while position < end {
             let current = units[position]
             if rule.escapes, current == Self.ascii("\\") {
+                // What is escaped matters only in that it is there.
+                units.reach = max(units.reach, position + 1)
                 position += 2
                 continue
             }
@@ -506,10 +766,13 @@ private struct Scanner {
 
     // MARK: Code
 
-    mutating func scanCode(_ range: Range<Int>, rules: CodeRules) {
+    /// Scans `range` as code, from `start` if this is the whole text, where
+    /// it marks checkpoints.
+    mutating func scanCode(_ range: Range<Int>, rules: CodeRules, from start: Int? = nil) {
         let end = range.upperBound
-        var index = range.lowerBound
+        var index = start ?? range.lowerBound
         scanning: while index < end {
+            if start != nil, checkpoint(index) { return }
             let current = units[index]
             let previous = index > range.lowerBound ? units[index - 1] : 0x20
 
@@ -588,7 +851,7 @@ private struct Scanner {
     /// Whether a colon follows `index`, making what ends there a key. A
     /// string may have spaces before its colon; a bare name, as in YAML,
     /// needs a space or the line's end after it, so `http://` is no key.
-    private func isKey(endingAt index: Int, before end: Int, spaced: Bool) -> Bool {
+    private mutating func isKey(endingAt index: Int, before end: Int, spaced: Bool) -> Bool {
         var position = index
         if spaced {
             while position < end, units[position] == 0x20 || units[position] == 0x09 { position += 1 }
@@ -599,10 +862,13 @@ private struct Scanner {
 
     // MARK: HTML
 
-    mutating func scanHTML(_ range: Range<Int>) {
+    /// Scans `range` as HTML, from `start`. Checkpoints are only outside
+    /// tags, and so outside scripts and styles too.
+    mutating func scanHTML(_ range: Range<Int>, from start: Int) {
         let end = range.upperBound
-        var index = range.lowerBound
+        var index = start
         while index < end {
+            if checkpoint(index) { return }
             if matches("<!--", at: index) {
                 let stop = min((first("-->", from: index + 4, before: end) ?? end - 3) + 3, end)
                 add(index..<stop, .comment)
@@ -676,15 +942,18 @@ private struct Scanner {
 
     // MARK: CSS
 
-    mutating func scanCSS(_ range: Range<Int>) {
+    /// Scans `range` as CSS, from `start` if this is the whole text, where
+    /// it marks checkpoints.
+    mutating func scanCSS(_ range: Range<Int>, from start: Checkpoint? = nil) {
         let end = range.upperBound
-        var index = range.lowerBound
-        var depth = 0
+        var index = start?.index ?? range.lowerBound
+        var depth = start?.state.depth ?? 0
         // Whether the current statement is a selector, worked out from
         // whether a block or the end of a declaration comes first.
-        var isSelector: Bool?
+        var isSelector = start?.state.isSelector
         let nameExtra: Set<UInt16> = [Self.ascii("-")]
         while index < end {
+            if start != nil, checkpoint(index, ScanState(depth: depth, isSelector: isSelector)) { return }
             let current = units[index]
             let previous = index > range.lowerBound ? units[index - 1] : 0x20
             if matches("/*", at: index) {
@@ -751,7 +1020,7 @@ private struct Scanner {
     /// Whether a block opens before the statement from `index` ends, as it
     /// does after a selector. Text running to the end is a selector only
     /// outside every block.
-    private func opensBlock(from index: Int, before end: Int, orAtTopLevel topLevel: Bool) -> Bool {
+    private mutating func opensBlock(from index: Int, before end: Int, orAtTopLevel topLevel: Bool) -> Bool {
         var position = index
         while position < end {
             switch units[position] {
