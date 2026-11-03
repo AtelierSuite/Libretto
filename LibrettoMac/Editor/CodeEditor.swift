@@ -215,6 +215,24 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         sync()
     }
 
+    // MARK: - Go to line
+
+    /// How many lines the text has, the most a line to go to can be.
+    var lineCount: Int { PlainText.lineCount(of: textView.string) }
+
+    /// Puts the insertion point at the start of line `number`, counting from 1,
+    /// and scrolls it into view. A number past the end is the last line.
+    func goToLine(_ number: Int) {
+        let location = PlainText.location(ofLine: number, in: textView.string)
+        let range = NSRange(location: location, length: 0)
+        textView.setSelectedRange(range)
+        textView.window?.makeFirstResponder(textView)
+        textView.scrollRangeToVisible(range)
+        // The line, briefly, so the eye finds where the text has moved to.
+        let line = (textView.string as NSString).lineRange(for: range)
+        if line.length > 0 { textView.showFindIndicator(for: line) }
+    }
+
     private func setText(_ text: String) {
         let selection = textView.selectedRange()
         textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: textAttributes))

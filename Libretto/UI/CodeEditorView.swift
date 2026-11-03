@@ -45,6 +45,7 @@ struct CodeEditorView: UIViewRepresentable {
             state.pendingScope = .typing
             binding.wrappedValue = document
         }
+        controller.onGoToLine = { state.isGoingToLine = true }
     }
 }
 
@@ -76,6 +77,12 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     /// What Tab and the indent commands put before a line: what the file's
     /// lines are indented with, unless another is chosen.
     var indentUnit: IndentUnit
+
+    /// Asks whoever owns the editor for a line to go to, as ⌘L does.
+    var onGoToLine: (() -> Void)? {
+        get { textView.onGoToLine }
+        set { textView.onGoToLine = newValue }
+    }
 
     init(document: WordDocument, language: SourceLanguage, scheme: ColorScheme) {
         self.document = document
@@ -158,6 +165,27 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
         textView.inputDelegate?.textDidChange(textView)
         textView.selectedRange = edit.selection
         textViewDidChange(textView)
+    }
+
+    // MARK: - Go to line
+
+    /// How many lines the text has, the most a line to go to can be.
+    var lineCount: Int { PlainText.lineCount(of: textView.text) }
+
+    /// Puts the caret at the start of line `number`, counting from 1, and
+    /// scrolls it into view. A number past the end is the last line.
+    func goToLine(_ number: Int) {
+        if !textView.isFirstResponder { textView.becomeFirstResponder() }
+        let location = PlainText.location(ofLine: number, in: textView.text)
+        textView.selectedRange = NSRange(location: location, length: 0)
+        // Laid out up to the line first, so it is scrolled to where it really is.
+        textView.layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: location))
+        guard let position = textView.selectedTextRange?.start else { return }
+        let caret = textView.caretRect(for: position)
+        guard caret.minY.isFinite else { return }
+        // A line's height to spare either side, so the line is not hard against an edge.
+        textView.scrollRectToVisible(caret.insetBy(dx: 0, dy: -caret.height), animated: false)
+        view.selectionDidChange()
     }
 
     private func setText(_ text: String) {
@@ -562,6 +590,8 @@ final class CodeTextView: UITextView {
     /// Whose comment markers ⌘/ writes.
     var language = SourceLanguage.plainText
     weak var editor: CodeEditorController?
+    /// Asks for a line to go to.
+    var onGoToLine: (() -> Void)?
 
     /// Undo is the document's history's, which takes typing as it is handed over.
     private let disabledUndoManager: UndoManager = {
@@ -592,6 +622,10 @@ final class CodeTextView: UITextView {
                 title: String(localized: "Paragraph.Indent.Decrease"), action: #selector(outdentCommand),
                 input: "[", modifierFlags: .command
             ),
+            UIKeyCommand(
+                title: String(localized: "CodeEditor.GoToLine"), action: #selector(goToLineCommand),
+                input: "l", modifierFlags: .command
+            ),
         ].map { command in
             command.wantsPriorityOverSystemBehavior = true
             return command
@@ -604,6 +638,7 @@ final class CodeTextView: UITextView {
     @objc private func tabCommand() { editor?.insertTab() }
     @objc private func indentCommand() { editor?.indent() }
     @objc private func outdentCommand() { editor?.outdent() }
+    @objc private func goToLineCommand() { onGoToLine?() }
 
     /// Comments out the current or selected lines, or uncomments them. The
     /// change reaches the controller as typing does.

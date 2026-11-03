@@ -63,6 +63,28 @@ public enum PlainText: Sendable {
         }
     }
 
+    /// How many lines the text has: one more than its line breaks, as the
+    /// empty line after a final line break is numbered too.
+    public static func lineCount(of text: String) -> Int {
+        var count = 1
+        for unit in text.utf16 where unit == 0x0A { count += 1 }
+        return count
+    }
+
+    /// Where line `number`, counting from 1, starts in the text, in UTF-16
+    /// offsets. A number past either end is taken as the first or last line.
+    public static func location(ofLine number: Int, in text: String) -> Int {
+        guard number > 1 else { return 0 }
+        var line = 1
+        for (offset, unit) in text.utf16.enumerated() where unit == 0x0A {
+            line += 1
+            if line == number { return offset + 1 }
+        }
+        // Past the last line: the start of the last.
+        let string = text as NSString
+        return string.lineRange(for: NSRange(location: string.length, length: 0)).location
+    }
+
     private static func lines(of block: Block) -> [String] {
         switch block {
         case .paragraph(let paragraph):

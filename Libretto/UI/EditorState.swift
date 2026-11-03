@@ -186,6 +186,8 @@ final class EditorState {
     @ObservationIgnored var wantsFind = false
     /// Whether the find bar is open, which the floating bar keeps out of the way of.
     var isFinding = false
+    /// Whether the code editor is asking for a line to go to.
+    var isGoingToLine = false
     /// The page view zooms out to fit; this is how far, for the zoom readout.
     var zoom: CGFloat = 1
 
