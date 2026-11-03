@@ -74,6 +74,8 @@
 				<string>public.ruby-script</string>
 				<string>public.php-script</string>
 				<string>org.iso.sql</string>
+				<string>com.microsoft.jsonc</string>
+				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
 			</array>
@@ -383,6 +385,48 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/sql</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>JSON with Comments</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.jsonc</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>jsonc</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/jsonc</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>JSON5 Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.json5</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>json5</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/json5</string>
 				</array>
 			</dict>
 		</dict>

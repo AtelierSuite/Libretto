@@ -306,7 +306,7 @@ public struct CommentMarkers: Equatable, Sendable {
 }
 
 extension SourceLanguage {
-    /// Nothing for plain text and JSON, which have no comments.
+    /// Nothing for plain text, which has no comments.
     public var commentMarkers: CommentMarkers? {
         let rules = CodeRules(self)
         guard !rules.lineComments.isEmpty || rules.blockComment != nil else { return nil }
@@ -450,7 +450,10 @@ private struct CodeRules {
             capitalisedTypes = false
             ignoresCase = true
         case .json:
-            strings = [quoted[0]]
+            // Comments, and JSON5's single quotes, for `tsconfig.json`, VS Code's settings, `.jsonc` and `.json5`.
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = quoted
             keywords = ["true", "false", "null"]
             capitalisedTypes = false
             colonsMarkKeys = true

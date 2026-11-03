@@ -175,6 +175,18 @@ struct SyntaxHighlighterTests {
         #expect(found["\"app\""] == .string)
     }
 
+    @Test("JSON with comments, as tsconfig.json and VS Code's settings have them")
+    func jsonComments() {
+        let found = tokens("{\n  // strict\n  \"strict\": true, /* all */\n  'quoted': 1\n}", .json)
+        #expect(found["// strict"] == .comment)
+        #expect(found["/* all */"] == .comment)
+        #expect(found["\"strict\""] == .property)
+        #expect(found["'quoted'"] == .property)
+        #expect(SourceLanguage(contentType: .plainText, filename: "settings.jsonc") == .json)
+        #expect(SourceLanguage(contentType: .plainText, filename: "config.json5") == .json)
+        #expect(SourceLanguage(contentType: .jsonWithComments, filename: nil) == .json)
+    }
+
     @Test("Every language has a name for the menu")
     func names() {
         #expect(SourceLanguage.allCases.first == .plainText)
@@ -250,7 +262,7 @@ struct SyntaxHighlighterTests {
         .ruby: "def f\n  @name = $global # c\n  'a'\nend\n",
         .php: "<?php\n$name = 'a\nb'; // one\n# two\n/* three\n */ echo \"$name\";\n",
         .sql: "SELECT name FROM users /* a\n b */ where id = 1 -- first\nINSERT INTO t VALUES ('x');\n",
-        .json: "{\"name\" : \"Libretto\",\n \"open\": true,\n \"count\": 3}\n",
+        .json: "{\"name\" : \"Libretto\", // c\n \"open\": true, /* x\n */\n 'count': 3}\n",
         .yaml: "name: Libretto # app\nurl: http://example.com\nshared: yes\nlist:\n  - 'a'\n",
         .html: """
             <!-- c

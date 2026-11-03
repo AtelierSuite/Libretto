@@ -14,6 +14,8 @@ extension UTType {
     public static let goSource = UTType(importedAs: "org.golang.go-script", conformingTo: .sourceCode)
     public static let rustSource = UTType(importedAs: "org.rust-lang.rust-script", conformingTo: .sourceCode)
     public static let sqlSource = UTType(importedAs: "org.iso.sql", conformingTo: .sourceCode)
+    public static let jsonWithComments = UTType(importedAs: "com.microsoft.jsonc", conformingTo: .json)
+    public static let json5 = UTType(importedAs: "org.json5", conformingTo: .json)
 }
 
 /// The language of a file opened in the code editor. Plain text has no syntax colouring.
@@ -47,7 +49,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .css, .shellScript,
         .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader, .cSource, .cHeader,
         .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript, .sqlSource,
-        .json, .yaml, .mpeg2TransportStream,
+        .jsonWithComments, .json5, .json, .yaml, .mpeg2TransportStream,
     ]
 
     /// The language's name, as a menu of them shows it.
@@ -88,7 +90,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .html: return ["html", "htm"]
         case .java: return ["java"]
         case .javaScript: return ["js", "mjs", "cjs", "jsx"]
-        case .json: return ["json"]
+        case .json: return ["json", "jsonc", "json5"]
         case .kotlin: return ["kt", "kts"]
         case .objectiveC: return ["m", "mm"]
         case .php: return ["php"]
