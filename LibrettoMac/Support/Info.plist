@@ -84,6 +84,11 @@
 				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
+				<string>org.python.python-source</string>
+				<string>org.ruby-lang.ruby-source</string>
+				<string>org.kornshell.ksh-script</string>
+				<string>org.isocpp.c-plus-plus-source</string>
+				<string>net.php.phtml</string>
 			</array>
 			<key>NSDocumentClass</key>
 			<string>$(PRODUCT_MODULE_NAME).Document</string>
@@ -421,6 +426,115 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/json5</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.python-script</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Python Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.python.python-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>pyi</string>
+					<string>pyw</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-python</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.ruby-script</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Ruby Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.ruby-lang.ruby-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rake</string>
+					<string>gemspec</string>
+					<string>ru</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-ruby</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.shell-script</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Korn Shell Script</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.kornshell.ksh-script</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ksh</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-sh</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.c-plus-plus-source</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>C++ Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.isocpp.c-plus-plus-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>h++</string>
+					<string>ipp</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-c++src</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.php-script</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>PHP Template</string>
+			<key>UTTypeIdentifier</key>
+			<string>net.php.phtml</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>phtml</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-httpd-php</string>
 				</array>
 			</dict>
 		</dict>

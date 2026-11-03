@@ -187,6 +187,18 @@ struct SyntaxHighlighterTests {
         #expect(SourceLanguage(contentType: .jsonWithComments, filename: nil) == .json)
     }
 
+    @Test("The less common extensions of the languages already coloured")
+    func moreExtensions() {
+        let expected: [String: SourceLanguage] = [
+            "types.pyi": .python, "app.pyw": .python, "build.rake": .ruby, "libretto.gemspec": .ruby,
+            "config.ru": .ruby, "setup.ksh": .shell, "list.h++": .cPlusPlus, "list.ipp": .cPlusPlus,
+            "page.phtml": .php,
+        ]
+        for (filename, language) in expected {
+            #expect(SourceLanguage(contentType: .plainText, filename: filename) == language)
+        }
+    }
+
     @Test("Every language has a name for the menu")
     func names() {
         #expect(SourceLanguage.allCases.first == .plainText)
