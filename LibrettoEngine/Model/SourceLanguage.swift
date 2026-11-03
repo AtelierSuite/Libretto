@@ -19,6 +19,8 @@ extension UTType {
     public static let toml = UTType(importedAs: "org.toml-lang.toml", conformingTo: .plainText)
     public static let ini = UTType(importedAs: "com.microsoft.ini", conformingTo: .plainText)
     public static let javaProperties = UTType(importedAs: "com.sun.java-properties", conformingTo: .plainText)
+    public static let dockerfile = UTType(importedAs: "com.docker.dockerfile", conformingTo: .sourceCode)
+    public static let makefile = UTType(importedAs: "org.gnu.makefile", conformingTo: .sourceCode)
     public static let jsonWithComments = UTType(importedAs: "com.microsoft.jsonc", conformingTo: .json)
     public static let json5 = UTType(importedAs: "org.json5", conformingTo: .json)
     public static let interfaceBuilderDocument = UTType(
@@ -37,6 +39,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case cPlusPlus
     case cSharp
     case css
+    case dockerfile
     case go
     case html
     case ini
@@ -45,6 +48,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case json
     case kotlin
     case less
+    case makefile
     case objectiveC
     case php
     case python
@@ -64,8 +68,9 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .scssSource, .lessSource,
         .css, .shellScript, .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader,
         .cSource, .cHeader, .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript,
-        .phpScript, .sqlSource, .jsonWithComments, .json5, .json, .yaml, .toml, .ini, .javaProperties,
-        .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml, .mpeg2TransportStream,
+        .phpScript, .sqlSource, .dockerfile, .makefile, .jsonWithComments, .json5, .json, .yaml, .toml, .ini,
+        .javaProperties, .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml,
+        .mpeg2TransportStream,
     ]
 
     /// The language's name, as a menu of them shows it.
@@ -76,6 +81,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .cPlusPlus: return "C++"
         case .cSharp: return "C#"
         case .css: return "CSS"
+        case .dockerfile: return "Dockerfile"
         case .go: return "Go"
         case .html: return "HTML"
         case .ini: return "INI"
@@ -84,6 +90,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .json: return "JSON"
         case .kotlin: return "Kotlin"
         case .less: return "Less"
+        case .makefile: return "Makefile"
         case .objectiveC: return "Objective-C"
         case .php: return "PHP"
         case .python: return "Python"
@@ -107,6 +114,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .cPlusPlus: return ["cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp"]
         case .cSharp: return ["cs"]
         case .css: return ["css"]
+        case .dockerfile: return ["dockerfile", "containerfile"]
         case .go: return ["go"]
         case .html: return ["html", "htm"]
         case .ini: return ["ini", "cfg", "properties"]
@@ -115,6 +123,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .json: return ["json", "jsonc", "json5"]
         case .kotlin: return ["kt", "kts"]
         case .less: return ["less"]
+        case .makefile: return ["mk", "mak"]
         case .objectiveC: return ["m", "mm"]
         case .php: return ["php", "phtml"]
         case .python: return ["py", "pyi", "pyw"]
@@ -133,6 +142,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
 
     /// Files known by their whole name rather than an extension, in lower case.
     public static let filenames: [String: SourceLanguage] = [
+        "dockerfile": .dockerfile, "containerfile": .dockerfile, "makefile": .makefile, "gnumakefile": .makefile,
         "gemfile": .ruby, "podfile": .ruby, "rakefile": .ruby, "brewfile": .ruby, "vagrantfile": .ruby,
         "fastfile": .ruby, "appfile": .ruby, "guardfile": .ruby, "dangerfile": .ruby,
         ".bashrc": .shell, ".bash_profile": .shell, ".bash_logout": .shell, ".profile": .shell,
@@ -147,8 +157,9 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     /// The language a file's whole name, in lower case, gives it.
     private static func language(named name: String) -> SourceLanguage? {
         if let language = filenames[name] { return language }
-        // `.env.local`, `.env.production` and the rest.
+        // `.env.local`, `.env.production` and the rest, and `Dockerfile.dev`.
         if name.hasPrefix(".env.") { return .ini }
+        if name.hasPrefix("dockerfile.") || name.hasPrefix("containerfile.") { return .dockerfile }
         return nil
     }
 
@@ -173,6 +184,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
             (.objectiveCPlusPlusSource, .objectiveC), (.cPlusPlusSource, .cPlusPlus), (.cPlusPlusHeader, .cPlusPlus),
             (.cSource, .c), (.cHeader, .c), (.cSharpSource, .cSharp), (.javaSource, .java), (.kotlinSource, .kotlin),
             (.goSource, .go), (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql),
+            (.dockerfile, .dockerfile), (.makefile, .makefile),
             (.yaml, .yaml), (.toml, .toml), (.ini, .ini), (.javaProperties, .ini), (.propertyList, .xml),
             (.svg, .xml), (.xml, .xml), (.shellScript, .shell),
         ]

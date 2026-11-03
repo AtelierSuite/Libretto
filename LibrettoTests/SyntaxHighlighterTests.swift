@@ -69,6 +69,62 @@ struct SyntaxHighlighterTests {
         #expect(found["fi"] == .keyword)
     }
 
+    @Test("Dockerfile instructions around the shell's commands")
+    func dockerfile() {
+        let found = tokens("""
+            # syntax=docker/dockerfile:1
+            FROM node:20 AS build
+            ARG VERSION=1
+            ENV PATH=/app/bin:${PATH}
+            RUN if [ -n "$VERSION" ]; then echo ok; fi
+            CMD ["node", "server.js"]
+            """, .dockerfile)
+        #expect(found["# syntax=docker/dockerfile:1"] == .comment)
+        #expect(found["FROM"] == .keyword)
+        #expect(found["AS"] == .keyword)
+        #expect(found["ARG"] == .keyword)
+        #expect(found["${PATH}"] == .variable)
+        #expect(found["RUN"] == .keyword)
+        #expect(found["if"] == .keyword)
+        #expect(found["\"node\""] == .string)
+        #expect(tokens("FROM x", .shell)["FROM"] == nil)
+        #expect(SourceLanguage(contentType: .data, filename: "Dockerfile") == .dockerfile)
+        #expect(SourceLanguage(contentType: .data, filename: "Dockerfile.dev") == .dockerfile)
+        #expect(SourceLanguage(contentType: .plainText, filename: "web.dockerfile") == .dockerfile)
+    }
+
+    @Test("Makefile targets, variables and directives")
+    func makefile() {
+        let found = tokens("""
+            CC ?= clang
+            CFLAGS := -O2 # fast
+            .PHONY: all clean
+            all: $(OBJ)
+            %.o: %.c
+            \t$(CC) $(CFLAGS) -c $< -o $@ $(patsubst %.c,%.o,$(SRC))
+            ifeq ($(OS),Windows_NT)
+            -include deps.mk
+            endif
+            """, .makefile)
+        #expect(found["CC"] == .variable)
+        #expect(found["CFLAGS"] == .variable)
+        #expect(found["# fast"] == .comment)
+        #expect(found[".PHONY"] == .keyword)
+        #expect(found["all"] == .property)
+        #expect(found["$(OBJ)"] == .variable)
+        #expect(found["%.o"] == .property)
+        #expect(found["$(CC)"] == .variable)
+        #expect(found["$<"] == .variable)
+        #expect(found["$@"] == .variable)
+        #expect(found["$(patsubst %.c,%.o,$(SRC))"] == .variable)
+        #expect(found["ifeq"] == .keyword)
+        #expect(found["include"] == .keyword)
+        #expect(found["endif"] == .keyword)
+        #expect(SourceLanguage(contentType: .data, filename: "Makefile") == .makefile)
+        #expect(SourceLanguage(contentType: .data, filename: "GNUmakefile") == .makefile)
+        #expect(SourceLanguage(contentType: .plainText, filename: "rules.mk") == .makefile)
+    }
+
     @Test("HTML tags and attributes, with the script and style inside them")
     func html() {
         let found = tokens("""
@@ -433,6 +489,8 @@ struct SyntaxHighlighterTests {
         .less: "@size: 4px; // c\n@media screen { .card { margin: @size; } }\n.a-@{name} { color: #fff /* x\n */ }\n",
         .toml: "[server] # c\nname = \"Libretto\"\ntext = \"\"\"\nmany\nlines\"\"\"\n[[bin]]\nports = [ [1, 2], [3] ]\npath = '''a\nb'''\n",
         .ini: "; c\n[core]\nname = Libretto\nexport HOME=$HOME:/bin\nurl: \"http://x\" # not\n! bang\n",
+        .dockerfile: "FROM swift:6 AS build # c\nRUN apt-get update \\\n  && echo \"$HOME\n\"\nCOPY . /app\n",
+        .makefile: ".PHONY: all\nSRC := $(wildcard *.c) # c\nall: $(SRC)\n\tcc -o $@ $^ \"a\nb\"\n-include deps.mk\nx ?= 1\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.

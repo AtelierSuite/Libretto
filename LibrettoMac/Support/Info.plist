@@ -84,6 +84,8 @@
 				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
+				<string>com.docker.dockerfile</string>
+				<string>org.gnu.makefile</string>
 				<string>org.toml-lang.toml</string>
 				<string>com.microsoft.ini</string>
 				<string>com.sun.java-properties</string>
@@ -701,6 +703,46 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>text/x-java-properties</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Dockerfile</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.docker.dockerfile</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>dockerfile</string>
+					<string>containerfile</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Makefile</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.gnu.makefile</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mk</string>
+					<string>mak</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-makefile</string>
 				</array>
 			</dict>
 		</dict>

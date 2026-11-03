@@ -344,8 +344,12 @@ private struct CodeRules {
     var variablePrefix: Character?
     /// Shell and YAML: a comment only starts at the start of a word, and words run on through hyphens.
     var commentsStartWords = false
-    /// Shell: `$?`, `$@` and the like are variables too.
+    /// Shell and Makefiles: `$?`, `$@` and the like are variables too.
     var isShell = false
+    /// Makefiles: `$(NAME)` is a variable, where in shell it runs a command.
+    var variableParentheses = false
+    /// Makefiles: a line's targets before its `:`, and the variable it sets before its `=`.
+    var makeRules = false
     /// JSON and YAML: a string or name before a colon is a key, coloured as a property.
     var colonsMarkKeys = false
     /// TOML and INI: what starts a line, up to one of these, is a key.
@@ -381,13 +385,14 @@ private struct CodeRules {
             strings = quoted + [StringRule(delimiter: "`", spansLines: true)]
             keywords = language == .typeScript ? Self.javaScript.union(Self.typeScript) : Self.javaScript
             attributePrefix = language == .typeScript ? "@" : nil
-        case .shell:
+        case .shell, .dockerfile:
             lineComments = ["#"]
             strings = [
                 StringRule(delimiter: "\"", spansLines: true),
                 StringRule(delimiter: "'", spansLines: true, escapes: false),
             ]
-            keywords = Self.shell
+            // A Dockerfile's instructions, around commands that are the shell's.
+            keywords = language == .dockerfile ? Self.shell.union(Self.dockerfile) : Self.shell
             capitalisedTypes = false
             variablePrefix = "$"
             commentsStartWords = true
@@ -494,6 +499,15 @@ private struct CodeRules {
             keyPrefixes = ["export "]
             sectionHeaders = true
             commentsStartLines = true
+        case .makefile:
+            lineComments = ["#"]
+            strings = quoted
+            keywords = Self.make
+            capitalisedTypes = false
+            variablePrefix = "$"
+            isShell = true
+            variableParentheses = true
+            makeRules = true
         case .plainText, .html, .css, .less, .scss, .xml:
             // HTML, XML and CSS and its dialects are scanned on their own; their comments are here for commenting
             // lines out, with SCSS's and Less's `//`.
@@ -539,6 +553,14 @@ private struct CodeRules {
         "exec", "exit", "export", "false", "fi", "for", "function", "if", "in", "local", "printf", "read",
         "readonly", "return", "select", "set", "shift", "source", "then", "time", "trap", "true", "typeset",
         "unset", "until", "while",
+    ]
+    static let dockerfile: Set<String> = [
+        "ADD", "ARG", "AS", "CMD", "COPY", "ENTRYPOINT", "ENV", "EXPOSE", "FROM", "HEALTHCHECK", "LABEL",
+        "MAINTAINER", "ONBUILD", "RUN", "SHELL", "STOPSIGNAL", "USER", "VOLUME", "WORKDIR",
+    ]
+    static let make: Set<String> = [
+        "define", "else", "endef", "endif", "export", "ifdef", "ifeq", "ifndef", "ifneq", "include", "override",
+        "private", "sinclude", "undefine", "unexport", "vpath",
     ]
     static let c: Set<String> = [
         "auto", "break", "case", "const", "continue", "default", "do", "else", "enum", "extern", "false", "for",
@@ -873,6 +895,11 @@ private struct Scanner {
                 index = stop
                 continue
             }
+            if rules.makeRules, !isSpace(current), startsLine(index, from: range.lowerBound),
+               let stop = scanMakeLine(from: index, in: range, rules: rules) {
+                index = stop
+                continue
+            }
             for rule in rules.strings where matches(rule.delimiter, at: index) {
                 let stop = stringEnd(rule, from: index, before: end)
                 let marksKey = rules.colonsMarkKeys && isKey(endingAt: stop, before: end, spaced: true)
@@ -891,6 +918,8 @@ private struct Scanner {
                 let stop: Int
                 if next == Self.ascii("{") {
                     stop = min((first("}", from: index + 2, before: end) ?? end - 1) + 1, end)
+                } else if rules.variableParentheses, next == Self.ascii("(") {
+                    stop = closingParenthesis(from: index + 1, before: end)
                 } else if isNamePart(next) {
                     stop = nameEnd(from: index + 1, before: end)
                 } else {
@@ -965,6 +994,58 @@ private struct Scanner {
         while keyStop > keyStart, units[keyStop - 1] == 0x20 || units[keyStop - 1] == 0x09 { keyStop -= 1 }
         add(keyStart..<keyStop, .property)
         return max(separator, start + 1)
+    }
+
+    /// Where the parentheses that open at `index` close, with any inside them, as in `$(dir $(SRC))`.
+    private mutating func closingParenthesis(from index: Int, before end: Int) -> Int {
+        var depth = 0
+        var position = index
+        while position < end {
+            if units[position] == Self.ascii("(") { depth += 1 }
+            if units[position] == Self.ascii(")") {
+                depth -= 1
+                if depth == 0 { return position + 1 }
+            }
+            if isNewline(units[position]) { return position }
+            position += 1
+        }
+        return end
+    }
+
+    /// A Makefile line's targets, coloured as properties, or the variable it
+    /// sets, and where scanning goes on from after it. A recipe, which starts
+    /// with a tab, and a directive, are left to be scanned as they are.
+    private mutating func scanMakeLine(from start: Int, in range: Range<Int>, rules: CodeRules) -> Int? {
+        var lineStart = start
+        while lineStart > range.lowerBound, !isNewline(units[lineStart - 1]) { lineStart -= 1 }
+        guard units[lineStart] != 0x09 else { return nil }
+        // `-include` is `include` that minds no missing file.
+        let wordStart = units[start] == Self.ascii("-") ? start + 1 : start
+        guard !rules.keywords.contains(word(wordStart..<nameEnd(from: wordStart, before: range.upperBound))) else {
+            return nil
+        }
+
+        let stop = lineEnd(from: start, before: range.upperBound)
+        let separators = ":=".utf16
+        guard let separator = (start..<stop).first(where: { separators.contains(units[$0]) }), separator > start else {
+            return nil
+        }
+        // `:=`, `::=`, `?=`, `+=` and `!=` set a variable, as `=` does; a `:` alone ends the targets.
+        let sets = units[separator] == Self.ascii("=") || matches(":=", at: separator) || matches("::=", at: separator)
+        var nameStop = separator
+        if sets, "?+!".utf16.contains(units[separator - 1]) { nameStop -= 1 }
+        while nameStop > start, units[nameStop - 1] == 0x20 || units[nameStop - 1] == 0x09 { nameStop -= 1 }
+        // Targets made of variables are left to colour as variables.
+        guard nameStop > start, !units[start..<nameStop].contains(Self.ascii("$")) else { return nil }
+        if sets {
+            add(start..<nameStop, .variable)
+        } else {
+            // `.PHONY`, `.SUFFIXES` and the other special targets.
+            let isSpecial = units[start] == Self.ascii(".")
+                && word((start + 1)..<nameStop).allSatisfy { $0.isUppercase || $0 == "_" }
+            add(start..<nameStop, isSpecial ? .keyword : .property)
+        }
+        return separator
     }
 
     /// Whether a colon follows `index`, making what ends there a key. A
