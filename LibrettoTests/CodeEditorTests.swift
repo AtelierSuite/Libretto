@@ -36,6 +36,47 @@ struct CodeEditorTests {
         #expect(document.sourceLanguage == language)
     }
 
+    /// Types `text` at the caret as the keyboard would, letting the editor step in.
+    private func type(_ text: String, in controller: CodeEditorController) {
+        let textView = controller.view.textView
+        if controller.textView(textView, shouldChangeTextIn: textView.selectedRange, replacementText: text) {
+            textView.insertText(text)
+        }
+        controller.textViewDidChange(textView)
+    }
+
+    @Test("Brackets close themselves, Return opens a line between braces, and the caret's bracket is matched")
+    func brackets() throws {
+        let (controller, latest) = makeEditor("func f() ")
+        let textView = controller.view.textView
+        textView.selectedRange = NSRange(location: 9, length: 0)
+        type("{", in: controller)
+        #expect(textView.text == "func f() {}")
+        #expect(textView.selectedRange == NSRange(location: 10, length: 0))
+        #expect(controller.matchedBrackets == [9, 10])
+
+        type("\n", in: controller)
+        #expect(textView.text == "func f() {\n    \n}")
+        #expect(textView.selectedRange == NSRange(location: 15, length: 0))
+        #expect(controller.matchedBrackets.isEmpty)
+
+        type("g(", in: controller)
+        type("(", in: controller)
+        type("\"", in: controller)
+        type("(", in: controller)
+        #expect(textView.text == "func f() {\n    g((\"(\")\n}")
+        type("\"", in: controller)
+        type(")", in: controller)
+        #expect(textView.text == "func f() {\n    g((\"(\")\n}")
+        #expect(textView.selectedRange == NSRange(location: 22, length: 0))
+        // The bracket in the string is passed over.
+        #expect(controller.matchedBrackets == [21, 17])
+
+        controller.flush()
+        let document = try #require(latest())
+        #expect(String(decoding: PlainText.data(from: document), as: UTF8.self) == "func f() {\n    g((\"(\")\n}\n")
+    }
+
     @Test("A long line makes the text wider than the screen rather than wrapping")
     func longLines() {
         let (controller, _) = makeEditor("let short = 1\nlet long = \"" + String(repeating: "x", count: 200) + "\"")
