@@ -78,6 +78,8 @@
 				<string>org.json5</string>
 				<string>public.json</string>
 				<string>public.yaml</string>
+				<string>org.sass-lang.scss</string>
+				<string>org.lesscss.less</string>
 				<string>public.xml</string>
 				<string>public.svg-image</string>
 				<string>com.apple.property-list</string>
@@ -600,6 +602,48 @@
 					<string>csproj</string>
 					<string>vbproj</string>
 					<string>fsproj</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>SCSS Stylesheet</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.sass-lang.scss</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>scss</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-scss</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Less Stylesheet</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.lesscss.less</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>less</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-less</string>
 				</array>
 			</dict>
 		</dict>

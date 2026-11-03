@@ -14,6 +14,8 @@ extension UTType {
     public static let goSource = UTType(importedAs: "org.golang.go-script", conformingTo: .sourceCode)
     public static let rustSource = UTType(importedAs: "org.rust-lang.rust-script", conformingTo: .sourceCode)
     public static let sqlSource = UTType(importedAs: "org.iso.sql", conformingTo: .sourceCode)
+    public static let scssSource = UTType(importedAs: "org.sass-lang.scss", conformingTo: .sourceCode)
+    public static let lessSource = UTType(importedAs: "org.lesscss.less", conformingTo: .sourceCode)
     public static let jsonWithComments = UTType(importedAs: "com.microsoft.jsonc", conformingTo: .json)
     public static let json5 = UTType(importedAs: "org.json5", conformingTo: .json)
     public static let interfaceBuilderDocument = UTType(
@@ -38,11 +40,13 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case javaScript
     case json
     case kotlin
+    case less
     case objectiveC
     case php
     case python
     case ruby
     case rust
+    case scss
     case shell
     case sql
     case swift
@@ -52,8 +56,9 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
 
     /// The types Libretto opens as source, most particular first.
     public static let contentTypes: [UTType] = [
-        .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .css, .shellScript,
-        .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader, .cSource, .cHeader,
+        .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .scssSource, .lessSource,
+        .css, .shellScript, .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader,
+        .cSource, .cHeader,
         .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript, .sqlSource,
         .jsonWithComments, .json5, .json, .yaml, .interfaceBuilderDocument, .storyboard, .msBuildProject,
         .propertyList, .svg, .xml, .mpeg2TransportStream,
@@ -73,11 +78,13 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .javaScript: return "JavaScript"
         case .json: return "JSON"
         case .kotlin: return "Kotlin"
+        case .less: return "Less"
         case .objectiveC: return "Objective-C"
         case .php: return "PHP"
         case .python: return "Python"
         case .ruby: return "Ruby"
         case .rust: return "Rust"
+        case .scss: return "SCSS"
         case .shell: return "Shell"
         case .sql: return "SQL"
         case .swift: return "Swift"
@@ -100,11 +107,13 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .javaScript: return ["js", "mjs", "cjs", "jsx"]
         case .json: return ["json", "jsonc", "json5"]
         case .kotlin: return ["kt", "kts"]
+        case .less: return ["less"]
         case .objectiveC: return ["m", "mm"]
         case .php: return ["php", "phtml"]
         case .python: return ["py", "pyi", "pyw"]
         case .ruby: return ["rb", "rake", "gemspec", "ru"]
         case .rust: return ["rs"]
+        case .scss: return ["scss"]
         case .shell: return ["sh", "bash", "zsh", "ksh"]
         case .sql: return ["sql"]
         case .swift: return ["swift"]
@@ -142,7 +151,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         let types: [(UTType, SourceLanguage)] = [
             (.swiftSource, .swift), (.pythonScript, .python), (.typeScriptSource, .typeScript),
             (.mpeg2TransportStream, .typeScript), (.json, .json), (.javaScript, .javaScript), (.html, .html),
-            (.css, .css), (.objectiveCSource, .objectiveC), (.objectiveCPlusPlusSource, .objectiveC),
+            (.scssSource, .scss), (.lessSource, .less), (.css, .css), (.objectiveCSource, .objectiveC), (.objectiveCPlusPlusSource, .objectiveC),
             (.cPlusPlusSource, .cPlusPlus), (.cPlusPlusHeader, .cPlusPlus), (.cSource, .c), (.cHeader, .c),
             (.cSharpSource, .cSharp), (.javaSource, .java), (.kotlinSource, .kotlin), (.goSource, .go),
             (.rustSource, .rust), (.rubyScript, .ruby), (.phpScript, .php), (.sqlSource, .sql), (.yaml, .yaml),

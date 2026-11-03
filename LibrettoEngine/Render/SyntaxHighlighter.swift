@@ -49,7 +49,7 @@ public enum SyntaxHighlighter: Sendable {
     public static func quotes(for language: SourceLanguage) -> Set<UInt16> {
         switch language {
         case .plainText: return []
-        case .html, .xml, .css: return [0x22, 0x27]
+        case .html, .xml, .css, .scss, .less: return [0x22, 0x27]
         default: return Set(CodeRules(language).strings.compactMap { $0.delimiter.utf16.first })
         }
     }
@@ -464,11 +464,13 @@ private struct CodeRules {
             capitalisedTypes = false
             commentsStartWords = true
             colonsMarkKeys = true
-        case .plainText, .html, .css, .xml:
-            // HTML, XML and CSS are scanned on their own; their comments are here for commenting lines out.
+        case .plainText, .html, .css, .less, .scss, .xml:
+            // HTML, XML and CSS and its dialects are scanned on their own; their comments are here for commenting
+            // lines out, with SCSS's and Less's `//`.
+            lineComments = language == .scss || language == .less ? ["//"] : []
             blockComment = switch language {
             case .html, .xml: (open: "<!--", close: "-->")
-            case .css: cStyle
+            case .css, .scss, .less: cStyle
             default: nil
             }
             strings = quoted
@@ -665,7 +667,9 @@ private struct Scanner {
         switch language {
         case .html: scanHTML(all, from: start?.index ?? 0)
         case .xml: scanHTML(all, isXML: true, from: start?.index ?? 0)
-        case .css: scanCSS(all, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
+        case .css, .scss, .less:
+            let dialect: CSSDialect = language == .scss ? .scss : language == .less ? .less : .css
+            scanCSS(all, dialect: dialect, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
         default: scanCode(all, rules: CodeRules(language), from: start?.index ?? 0)
         }
     }
@@ -991,9 +995,25 @@ private struct Scanner {
 
     // MARK: CSS
 
-    /// Scans `range` as CSS, from `start` if this is the whole text, where
-    /// it marks checkpoints.
-    mutating func scanCSS(_ range: Range<Int>, from start: Checkpoint? = nil) {
+    /// CSS, or one of the languages that add to it.
+    enum CSSDialect {
+        case css
+        /// SCSS: `//` comments, `$variables`, `#{…}` and `%placeholders`.
+        case scss
+        /// Less: `//` comments, and `@variables` among its at-rules.
+        case less
+    }
+
+    /// The at-rules Less has, so that every other name after an `@` is a variable.
+    private static let lessAtRules: Set<String> = [
+        "charset", "container", "counter-style", "document", "font-face", "font-feature-values", "import",
+        "keyframes", "layer", "media", "namespace", "page", "plugin", "property", "scope", "starting-style",
+        "supports", "viewport",
+    ]
+
+    /// Scans `range` as CSS, or a dialect of it, from `start` if this is the
+    /// whole text, where it marks checkpoints.
+    mutating func scanCSS(_ range: Range<Int>, dialect: CSSDialect = .css, from start: Checkpoint? = nil) {
         let end = range.upperBound
         var index = start?.index ?? range.lowerBound
         var depth = start?.state.depth ?? 0
@@ -1008,6 +1028,25 @@ private struct Scanner {
             if matches("/*", at: index) {
                 let stop = min((first("*/", from: index + 2, before: end) ?? end - 2) + 2, end)
                 add(index..<stop, .comment)
+                index = stop
+            } else if dialect != .css, matches("//", at: index), previous != Self.ascii(":") {
+                // Not the `//` of a URL, as in `url(http://…)`.
+                let stop = lineEnd(from: index, before: end)
+                add(index..<stop, .comment)
+                index = stop
+            } else if dialect != .css, matches(dialect == .scss ? "#{" : "@{", at: index) {
+                // A variable's value written into a selector or a name.
+                let stop = min((first("}", from: index + 2, before: end) ?? end - 1) + 1, end)
+                add(index..<stop, .variable)
+                index = stop
+            } else if dialect == .scss, current == Self.ascii("$"), let next = unit(index + 1), isLetter(next) {
+                let stop = nameEnd(from: index + 1, before: end, extra: nameExtra)
+                add(index..<stop, .variable)
+                index = stop
+            } else if dialect == .less, current == Self.ascii("@"), let next = unit(index + 1), isLetter(next),
+                      case let stop = nameEnd(from: index + 1, before: end, extra: nameExtra),
+                      !Self.lessAtRules.contains(word((index + 1)..<stop)) {
+                add(index..<stop, .variable)
                 index = stop
             } else if current == Self.ascii("\"") || current == Self.ascii("'") {
                 let rule = CodeRules.StringRule(delimiter: current == 0x22 ? "\"" : "'", spansLines: false)
@@ -1024,10 +1063,17 @@ private struct Scanner {
                 index = stop
             } else if isSelector ?? opensBlock(from: index, before: end, orAtTopLevel: depth == 0) {
                 isSelector = true
-                if (current == Self.ascii(".") || current == Self.ascii("#")), let next = unit(index + 1), isLetter(next) {
+                // SCSS's `%placeholder` selectors are classes of a kind.
+                let marksClass = current == Self.ascii(".") || current == Self.ascii("#")
+                    || (dialect == .scss && current == Self.ascii("%"))
+                if marksClass, let next = unit(index + 1), isLetter(next) {
                     let stop = nameEnd(from: index + 1, before: end, extra: nameExtra)
                     add(index..<stop, .attribute)
                     index = stop
+                } else if dialect != .css, current == Self.ascii("&") {
+                    // The selector a nested one is written within.
+                    add(index..<(index + 1), .keyword)
+                    index += 1
                 } else if current == Self.ascii(":") {
                     let start = unit(index + 1) == Self.ascii(":") ? index + 2 : index + 1
                     let stop = nameEnd(from: start, before: end, extra: nameExtra)

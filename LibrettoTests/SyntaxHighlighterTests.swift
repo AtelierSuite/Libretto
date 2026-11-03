@@ -123,6 +123,50 @@ struct SyntaxHighlighterTests {
         #expect(found["!important"] == .keyword)
     }
 
+    @Test("SCSS's comments, variables, nesting and placeholders")
+    func scss() {
+        let found = tokens("""
+            // Colours
+            $accent-color: #f80;
+            %card { padding: 4px; }
+            .button { color: $accent-color; &:hover { background: url(http://a.b/c.png); } .icon-#{$size} { } }
+            @mixin round($r) { border-radius: $r; }
+            """, .scss)
+        #expect(found["// Colours"] == .comment)
+        #expect(found["$accent-color"] == .variable)
+        #expect(found["#f80"] == .number)
+        #expect(found["%card"] == .attribute)
+        #expect(found["padding"] == .property)
+        #expect(found[".button"] == .attribute)
+        #expect(found["&"] == .keyword)
+        #expect(found[":hover"] == .keyword)
+        #expect(found["background"] == .property)
+        #expect(found.keys.contains { $0.hasPrefix("//a.b") } == false)
+        #expect(found["#{$size}"] == .variable)
+        #expect(found["@mixin"] == .keyword)
+        #expect(found["border-radius"] == .property)
+        #expect(SourceLanguage(contentType: .plainText, filename: "app.scss") == .scss)
+    }
+
+    @Test("Less's comments, and its variables apart from its at-rules")
+    func less() {
+        let found = tokens("""
+            @import "base"; // shared
+            @width: 10px;
+            @media screen { .box { width: @width; .@{name}-x { } } }
+            """, .less)
+        #expect(found["@import"] == .keyword)
+        #expect(found["// shared"] == .comment)
+        #expect(found["@width"] == .variable)
+        #expect(found["10px"] == .number)
+        #expect(found["@media"] == .keyword)
+        #expect(found[".box"] == .attribute)
+        #expect(found["width"] == .property)
+        #expect(found["@{name}"] == .variable)
+        #expect(tokens("a { b: c } // d", .css)["// d"] == nil)
+        #expect(SourceLanguage(contentType: .plainText, filename: "theme.less") == .less)
+    }
+
     @Test("C's preprocessor and built-in types, and C++'s own keywords")
     func cFamily() {
         let found = tokens("#include <stdio.h>\nstatic int count = 0; // c\nnamespace a {}", .cPlusPlus)
@@ -323,6 +367,8 @@ struct SyntaxHighlighterTests {
             """,
         .css: "@media screen {\n  .card > h1:hover,\n  a { margin: -4px 1.5em; /* c\n */ color: #fff !important; }\n}\np\n{ content: \"a\" }\n",
         .xml: "<?xml version=\"1.0\"?>\n<!-- c\n d --><plist><dict>\n<key a='x\ny'>Name</key><![CDATA[a\n<b>]]>\n<script>let a = 1</script></dict>\n",
+        .scss: "$size: 4px; // c\n.card { &:hover { margin: #{$size} } /* x\n */ }\n%base { color: red }\n",
+        .less: "@size: 4px; // c\n@media screen { .card { margin: @size; } }\n.a-@{name} { color: #fff /* x\n */ }\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.
