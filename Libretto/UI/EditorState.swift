@@ -193,4 +193,7 @@ final class EditorState {
     @ObservationIgnored weak var controller: DocumentTextController?
     /// The code editor, while a source file is open.
     @ObservationIgnored weak var codeEditor: CodeEditorController?
+    /// What the code editor indents lines with: what the file's lines are
+    /// indented with once it opens, until another is chosen.
+    var codeIndentUnit: IndentUnit?
 }

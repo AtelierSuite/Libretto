@@ -332,6 +332,7 @@ struct DocumentView: View {
                 moreMenu {
                     panelButtons
                     viewModePicker
+                    indentPicker
                     Section { sourceCodeLink }
                 }
             }
@@ -353,6 +354,7 @@ struct DocumentView: View {
                     }
                     panelButtons
                     viewModePicker
+                    indentPicker
                 }
             }
         }
@@ -520,6 +522,24 @@ struct DocumentView: View {
                     Label("Toolbar.ViewMode", systemImage: state.viewMode.symbolName)
                 }
                 .accessibilityIdentifier("viewMode")
+            }
+        }
+    }
+
+    /// What the code editor indents with, for when the file's own lines do not say, or say otherwise.
+    @ViewBuilder
+    private var indentPicker: some View {
+        if isCode, let unit = state.codeIndentUnit {
+            Section {
+                Picker(selection: Binding(get: { unit }, set: { state.codeIndentUnit = $0 })) {
+                    ForEach(unit.choices) { choice in
+                        Text(choice.displayName).tag(choice)
+                    }
+                } label: {
+                    Label("Toolbar.Indentation", systemImage: "increase.indent")
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("indentation")
             }
         }
     }
