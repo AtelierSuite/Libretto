@@ -7,12 +7,14 @@ import SwiftUI
 /// the document a moment after it stops; a document changed from elsewhere,
 /// such as by an undo, replaces the text.
 @MainActor
-final class CodeEditor: NSObject, NSTextViewDelegate {
+final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDelegate {
     private(set) var document: WordDocument
     private var scheme: ColorScheme
     let scrollView: NSScrollView
     let textView: NSTextView
     private var syncTask: Task<Void, Never>?
+    /// The syntax colouring, kept so that an edit colours only the lines around it.
+    private var coloring = SyntaxColoring()
 
     /// Hands a changed document to whoever owns it.
     var onChange: ((WordDocument, EditScope) -> Void)?
@@ -26,6 +28,7 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
         (scrollView, textView) = Self.makeTextView()
         super.init()
         textView.delegate = self
+        textView.textStorage?.delegate = self
         textView.isRichText = false
         textView.allowsUndo = false
         textView.usesFindBar = true
@@ -118,7 +121,16 @@ final class CodeEditor: NSObject, NSTextViewDelegate {
 
     private func highlight() {
         guard let storage = textView.textStorage else { return }
-        SyntaxHighlighter.apply(language, to: storage, scheme: scheme, plainColor: .textColor)
+        coloring.apply(language, to: storage, scheme: scheme, plainColor: .textColor)
+    }
+
+    func textStorage(
+        _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange, changeInLength delta: Int
+    ) {
+        // Colouring changes attributes only, which leave the colouring as it is.
+        guard editedMask.contains(.editedCharacters) else { return }
+        coloring.noteEdit(editedRange, changeInLength: delta)
     }
 
     func textDidChange(_ notification: Notification) {
