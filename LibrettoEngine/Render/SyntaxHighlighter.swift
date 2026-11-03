@@ -20,6 +20,9 @@ public enum SyntaxKind: Sendable {
     case property
     /// Shell variables.
     case variable
+    /// The lines a diff adds, and those it removes.
+    case added
+    case removed
 }
 
 public struct SyntaxToken: Equatable, Sendable {
@@ -45,12 +48,14 @@ public enum SyntaxHighlighter: Sendable {
     }
 
     /// The quotes that start a string in `language`: the first character of
-    /// each of its string delimiters. Plain text has none.
+    /// each of its string delimiters that close as they open, so not Lua's
+    /// `[[`. Plain text has none.
     public static func quotes(for language: SourceLanguage) -> Set<UInt16> {
         switch language {
-        case .plainText: return []
-        case .html, .css: return [0x22, 0x27]
-        default: return Set(CodeRules(language).strings.compactMap { $0.delimiter.utf16.first })
+        case .plainText, .diff: return []
+        case .html, .xml, .css, .scss, .less: return [0x22, 0x27]
+        default:
+            return Set(CodeRules(language).strings.filter { $0.closing == nil }.compactMap { $0.delimiter.utf16.first })
         }
     }
 
@@ -115,6 +120,8 @@ public enum SyntaxHighlighter: Sendable {
         case .tag: hex = dark ? 0x5DD8FF : 0x0D5786
         case .property: hex = dark ? 0x7CC1B0 : 0x2A5B60
         case .variable: hex = dark ? 0xC8A7F0 : 0x6C36A9
+        case .added: hex = dark ? 0x85DB8F : 0x175E1E
+        case .removed: hex = dark ? 0xFF9C9C : 0x9C1A1F
         }
         return PlatformColor.sRGB(
             red: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255,
@@ -288,10 +295,13 @@ fileprivate extension [Checkpoint] {
 }
 
 /// What the scan holds besides where it is: for CSS, how deep in blocks it
-/// is and whether the statement is a selector.
+/// is and whether the statement is a selector; for a diff, how many lines
+/// are left on each side of the hunk under way.
 fileprivate struct ScanState: Equatable, Sendable {
     var depth = 0
     var isSelector: Bool?
+    var oldLinesLeft = 0
+    var newLinesLeft = 0
 }
 
 // MARK: - Languages
@@ -306,7 +316,7 @@ public struct CommentMarkers: Equatable, Sendable {
 }
 
 extension SourceLanguage {
-    /// Nothing for plain text and JSON, which have no comments.
+    /// Nothing for plain text, which has no comments.
     public var commentMarkers: CommentMarkers? {
         let rules = CodeRules(self)
         guard !rules.lineComments.isEmpty || rules.blockComment != nil else { return nil }
@@ -321,6 +331,8 @@ private struct CodeRules {
         public var delimiter: String
         public var spansLines: Bool
         public var escapes = true
+        /// Where it closes with something other than how it opens, as Lua's `[[` closes with `]]`.
+        public var closing: String?
     }
 
     var lineComments: [String] = []
@@ -340,14 +352,26 @@ private struct CodeRules {
     /// Characters that make the name after them a keyword: `#` for Swift's
     /// compiler directives and C's preprocessor.
     var directivePrefix: Character?
-    /// The character that starts a variable: `$` in shell scripts, PHP and Ruby.
-    var variablePrefix: Character?
+    /// The characters that start a variable: `$` in shell scripts, PHP and Ruby, and `@` and `%` too in Perl.
+    var variablePrefixes = ""
     /// Shell and YAML: a comment only starts at the start of a word, and words run on through hyphens.
     var commentsStartWords = false
-    /// Shell: `$?`, `$@` and the like are variables too.
+    /// Shell and Makefiles: `$?`, `$@` and the like are variables too.
     var isShell = false
+    /// Makefiles: `$(NAME)` is a variable, where in shell it runs a command.
+    var variableParentheses = false
+    /// Makefiles: a line's targets before its `:`, and the variable it sets before its `=`.
+    var makeRules = false
     /// JSON and YAML: a string or name before a colon is a key, coloured as a property.
     var colonsMarkKeys = false
+    /// TOML and INI: what starts a line, up to one of these, is a key.
+    var keySeparators = ""
+    /// `.env`: words that may come before a key, as in `export NAME=value`.
+    var keyPrefixes: [String] = []
+    /// TOML and INI: a line of `[section]` or `[[table]]` is a header, coloured as a tag.
+    var sectionHeaders = false
+    /// INI: a comment only starts a line, so a `;` in a value is no comment.
+    var commentsStartLines = false
 
     init(_ language: SourceLanguage) {
         let quoted = [StringRule(delimiter: "\"", spansLines: false), StringRule(delimiter: "'", spansLines: false)]
@@ -373,15 +397,16 @@ private struct CodeRules {
             strings = quoted + [StringRule(delimiter: "`", spansLines: true)]
             keywords = language == .typeScript ? Self.javaScript.union(Self.typeScript) : Self.javaScript
             attributePrefix = language == .typeScript ? "@" : nil
-        case .shell:
+        case .shell, .dockerfile:
             lineComments = ["#"]
             strings = [
                 StringRule(delimiter: "\"", spansLines: true),
                 StringRule(delimiter: "'", spansLines: true, escapes: false),
             ]
-            keywords = Self.shell
+            // A Dockerfile's instructions, around commands that are the shell's.
+            keywords = language == .dockerfile ? Self.shell.union(Self.dockerfile) : Self.shell
             capitalisedTypes = false
-            variablePrefix = "$"
+            variablePrefixes = "$"
             commentsStartWords = true
             isShell = true
         case .c, .cPlusPlus, .objectiveC:
@@ -432,7 +457,7 @@ private struct CodeRules {
             keywords = Self.ruby
             // Instance variables, coloured as attributes are elsewhere.
             attributePrefix = "@"
-            variablePrefix = "$"
+            variablePrefixes = "$"
         case .php:
             lineComments = ["//", "#"]
             blockComment = cStyle
@@ -441,7 +466,7 @@ private struct CodeRules {
                 StringRule(delimiter: "'", spansLines: true),
             ]
             keywords = Self.php
-            variablePrefix = "$"
+            variablePrefixes = "$"
         case .sql:
             lineComments = ["--"]
             blockComment = cStyle
@@ -450,7 +475,10 @@ private struct CodeRules {
             capitalisedTypes = false
             ignoresCase = true
         case .json:
-            strings = [quoted[0]]
+            // Comments, and JSON5's single quotes, for `tsconfig.json`, VS Code's settings, `.jsonc` and `.json5`.
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = quoted
             keywords = ["true", "false", "null"]
             capitalisedTypes = false
             colonsMarkKeys = true
@@ -461,11 +489,104 @@ private struct CodeRules {
             capitalisedTypes = false
             commentsStartWords = true
             colonsMarkKeys = true
-        case .plainText, .html, .css:
-            // HTML and CSS are scanned on their own; their comments are here for commenting lines out.
+        case .toml:
+            lineComments = ["#"]
+            strings = [
+                StringRule(delimiter: "\"\"\"", spansLines: true),
+                StringRule(delimiter: "'''", spansLines: true, escapes: false),
+                quoted[0], StringRule(delimiter: "'", spansLines: false, escapes: false),
+            ]
+            keywords = ["true", "false", "inf", "nan"]
+            capitalisedTypes = false
+            keySeparators = "="
+            sectionHeaders = true
+        case .ini:
+            // INI, Java's `.properties`, `.editorconfig` and `.env`.
+            lineComments = ["#", ";", "!"]
+            strings = quoted
+            keywords = ["true", "false", "yes", "no", "on", "off", "null"]
+            capitalisedTypes = false
+            variablePrefixes = "$"
+            keySeparators = "=:"
+            keyPrefixes = ["export "]
+            sectionHeaders = true
+            commentsStartLines = true
+        case .makefile:
+            lineComments = ["#"]
+            strings = quoted
+            keywords = Self.make
+            capitalisedTypes = false
+            variablePrefixes = "$"
+            isShell = true
+            variableParentheses = true
+            makeRules = true
+        case .lua:
+            lineComments = ["--"]
+            blockComment = (open: "--[[", close: "]]")
+            strings = [StringRule(delimiter: "[[", spansLines: true, escapes: false, closing: "]]")] + quoted
+            keywords = Self.lua
+            capitalisedTypes = false
+        case .dart:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = [
+                StringRule(delimiter: "\"\"\"", spansLines: true), StringRule(delimiter: "'''", spansLines: true),
+            ] + quoted
+            keywords = Self.dart
+            types = Self.dartTypes
+            attributePrefix = "@"
+        case .scala:
+            lineComments = ["//"]
+            blockComment = cStyle
+            strings = [StringRule(delimiter: "\"\"\"", spansLines: true, escapes: false)] + quoted
+            keywords = Self.scala
+            attributePrefix = "@"
+        case .perl:
+            lineComments = ["#"]
+            strings = quoted + [StringRule(delimiter: "`", spansLines: false)]
+            keywords = Self.perl
+            capitalisedTypes = false
+            // Scalars, arrays and hashes.
+            variablePrefixes = "$@%"
+        case .r:
+            lineComments = ["#"]
+            strings = quoted + [StringRule(delimiter: "`", spansLines: false, escapes: false)]
+            keywords = Self.r
+            capitalisedTypes = false
+        case .zig:
+            lineComments = ["//"]
+            strings = quoted
+            keywords = Self.zig
+            types = Self.zigTypes
+            // Built-in functions, as in `@import`.
+            attributePrefix = "@"
+        case .elixir:
+            lineComments = ["#"]
+            strings = [
+                StringRule(delimiter: "\"\"\"", spansLines: true), StringRule(delimiter: "'''", spansLines: true),
+            ] + quoted
+            keywords = Self.elixir
+            // Module attributes, as in `@doc`.
+            attributePrefix = "@"
+        case .haskell:
+            lineComments = ["--"]
+            blockComment = (open: "{-", close: "-}")
+            // `'` ends names, as in `foldl'`, as well as starting characters.
+            strings = [quoted[0]]
+            keywords = Self.haskell
+        case .graphQL:
+            lineComments = ["#"]
+            strings = [StringRule(delimiter: "\"\"\"", spansLines: true), quoted[0]]
+            keywords = Self.graphQL
+            attributePrefix = "@"
+            variablePrefixes = "$"
+        case .plainText, .html, .css, .less, .scss, .xml, .diff:
+            // HTML, XML and CSS and its dialects are scanned on their own; their comments are here for commenting
+            // lines out, with SCSS's and Less's `//`.
+            lineComments = language == .scss || language == .less ? ["//"] : []
             blockComment = switch language {
-            case .html: (open: "<!--", close: "-->")
-            case .css: cStyle
+            case .html, .xml: (open: "<!--", close: "-->")
+            case .css, .scss, .less: cStyle
             default: nil
             }
             strings = quoted
@@ -504,6 +625,14 @@ private struct CodeRules {
         "exec", "exit", "export", "false", "fi", "for", "function", "if", "in", "local", "printf", "read",
         "readonly", "return", "select", "set", "shift", "source", "then", "time", "trap", "true", "typeset",
         "unset", "until", "while",
+    ]
+    static let dockerfile: Set<String> = [
+        "ADD", "ARG", "AS", "CMD", "COPY", "ENTRYPOINT", "ENV", "EXPOSE", "FROM", "HEALTHCHECK", "LABEL",
+        "MAINTAINER", "ONBUILD", "RUN", "SHELL", "STOPSIGNAL", "USER", "VOLUME", "WORKDIR",
+    ]
+    static let make: Set<String> = [
+        "define", "else", "endef", "endif", "export", "ifdef", "ifeq", "ifndef", "ifneq", "include", "override",
+        "private", "sinclude", "undefine", "unexport", "vpath",
     ]
     static let c: Set<String> = [
         "auto", "break", "case", "const", "continue", "default", "do", "else", "enum", "extern", "false", "for",
@@ -595,6 +724,66 @@ private struct CodeRules {
         "bigint", "blob", "boolean", "char", "date", "datetime", "decimal", "double", "float", "int", "integer",
         "numeric", "real", "smallint", "text", "time", "timestamp", "varchar",
     ]
+    static let lua: Set<String> = [
+        "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in", "local",
+        "nil", "not", "or", "repeat", "return", "self", "then", "true", "until", "while",
+    ]
+    static let dart: Set<String> = [
+        "abstract", "as", "assert", "async", "await", "base", "break", "case", "catch", "class", "const",
+        "continue", "covariant", "default", "deferred", "do", "else", "enum", "export", "extends", "extension",
+        "external", "factory", "false", "final", "finally", "for", "get", "hide", "if", "implements", "import",
+        "in", "interface", "is", "late", "library", "mixin", "new", "null", "of", "on", "operator", "part",
+        "required", "rethrow", "return", "sealed", "set", "show", "static", "super", "switch", "sync", "this",
+        "throw", "true", "try", "typedef", "var", "when", "while", "with", "yield",
+    ]
+    static let dartTypes: Set<String> = ["bool", "double", "dynamic", "int", "num", "void"]
+    static let scala: Set<String> = [
+        "abstract", "case", "catch", "class", "def", "derives", "do", "else", "end", "enum", "export", "extends",
+        "extension", "false", "final", "finally", "for", "given", "if", "implicit", "import", "inline", "lazy",
+        "match", "new", "null", "object", "opaque", "open", "override", "package", "private", "protected",
+        "return", "sealed", "super", "then", "this", "throw", "trait", "transparent", "true", "try", "type",
+        "using", "val", "var", "while", "with", "yield",
+    ]
+    static let perl: Set<String> = [
+        "and", "BEGIN", "bless", "cmp", "defined", "delete", "die", "do", "each", "else", "elsif", "END", "eq",
+        "eval", "exists", "for", "foreach", "ge", "grep", "gt", "if", "keys", "last", "le", "local", "lt", "map",
+        "my", "ne", "next", "no", "not", "or", "our", "package", "pop", "print", "printf", "push", "q", "qq", "qw",
+        "redo", "ref", "require", "return", "say", "scalar", "shift", "sort", "sub", "undef", "unless", "until",
+        "use", "values", "wantarray", "warn", "while",
+    ]
+    static let r: Set<String> = [
+        "break", "else", "FALSE", "for", "function", "if", "in", "Inf", "library", "NA", "NA_character_",
+        "NA_integer_", "NA_real_", "NaN", "next", "NULL", "repeat", "require", "return", "TRUE", "while",
+    ]
+    static let zig: Set<String> = [
+        "addrspace", "align", "allowzero", "and", "anyframe", "anytype", "asm", "async", "await", "break",
+        "callconv", "catch", "comptime", "const", "continue", "defer", "else", "enum", "errdefer", "error",
+        "export", "extern", "false", "fn", "for", "if", "inline", "linksection", "noalias", "noinline",
+        "nosuspend", "null", "opaque", "or", "orelse", "packed", "pub", "resume", "return", "struct", "suspend",
+        "switch", "test", "threadlocal", "true", "try", "undefined", "union", "unreachable", "usingnamespace",
+        "var", "volatile", "while",
+    ]
+    static let zigTypes: Set<String> = [
+        "anyerror", "anyopaque", "bool", "c_char", "c_int", "c_long", "c_longlong", "c_short", "c_uint",
+        "c_ulong", "c_ulonglong", "c_ushort", "comptime_float", "comptime_int", "f16", "f32", "f64", "f80",
+        "f128", "i8", "i16", "i32", "i64", "i128", "isize", "noreturn", "type", "u8", "u16", "u32", "u64", "u128",
+        "usize", "void",
+    ]
+    static let elixir: Set<String> = [
+        "after", "alias", "and", "case", "catch", "cond", "def", "defdelegate", "defexception", "defguard",
+        "defimpl", "defmacro", "defmacrop", "defmodule", "defoverridable", "defp", "defprotocol", "defstruct",
+        "do", "else", "end", "false", "fn", "for", "if", "import", "in", "nil", "not", "or", "quote", "raise",
+        "receive", "require", "rescue", "super", "true", "try", "unless", "unquote", "use", "when", "with",
+    ]
+    static let haskell: Set<String> = [
+        "as", "case", "class", "data", "default", "deriving", "do", "else", "family", "forall", "foreign",
+        "hiding", "if", "import", "in", "infix", "infixl", "infixr", "instance", "let", "mdo", "module",
+        "newtype", "of", "qualified", "then", "type", "where",
+    ]
+    static let graphQL: Set<String> = [
+        "directive", "enum", "extend", "false", "fragment", "implements", "input", "interface", "mutation",
+        "null", "on", "query", "repeatable", "scalar", "schema", "subscription", "true", "type", "union",
+    ]
 }
 
 // MARK: - Scanning
@@ -661,7 +850,11 @@ private struct Scanner {
         let all = 0..<units.count
         switch language {
         case .html: scanHTML(all, from: start?.index ?? 0)
-        case .css: scanCSS(all, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
+        case .xml: scanHTML(all, isXML: true, from: start?.index ?? 0)
+        case .diff: scanDiff(all, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
+        case .css, .scss, .less:
+            let dialect: CSSDialect = language == .scss ? .scss : language == .less ? .less : .css
+            scanCSS(all, dialect: dialect, from: start ?? Checkpoint(index: 0, reach: -1, tokenCount: 0))
         default: scanCode(all, rules: CodeRules(language), from: start?.index ?? 0)
         }
     }
@@ -786,8 +979,8 @@ private struct Scanner {
 
     /// A quoted string from `index`, which is its opening delimiter.
     private mutating func stringEnd(_ rule: CodeRules.StringRule, from index: Int, before end: Int) -> Int {
-        let delimiter = rule.delimiter
-        var position = index + delimiter.utf16.count
+        let closing = rule.closing ?? rule.delimiter
+        var position = index + rule.delimiter.utf16.count
         while position < end {
             let current = units[position]
             if rule.escapes, current == Self.ascii("\\") {
@@ -796,7 +989,7 @@ private struct Scanner {
                 position += 2
                 continue
             }
-            if matches(delimiter, at: position) { return position + delimiter.utf16.count }
+            if matches(closing, at: position) { return position + closing.utf16.count }
             if !rule.spansLines, isNewline(current) { return position }
             position += 1
         }
@@ -823,11 +1016,22 @@ private struct Scanner {
                 continue
             }
             for comment in rules.lineComments where matches(comment, at: index)
-                && (!rules.commentsStartWords || isSpace(previous) || index == range.lowerBound) {
+                && (!rules.commentsStartWords || isSpace(previous) || index == range.lowerBound)
+                && (!rules.commentsStartLines || startsLine(index, from: range.lowerBound)) {
                 let stop = lineEnd(from: index, before: end)
                 add(index..<stop, .comment)
                 index = stop
                 continue scanning
+            }
+            if !rules.keySeparators.isEmpty, !isSpace(current), startsLine(index, from: range.lowerBound),
+               let stop = scanLineKey(from: index, before: end, rules: rules) {
+                index = stop
+                continue
+            }
+            if rules.makeRules, !isSpace(current), startsLine(index, from: range.lowerBound),
+               let stop = scanMakeLine(from: index, in: range, rules: rules) {
+                index = stop
+                continue
             }
             for rule in rules.strings where matches(rule.delimiter, at: index) {
                 let stop = stringEnd(rule, from: index, before: end)
@@ -842,11 +1046,13 @@ private struct Scanner {
                 index = stop
                 continue
             }
-            if let prefix = rules.variablePrefix, current == Self.ascii(prefix), let next = unit(index + 1),
+            if rules.variablePrefixes.utf16.contains(current), let next = unit(index + 1),
                index + 1 < end, rules.isShell || isLetter(next) || next == Self.ascii("{") {
                 let stop: Int
                 if next == Self.ascii("{") {
                     stop = min((first("}", from: index + 2, before: end) ?? end - 1) + 1, end)
+                } else if rules.variableParentheses, next == Self.ascii("(") {
+                    stop = closingParenthesis(from: index + 1, before: end)
                 } else if isNamePart(next) {
                     stop = nameEnd(from: index + 1, before: end)
                 } else {
@@ -887,6 +1093,94 @@ private struct Scanner {
         }
     }
 
+    /// Whether only spaces come before `index` on its line.
+    private mutating func startsLine(_ index: Int, from start: Int) -> Bool {
+        var position = index - 1
+        while position >= start, units[position] == 0x20 || units[position] == 0x09 { position -= 1 }
+        return position < start || isNewline(units[position])
+    }
+
+    /// A section header, or a key up to its separator, from the start of a
+    /// line, and where scanning goes on from after it.
+    private mutating func scanLineKey(from start: Int, before end: Int, rules: CodeRules) -> Int? {
+        let stop = lineEnd(from: start, before: end)
+        if rules.sectionHeaders, units[start] == Self.ascii("[") {
+            let close = matches("[[", at: start) ? "]]" : "]"
+            guard let closing = first(close, from: start + 1, before: stop) else { return nil }
+            let after = closing + close.utf16.count
+            // Only a header has nothing but a comment after it, unlike a nested array in TOML.
+            var rest = after
+            while rest < stop, units[rest] == 0x20 || units[rest] == 0x09 { rest += 1 }
+            guard rest == stop || rules.lineComments.contains(where: { matches($0, at: rest) }) else { return nil }
+            add(start..<after, .tag)
+            return after
+        }
+        var keyStart = start
+        for prefix in rules.keyPrefixes where matches(prefix, at: start) {
+            add(start..<(start + prefix.utf16.count - 1), .keyword)
+            keyStart = start + prefix.utf16.count
+        }
+        guard let separator = (keyStart..<stop).first(where: { rules.keySeparators.utf16.contains(units[$0]) }) else {
+            return nil
+        }
+        var keyStop = separator
+        while keyStop > keyStart, units[keyStop - 1] == 0x20 || units[keyStop - 1] == 0x09 { keyStop -= 1 }
+        add(keyStart..<keyStop, .property)
+        return max(separator, start + 1)
+    }
+
+    /// Where the parentheses that open at `index` close, with any inside them, as in `$(dir $(SRC))`.
+    private mutating func closingParenthesis(from index: Int, before end: Int) -> Int {
+        var depth = 0
+        var position = index
+        while position < end {
+            if units[position] == Self.ascii("(") { depth += 1 }
+            if units[position] == Self.ascii(")") {
+                depth -= 1
+                if depth == 0 { return position + 1 }
+            }
+            if isNewline(units[position]) { return position }
+            position += 1
+        }
+        return end
+    }
+
+    /// A Makefile line's targets, coloured as properties, or the variable it
+    /// sets, and where scanning goes on from after it. A recipe, which starts
+    /// with a tab, and a directive, are left to be scanned as they are.
+    private mutating func scanMakeLine(from start: Int, in range: Range<Int>, rules: CodeRules) -> Int? {
+        var lineStart = start
+        while lineStart > range.lowerBound, !isNewline(units[lineStart - 1]) { lineStart -= 1 }
+        guard units[lineStart] != 0x09 else { return nil }
+        // `-include` is `include` that minds no missing file.
+        let wordStart = units[start] == Self.ascii("-") ? start + 1 : start
+        guard !rules.keywords.contains(word(wordStart..<nameEnd(from: wordStart, before: range.upperBound))) else {
+            return nil
+        }
+
+        let stop = lineEnd(from: start, before: range.upperBound)
+        let separators = ":=".utf16
+        guard let separator = (start..<stop).first(where: { separators.contains(units[$0]) }), separator > start else {
+            return nil
+        }
+        // `:=`, `::=`, `?=`, `+=` and `!=` set a variable, as `=` does; a `:` alone ends the targets.
+        let sets = units[separator] == Self.ascii("=") || matches(":=", at: separator) || matches("::=", at: separator)
+        var nameStop = separator
+        if sets, "?+!".utf16.contains(units[separator - 1]) { nameStop -= 1 }
+        while nameStop > start, units[nameStop - 1] == 0x20 || units[nameStop - 1] == 0x09 { nameStop -= 1 }
+        // Targets made of variables are left to colour as variables.
+        guard nameStop > start, !units[start..<nameStop].contains(Self.ascii("$")) else { return nil }
+        if sets {
+            add(start..<nameStop, .variable)
+        } else {
+            // `.PHONY`, `.SUFFIXES` and the other special targets.
+            let isSpecial = units[start] == Self.ascii(".")
+                && word((start + 1)..<nameStop).allSatisfy { $0.isUppercase || $0 == "_" }
+            add(start..<nameStop, isSpecial ? .keyword : .property)
+        }
+        return separator
+    }
+
     /// Whether a colon follows `index`, making what ends there a key. A
     /// string may have spaces before its colon; a bare name, as in YAML,
     /// needs a space or the line's end after it, so `http://` is no key.
@@ -901,9 +1195,10 @@ private struct Scanner {
 
     // MARK: HTML
 
-    /// Scans `range` as HTML, from `start`. Checkpoints are only outside
-    /// tags, and so outside scripts and styles too.
-    mutating func scanHTML(_ range: Range<Int>, from start: Int) {
+    /// Scans `range` as HTML, or XML, which has CDATA sections but no script
+    /// or style of its own, from `start`. Checkpoints are only outside tags,
+    /// and so outside scripts and styles too.
+    mutating func scanHTML(_ range: Range<Int>, isXML: Bool = false, from start: Int) {
         let end = range.upperBound
         var index = start
         while index < end {
@@ -912,13 +1207,17 @@ private struct Scanner {
                 let stop = min((first("-->", from: index + 4, before: end) ?? end - 3) + 3, end)
                 add(index..<stop, .comment)
                 index = stop
+            } else if isXML, matches("<![CDATA[", at: index) {
+                let stop = min((first("]]>", from: index + 9, before: end) ?? end - 3) + 3, end)
+                add(index..<stop, .string)
+                index = stop
             } else if matches("<!", at: index) || matches("<?", at: index) {
                 let stop = min((first(">", from: index, before: end) ?? end - 1) + 1, end)
                 add(index..<stop, .keyword)
                 index = stop
             } else if units[index] == Self.ascii("<"), let next = unit(index + 1), index + 1 < end,
                       isLetter(next) || next == Self.ascii("/") {
-                index = scanTag(from: index, before: end)
+                index = scanTag(from: index, before: end, isXML: isXML)
             } else if units[index] == Self.ascii("&") {
                 let stop = nameEnd(from: index + 1, before: end, extra: [Self.ascii("#")])
                 if stop > index + 1, unit(stop) == Self.ascii(";"), stop < end {
@@ -934,10 +1233,11 @@ private struct Scanner {
     }
 
     /// A tag from its `<`, with its attributes, and the script or style it opens.
-    private mutating func scanTag(from start: Int, before end: Int) -> Int {
+    private mutating func scanTag(from start: Int, before end: Int, isXML: Bool) -> Int {
         let isClosing = units[start + 1] == Self.ascii("/")
         let nameStart = start + (isClosing ? 2 : 1)
-        let nameStop = nameEnd(from: nameStart, before: end, extra: [Self.ascii("-"), Self.ascii(":")])
+        // XML's names may have points in them too, as in `<dict.entry>`.
+        let nameStop = nameEnd(from: nameStart, before: end, extra: [Self.ascii("-"), Self.ascii(":"), Self.ascii(".")])
         add(start..<nameStop, .tag)
         let name = word(nameStart..<nameStop).lowercased()
 
@@ -968,8 +1268,8 @@ private struct Scanner {
             }
         }
 
-        // What a script or style element holds is code of its own.
-        guard !isClosing, name == "script" || name == "style" else { return index }
+        // What a script or style element holds is code of its own, in HTML.
+        guard !isXML, !isClosing, name == "script" || name == "style" else { return index }
         let closing = first("</\(name)", from: index, before: end, ignoringCase: true) ?? end
         if name == "script" {
             scanCode(index..<closing, rules: CodeRules(.javaScript))
@@ -979,11 +1279,91 @@ private struct Scanner {
         return closing
     }
 
+    // MARK: Diffs
+
+    /// What a header line of a diff starts with, from `diff` and `git diff`.
+    private static let diffHeaders = [
+        "diff ", "index ", "--- ", "+++ ", "old mode ", "new mode ", "deleted file mode ", "new file mode ",
+        "similarity index ", "dissimilarity index ", "rename from ", "rename to ", "copy from ", "copy to ",
+        "Binary files ", "Only in ",
+    ]
+
+    /// A diff, a line at a time: its headers, the lines it adds and removes,
+    /// and the `@@` that starts each hunk of them. From `start` if this is
+    /// the whole text, where it marks checkpoints.
+    mutating func scanDiff(_ range: Range<Int>, from start: Checkpoint? = nil) {
+        let end = range.upperBound
+        var index = start?.index ?? range.lowerBound
+        // The lines left in the hunk under way, as its header counts them, so
+        // that a removed `-- x` is not taken for the header of a file.
+        var oldLeft = start?.state.oldLinesLeft ?? 0
+        var newLeft = start?.state.newLinesLeft ?? 0
+        while index < end {
+            if start != nil, checkpoint(index, ScanState(oldLinesLeft: oldLeft, newLinesLeft: newLeft)) { return }
+            let stop = lineEnd(from: index, before: end)
+            let current = index < stop ? units[index] : 0x20
+            if oldLeft > 0 || newLeft > 0 {
+                switch current {
+                case Self.ascii("+"):
+                    add(index..<stop, .added)
+                    newLeft -= 1
+                case Self.ascii("-"):
+                    add(index..<stop, .removed)
+                    oldLeft -= 1
+                case Self.ascii("\\"):
+                    // `\ No newline at end of file`.
+                    add(index..<stop, .comment)
+                default:
+                    oldLeft -= 1
+                    newLeft -= 1
+                }
+            } else if matches("@@ ", at: index) {
+                let close = first(" @@", from: index + 2, before: stop).map { $0 + 3 } ?? stop
+                add(index..<close, .tag)
+                oldLeft = hunkCount(after: "-", from: index, before: close)
+                newLeft = hunkCount(after: "+", from: index, before: close)
+            } else if Self.diffHeaders.contains(where: { matches($0, at: index) }) {
+                add(index..<stop, .keyword)
+            }
+            index = stop
+            // A line ends at one separator, or at a carriage return and the line feed after it.
+            if index < end { index += matches("\r\n", at: index) ? 2 : 1 }
+        }
+    }
+
+    /// How many lines a hunk's header says it has on one side, from its `-12,5` or its `+12,6`.
+    private mutating func hunkCount(after sign: String, from start: Int, before end: Int) -> Int {
+        guard let signIndex = first(" " + sign, from: start, before: end) else { return 0 }
+        var position = signIndex + 2
+        while position < end, isDigit(units[position]) { position += 1 }
+        guard position < end, units[position] == Self.ascii(",") else { return 1 }
+        let countStart = position + 1
+        position = countStart
+        while position < end, isDigit(units[position]) { position += 1 }
+        return Int(word(countStart..<position)) ?? 0
+    }
+
     // MARK: CSS
 
-    /// Scans `range` as CSS, from `start` if this is the whole text, where
-    /// it marks checkpoints.
-    mutating func scanCSS(_ range: Range<Int>, from start: Checkpoint? = nil) {
+    /// CSS, or one of the languages that add to it.
+    enum CSSDialect {
+        case css
+        /// SCSS: `//` comments, `$variables`, `#{…}` and `%placeholders`.
+        case scss
+        /// Less: `//` comments, and `@variables` among its at-rules.
+        case less
+    }
+
+    /// The at-rules Less has, so that every other name after an `@` is a variable.
+    private static let lessAtRules: Set<String> = [
+        "charset", "container", "counter-style", "document", "font-face", "font-feature-values", "import",
+        "keyframes", "layer", "media", "namespace", "page", "plugin", "property", "scope", "starting-style",
+        "supports", "viewport",
+    ]
+
+    /// Scans `range` as CSS, or a dialect of it, from `start` if this is the
+    /// whole text, where it marks checkpoints.
+    mutating func scanCSS(_ range: Range<Int>, dialect: CSSDialect = .css, from start: Checkpoint? = nil) {
         let end = range.upperBound
         var index = start?.index ?? range.lowerBound
         var depth = start?.state.depth ?? 0
@@ -998,6 +1378,25 @@ private struct Scanner {
             if matches("/*", at: index) {
                 let stop = min((first("*/", from: index + 2, before: end) ?? end - 2) + 2, end)
                 add(index..<stop, .comment)
+                index = stop
+            } else if dialect != .css, matches("//", at: index), previous != Self.ascii(":") {
+                // Not the `//` of a URL, as in `url(http://…)`.
+                let stop = lineEnd(from: index, before: end)
+                add(index..<stop, .comment)
+                index = stop
+            } else if dialect != .css, matches(dialect == .scss ? "#{" : "@{", at: index) {
+                // A variable's value written into a selector or a name.
+                let stop = min((first("}", from: index + 2, before: end) ?? end - 1) + 1, end)
+                add(index..<stop, .variable)
+                index = stop
+            } else if dialect == .scss, current == Self.ascii("$"), let next = unit(index + 1), isLetter(next) {
+                let stop = nameEnd(from: index + 1, before: end, extra: nameExtra)
+                add(index..<stop, .variable)
+                index = stop
+            } else if dialect == .less, current == Self.ascii("@"), let next = unit(index + 1), isLetter(next),
+                      case let stop = nameEnd(from: index + 1, before: end, extra: nameExtra),
+                      !Self.lessAtRules.contains(word((index + 1)..<stop)) {
+                add(index..<stop, .variable)
                 index = stop
             } else if current == Self.ascii("\"") || current == Self.ascii("'") {
                 let rule = CodeRules.StringRule(delimiter: current == 0x22 ? "\"" : "'", spansLines: false)
@@ -1014,10 +1413,17 @@ private struct Scanner {
                 index = stop
             } else if isSelector ?? opensBlock(from: index, before: end, orAtTopLevel: depth == 0) {
                 isSelector = true
-                if (current == Self.ascii(".") || current == Self.ascii("#")), let next = unit(index + 1), isLetter(next) {
+                // SCSS's `%placeholder` selectors are classes of a kind.
+                let marksClass = current == Self.ascii(".") || current == Self.ascii("#")
+                    || (dialect == .scss && current == Self.ascii("%"))
+                if marksClass, let next = unit(index + 1), isLetter(next) {
                     let stop = nameEnd(from: index + 1, before: end, extra: nameExtra)
                     add(index..<stop, .attribute)
                     index = stop
+                } else if dialect != .css, current == Self.ascii("&") {
+                    // The selector a nested one is written within.
+                    add(index..<(index + 1), .keyword)
+                    index += 1
                 } else if current == Self.ascii(":") {
                     let start = unit(index + 1) == Self.ascii(":") ? index + 2 : index + 1
                     let stop = nameEnd(from: start, before: end, extra: nameExtra)

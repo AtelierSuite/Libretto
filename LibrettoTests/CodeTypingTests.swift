@@ -88,6 +88,11 @@ struct CodeTypingTests {
         #expect(type(["(", "'"], into: "|", language: .plainText) == "('|")
     }
 
+    @Test("Nor has a diff, whatever its lines were cut from")
+    func diff() {
+        #expect(type(["(", "\""], into: "+|", language: .diff) == "+(\"|")
+    }
+
     @Test("Deleting an opener just typed takes its closer with it")
     func deletesPairs() {
         #expect(type(["(", "⌫"], into: "f|") == "f|")

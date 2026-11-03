@@ -90,11 +90,15 @@ struct CodeCommentTests {
         #expect(toggle("/*p { color: |red; }*/", .css) == "p { color: |red; }")
     }
 
-    @Test("Nothing to do in plain text, JSON or a blank HTML line")
+    @Test("Nothing to do in plain text or a blank HTML line")
     func nothing() {
         #expect(toggle("a |b", .plainText) == nil)
-        #expect(toggle("{ \"a\": |1 }", .json) == nil)
         #expect(toggle("  |", .html) == nil)
+    }
+
+    @Test("JSON lines are commented out as in `tsconfig.json` and `.jsonc`")
+    func json() {
+        #expect(toggle("{\n  \"a\": |1\n}", .json) == "{\n  // \"a\": |1\n}")
     }
 
     @Test("The comment markers each language declares")
@@ -102,7 +106,10 @@ struct CodeCommentTests {
         #expect(SourceLanguage.swift.commentMarkers == CommentMarkers(line: ["//"], blockOpen: "/*", blockClose: "*/"))
         #expect(SourceLanguage.html.commentMarkers == CommentMarkers(line: [], blockOpen: "<!--", blockClose: "-->"))
         #expect(SourceLanguage.css.commentMarkers == CommentMarkers(line: [], blockOpen: "/*", blockClose: "*/"))
+        #expect(SourceLanguage.xml.commentMarkers == CommentMarkers(line: [], blockOpen: "<!--", blockClose: "-->"))
+        #expect(SourceLanguage.scss.commentMarkers == CommentMarkers(line: ["//"], blockOpen: "/*", blockClose: "*/"))
         #expect(SourceLanguage.plainText.commentMarkers == nil)
-        #expect(SourceLanguage.json.commentMarkers == nil)
+        #expect(SourceLanguage.diff.commentMarkers == nil)
+        #expect(SourceLanguage.json.commentMarkers == CommentMarkers(line: ["//"], blockOpen: "/*", blockClose: "*/"))
     }
 }

@@ -69,6 +69,62 @@ struct SyntaxHighlighterTests {
         #expect(found["fi"] == .keyword)
     }
 
+    @Test("Dockerfile instructions around the shell's commands")
+    func dockerfile() {
+        let found = tokens("""
+            # syntax=docker/dockerfile:1
+            FROM node:20 AS build
+            ARG VERSION=1
+            ENV PATH=/app/bin:${PATH}
+            RUN if [ -n "$VERSION" ]; then echo ok; fi
+            CMD ["node", "server.js"]
+            """, .dockerfile)
+        #expect(found["# syntax=docker/dockerfile:1"] == .comment)
+        #expect(found["FROM"] == .keyword)
+        #expect(found["AS"] == .keyword)
+        #expect(found["ARG"] == .keyword)
+        #expect(found["${PATH}"] == .variable)
+        #expect(found["RUN"] == .keyword)
+        #expect(found["if"] == .keyword)
+        #expect(found["\"node\""] == .string)
+        #expect(tokens("FROM x", .shell)["FROM"] == nil)
+        #expect(SourceLanguage(contentType: .data, filename: "Dockerfile") == .dockerfile)
+        #expect(SourceLanguage(contentType: .data, filename: "Dockerfile.dev") == .dockerfile)
+        #expect(SourceLanguage(contentType: .plainText, filename: "web.dockerfile") == .dockerfile)
+    }
+
+    @Test("Makefile targets, variables and directives")
+    func makefile() {
+        let found = tokens("""
+            CC ?= clang
+            CFLAGS := -O2 # fast
+            .PHONY: all clean
+            all: $(OBJ)
+            %.o: %.c
+            \t$(CC) $(CFLAGS) -c $< -o $@ $(patsubst %.c,%.o,$(SRC))
+            ifeq ($(OS),Windows_NT)
+            -include deps.mk
+            endif
+            """, .makefile)
+        #expect(found["CC"] == .variable)
+        #expect(found["CFLAGS"] == .variable)
+        #expect(found["# fast"] == .comment)
+        #expect(found[".PHONY"] == .keyword)
+        #expect(found["all"] == .property)
+        #expect(found["$(OBJ)"] == .variable)
+        #expect(found["%.o"] == .property)
+        #expect(found["$(CC)"] == .variable)
+        #expect(found["$<"] == .variable)
+        #expect(found["$@"] == .variable)
+        #expect(found["$(patsubst %.c,%.o,$(SRC))"] == .variable)
+        #expect(found["ifeq"] == .keyword)
+        #expect(found["include"] == .keyword)
+        #expect(found["endif"] == .keyword)
+        #expect(SourceLanguage(contentType: .data, filename: "Makefile") == .makefile)
+        #expect(SourceLanguage(contentType: .data, filename: "GNUmakefile") == .makefile)
+        #expect(SourceLanguage(contentType: .plainText, filename: "rules.mk") == .makefile)
+    }
+
     @Test("HTML tags and attributes, with the script and style inside them")
     func html() {
         let found = tokens("""
@@ -87,6 +143,28 @@ struct SyntaxHighlighterTests {
         #expect(found["color"] == .property)
     }
 
+    @Test("XML tags, attributes and CDATA, with no script or style inside them")
+    func xml() {
+        let found = tokens("""
+            <?xml version="1.0"?>
+            <!-- c --><plist version="1.0"><key>a</key><script>let n = 1</script>
+            <data><![CDATA[<raw> & more]]></data>&lt;</plist>
+            """, .xml)
+        #expect(found["<?xml version=\"1.0\"?>"] == .keyword)
+        #expect(found["<!-- c -->"] == .comment)
+        #expect(found["<plist"] == .tag)
+        #expect(found["version"] == .property)
+        #expect(found["\"1.0\""] == .string)
+        #expect(found["</key"] == .tag)
+        #expect(found["<![CDATA[<raw> & more]]>"] == .string)
+        #expect(found["&lt;"] == .number)
+        #expect(found["let"] == nil)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Info.plist") == .xml)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Main.storyboard") == .xml)
+        #expect(SourceLanguage(contentType: .svg, filename: nil) == .xml)
+        #expect(SourceLanguage(contentType: .xml, filename: nil) == .xml)
+    }
+
     @Test("CSS selectors, properties, numbers and at-rules")
     func css() {
         let found = tokens("@media screen { .card > h1:hover { margin: -4px 1.5em; color: #fff !important; } }", .css)
@@ -99,6 +177,50 @@ struct SyntaxHighlighterTests {
         #expect(found["1.5em"] == .number)
         #expect(found["#fff"] == .number)
         #expect(found["!important"] == .keyword)
+    }
+
+    @Test("SCSS's comments, variables, nesting and placeholders")
+    func scss() {
+        let found = tokens("""
+            // Colours
+            $accent-color: #f80;
+            %card { padding: 4px; }
+            .button { color: $accent-color; &:hover { background: url(http://a.b/c.png); } .icon-#{$size} { } }
+            @mixin round($r) { border-radius: $r; }
+            """, .scss)
+        #expect(found["// Colours"] == .comment)
+        #expect(found["$accent-color"] == .variable)
+        #expect(found["#f80"] == .number)
+        #expect(found["%card"] == .attribute)
+        #expect(found["padding"] == .property)
+        #expect(found[".button"] == .attribute)
+        #expect(found["&"] == .keyword)
+        #expect(found[":hover"] == .keyword)
+        #expect(found["background"] == .property)
+        #expect(found.keys.contains { $0.hasPrefix("//a.b") } == false)
+        #expect(found["#{$size}"] == .variable)
+        #expect(found["@mixin"] == .keyword)
+        #expect(found["border-radius"] == .property)
+        #expect(SourceLanguage(contentType: .plainText, filename: "app.scss") == .scss)
+    }
+
+    @Test("Less's comments, and its variables apart from its at-rules")
+    func less() {
+        let found = tokens("""
+            @import "base"; // shared
+            @width: 10px;
+            @media screen { .box { width: @width; .@{name}-x { } } }
+            """, .less)
+        #expect(found["@import"] == .keyword)
+        #expect(found["// shared"] == .comment)
+        #expect(found["@width"] == .variable)
+        #expect(found["10px"] == .number)
+        #expect(found["@media"] == .keyword)
+        #expect(found[".box"] == .attribute)
+        #expect(found["width"] == .property)
+        #expect(found["@{name}"] == .variable)
+        #expect(tokens("a { b: c } // d", .css)["// d"] == nil)
+        #expect(SourceLanguage(contentType: .plainText, filename: "theme.less") == .less)
     }
 
     @Test("C's preprocessor and built-in types, and C++'s own keywords")
@@ -151,6 +273,147 @@ struct SyntaxHighlighterTests {
         #expect(found["-- first"] == .comment)
     }
 
+    @Test("Lua's long comments and long strings")
+    func lua() {
+        let found = tokens("local s = [[a\nb]] -- note\n--[[ long\ncomment ]]\nfunction f() return nil end", .lua)
+        #expect(found["local"] == .keyword)
+        #expect(found["[[a\nb]]"] == .string)
+        #expect(found["-- note"] == .comment)
+        #expect(found["--[[ long\ncomment ]]"] == .comment)
+        #expect(found["function"] == .keyword)
+        #expect(found["end"] == .keyword)
+    }
+
+    @Test("Lua's long strings open with brackets, which are no quotes")
+    func luaQuotes() {
+        #expect(SyntaxHighlighter.quotes(for: .lua) == [0x22, 0x27])
+    }
+
+    @Test("Dart and Scala keywords, types and annotations")
+    func dartAndScala() {
+        let dart = tokens("@override\nfinal int count = 0; // c\nlate String name = '''a\nb''';", .dart)
+        #expect(dart["@override"] == .attribute)
+        #expect(dart["final"] == .keyword)
+        #expect(dart["int"] == .type)
+        #expect(dart["String"] == .type)
+        #expect(dart["'''a\nb'''"] == .string)
+        #expect(dart["// c"] == .comment)
+        let scala = tokens("case class Point(x: Int) extends Shape /* s */\nval s = \"\"\"raw\\n\"\"\"", .scala)
+        #expect(scala["case"] == .keyword)
+        #expect(scala["val"] == .keyword)
+        #expect(scala["Int"] == .type)
+        #expect(scala["/* s */"] == .comment)
+        #expect(scala["\"\"\"raw\\n\"\"\""] == .string)
+    }
+
+    @Test("Perl's scalars, arrays and hashes")
+    func perl() {
+        let found = tokens(
+            "my @items = qw(a b); my %seen; # c\nforeach my $item (@items) { print \"$item\\n\" }", .perl
+        )
+        #expect(found["my"] == .keyword)
+        #expect(found["@items"] == .variable)
+        #expect(found["%seen"] == .variable)
+        #expect(found["$item"] == .variable)
+        #expect(found["# c"] == .comment)
+        #expect(found["foreach"] == .keyword)
+        #expect(tokens("$a % 2", .perl)["% 2"] == nil)
+    }
+
+    @Test("R, Zig and Elixir keywords, comments and strings")
+    func rZigElixir() {
+        let r = tokens("f <- function(x) { if (is.na(x)) NULL else TRUE } # r", .r)
+        #expect(r["function"] == .keyword)
+        #expect(r["NULL"] == .keyword)
+        #expect(r["TRUE"] == .keyword)
+        #expect(r["# r"] == .comment)
+        let zig = tokens("const std = @import(\"std\");\npub fn main() !void { var n: u32 = 0; }", .zig)
+        #expect(zig["const"] == .keyword)
+        #expect(zig["@import"] == .attribute)
+        #expect(zig["\"std\""] == .string)
+        #expect(zig["void"] == .type)
+        #expect(zig["u32"] == .type)
+        let elixir = tokens(
+            "defmodule Greeter do\n  @doc \"\"\"\n  Hi\n  \"\"\"\n  def hi(name), do: name # e\nend", .elixir
+        )
+        #expect(elixir["defmodule"] == .keyword)
+        #expect(elixir["Greeter"] == .type)
+        #expect(elixir["@doc"] == .attribute)
+        #expect(elixir["\"\"\"\n  Hi\n  \"\"\""] == .string)
+        #expect(elixir["# e"] == .comment)
+        #expect(elixir["end"] == .keyword)
+    }
+
+    @Test("Haskell's comments, and the primes in its names")
+    func haskell() {
+        let found = tokens(
+            "{-# LANGUAGE GADTs #-}\nmodule Main where -- m\nsum' :: [Int] -> Int\nsum' = foldl' (+) 0", .haskell
+        )
+        #expect(found["{-# LANGUAGE GADTs #-}"] == .comment)
+        #expect(found["module"] == .keyword)
+        #expect(found["where"] == .keyword)
+        #expect(found["-- m"] == .comment)
+        #expect(found["Int"] == .type)
+        #expect(found.values.contains(.string) == false)
+    }
+
+    @Test("GraphQL operations, variables and directives")
+    func graphQL() {
+        let found = tokens("query Book($id: ID!) { # q\n  book(id: $id) @include(if: true) { title } }", .graphQL)
+        #expect(found["query"] == .keyword)
+        #expect(found["Book"] == .type)
+        #expect(found["$id"] == .variable)
+        #expect(found["ID"] == .type)
+        #expect(found["# q"] == .comment)
+        #expect(found["@include"] == .attribute)
+        #expect(found["true"] == .keyword)
+    }
+
+    @Test("A diff's headers, hunks, and the lines it adds and removes")
+    func diff() {
+        let found = tokens("""
+            diff --git a/main.lua b/main.lua
+            index 3b18e51..a2c4f9d 100644
+            --- a/main.lua
+            +++ b/main.lua
+            @@ -1,3 +1,3 @@ local function greet()
+             local name = "world"
+            --- say hello
+            +-- say hi
+            \\ No newline at end of file
+             print(name)
+            -- not in a hunk
+            """, .diff)
+        #expect(found["diff --git a/main.lua b/main.lua"] == .keyword)
+        #expect(found["index 3b18e51..a2c4f9d 100644"] == .keyword)
+        #expect(found["--- a/main.lua"] == .keyword)
+        #expect(found["+++ b/main.lua"] == .keyword)
+        #expect(found["@@ -1,3 +1,3 @@"] == .tag)
+        #expect(found["--- say hello"] == .removed)
+        #expect(found["+-- say hi"] == .added)
+        #expect(found["\\ No newline at end of file"] == .comment)
+        #expect(found[" print(name)"] == nil)
+        #expect(found["-- not in a hunk"] == nil)
+        #expect(tokens("@@ -5 +5 @@\n-a\n+b\n-c", .diff)["-c"] == nil)
+        #expect(tokens("@@ -1 +1 @@\r\n-a\r\n+b\r\n", .diff)["+b"] == .added)
+        #expect(SourceLanguage(contentType: .plainText, filename: "fix.patch") == .diff)
+        #expect(SourceLanguage.diff.displayName != "Language.Diff")
+    }
+
+    @Test("Each colour has the contrast of the rest against its background")
+    func diffColours() {
+        func luminance(_ color: UIColor) -> CGFloat {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            let linear = { (value: CGFloat) in value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+        for kind in [SyntaxKind.added, .removed] {
+            #expect(1.05 / (luminance(SyntaxHighlighter.color(for: kind, scheme: .light)) + 0.05) >= 7.5)
+            #expect((luminance(SyntaxHighlighter.color(for: kind, scheme: .dark)) + 0.05) / 0.05 >= 10)
+        }
+    }
+
     @Test("JSON and YAML keys apart from their values")
     func data() {
         let json = tokens("{\"name\" : \"Libretto\", \"open\": true, \"count\": 3}", .json)
@@ -163,6 +426,115 @@ struct SyntaxHighlighterTests {
         #expect(yaml["# app"] == .comment)
         #expect(yaml["http"] == nil)
         #expect(yaml["yes"] == .keyword)
+    }
+
+    @Test("JSX and TSX open as JavaScript and TypeScript")
+    func jsx() {
+        #expect(SourceLanguage(contentType: .plainText, filename: "App.jsx") == .javaScript)
+        #expect(SourceLanguage(contentType: .plainText, filename: "App.tsx") == .typeScript)
+        #expect(SourceLanguage(contentType: .jsxSource, filename: nil) == .javaScript)
+        let found = tokens("export const App = () => <div className=\"app\">{count}</div>", .javaScript)
+        #expect(found["export"] == .keyword)
+        #expect(found["\"app\""] == .string)
+    }
+
+    @Test("JSON with comments, as tsconfig.json and VS Code's settings have them")
+    func jsonComments() {
+        let found = tokens("{\n  // strict\n  \"strict\": true, /* all */\n  'quoted': 1\n}", .json)
+        #expect(found["// strict"] == .comment)
+        #expect(found["/* all */"] == .comment)
+        #expect(found["\"strict\""] == .property)
+        #expect(found["'quoted'"] == .property)
+        #expect(SourceLanguage(contentType: .plainText, filename: "settings.jsonc") == .json)
+        #expect(SourceLanguage(contentType: .plainText, filename: "config.json5") == .json)
+        #expect(SourceLanguage(contentType: .jsonWithComments, filename: nil) == .json)
+    }
+
+    @Test("The less common extensions of the languages already coloured")
+    func moreExtensions() {
+        let expected: [String: SourceLanguage] = [
+            "types.pyi": .python, "app.pyw": .python, "build.rake": .ruby, "libretto.gemspec": .ruby,
+            "config.ru": .ruby, "setup.ksh": .shell, "list.h++": .cPlusPlus, "list.ipp": .cPlusPlus,
+            "page.phtml": .php,
+        ]
+        for (filename, language) in expected {
+            #expect(SourceLanguage(contentType: .plainText, filename: filename) == language)
+        }
+    }
+
+    @Test("Files known by their name rather than their extension")
+    func filenames() {
+        #expect(SourceLanguage(contentType: .data, filename: "Gemfile") == .ruby)
+        #expect(SourceLanguage(contentType: .data, filename: "Podfile") == .ruby)
+        #expect(SourceLanguage(contentType: .data, filename: "Rakefile") == .ruby)
+        #expect(SourceLanguage(contentType: .data, filename: ".zshrc") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: "/Users/me/.bashrc") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: ".profile") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: ".gitignore") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: "Gemfile.lock") == nil)
+        #expect(SourceLanguage(contentType: .data, filename: "notes") == nil)
+    }
+
+    @Test("TOML's keys, tables, strings and values")
+    func toml() {
+        let found = tokens("""
+            # Cargo
+            [package]
+            name = "libretto"
+            "quoted key" = 'raw\\path'
+            version.major = 1
+            [[bin]]
+            features = [
+              ["a", "b"],
+            ]
+            enabled = true # on
+            """, .toml)
+        #expect(found["# Cargo"] == .comment)
+        #expect(found["[package]"] == .tag)
+        #expect(found["name"] == .property)
+        #expect(found["\"libretto\""] == .string)
+        #expect(found["\"quoted key\""] == .property)
+        #expect(found["'raw\\path'"] == .string)
+        #expect(found["version.major"] == .property)
+        #expect(found["1"] == .number)
+        #expect(found["[[bin]]"] == .tag)
+        #expect(found["[\"a\", \"b\"]"] == nil)
+        #expect(found["\"a\""] == .string)
+        #expect(found["true"] == .keyword)
+        #expect(found["# on"] == .comment)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Cargo.toml") == .toml)
+        #expect(SourceLanguage(contentType: .data, filename: "Pipfile") == .toml)
+    }
+
+    @Test("INI, .properties and .env keys, sections and comments")
+    func ini() {
+        let found = tokens("""
+            ; settings
+            [server]
+            host = example.com
+            path=a;b
+            debug: on
+            # done
+            """, .ini)
+        #expect(found["; settings"] == .comment)
+        #expect(found["[server]"] == .tag)
+        #expect(found["host"] == .property)
+        #expect(found["path"] == .property)
+        #expect(found.keys.contains(";b") == false)
+        #expect(found["debug"] == .property)
+        #expect(found["on"] == .keyword)
+        #expect(found["# done"] == .comment)
+        let env = tokens("export API_KEY=\"abc\"\nHOME_DIR=${HOME}/x\n", .ini)
+        #expect(env["export"] == .keyword)
+        #expect(env["API_KEY"] == .property)
+        #expect(env["\"abc\""] == .string)
+        #expect(env["${HOME}"] == .variable)
+        #expect(tokens("log4j.rootLogger=INFO, stdout", .ini)["log4j.rootLogger"] == .property)
+        #expect(SourceLanguage(contentType: .plainText, filename: "setup.cfg") == .ini)
+        #expect(SourceLanguage(contentType: .plainText, filename: "app.properties") == .ini)
+        #expect(SourceLanguage(contentType: .data, filename: ".env") == .ini)
+        #expect(SourceLanguage(contentType: .data, filename: ".env.local") == .ini)
+        #expect(SourceLanguage(contentType: .data, filename: ".editorconfig") == .ini)
     }
 
     @Test("Every language has a name for the menu")
@@ -183,6 +555,16 @@ struct SyntaxHighlighterTests {
         #expect(SourceLanguage(contentType: .mpeg2TransportStream, filename: "app.ts") == .typeScript)
         #expect(SourceLanguage(contentType: .plainText, filename: "run.sh") == .shell)
         #expect(SourceLanguage(contentType: .pythonScript, filename: nil) == .python)
+        #expect(SourceLanguage(contentType: .plainText, filename: "init.lua") == .lua)
+        #expect(SourceLanguage(contentType: .plainText, filename: "main.dart") == .dart)
+        #expect(SourceLanguage(contentType: .plainText, filename: "App.scala") == .scala)
+        #expect(SourceLanguage(contentType: .plainText, filename: "build.pl") == .perl)
+        #expect(SourceLanguage(contentType: .perlScript, filename: nil) == .perl)
+        #expect(SourceLanguage(contentType: .plainText, filename: "plot.R") == .r)
+        #expect(SourceLanguage(contentType: .plainText, filename: "main.zig") == .zig)
+        #expect(SourceLanguage(contentType: .plainText, filename: "mix.exs") == .elixir)
+        #expect(SourceLanguage(contentType: .plainText, filename: "Main.hs") == .haskell)
+        #expect(SourceLanguage(contentType: .plainText, filename: "schema.graphql") == .graphQL)
         #expect(SourceLanguage(contentType: .plainText, filename: "notes.txt") == .plainText)
         #expect(SourceLanguage(contentType: .plainText, filename: "NOTES.TXT") == .plainText)
         #expect(SourceLanguage(contentType: .plainText, filename: nil) == .plainText)
@@ -240,7 +622,7 @@ struct SyntaxHighlighterTests {
         .ruby: "def f\n  @name = $global # c\n  'a'\nend\n",
         .php: "<?php\n$name = 'a\nb'; // one\n# two\n/* three\n */ echo \"$name\";\n",
         .sql: "SELECT name FROM users /* a\n b */ where id = 1 -- first\nINSERT INTO t VALUES ('x');\n",
-        .json: "{\"name\" : \"Libretto\",\n \"open\": true,\n \"count\": 3}\n",
+        .json: "{\"name\" : \"Libretto\", // c\n \"open\": true, /* x\n */\n 'count': 3}\n",
         .yaml: "name: Libretto # app\nurl: http://example.com\nshared: yes\nlist:\n  - 'a'\n",
         .html: """
             <!-- c
@@ -253,6 +635,23 @@ struct SyntaxHighlighterTests {
             <p class=x>text</p>
             """,
         .css: "@media screen {\n  .card > h1:hover,\n  a { margin: -4px 1.5em; /* c\n */ color: #fff !important; }\n}\np\n{ content: \"a\" }\n",
+        .xml: "<?xml version=\"1.0\"?>\n<!-- c\n d --><plist><dict>\n<key a='x\ny'>Name</key><![CDATA[a\n<b>]]>\n<script>let a = 1</script></dict>\n",
+        .scss: "$size: 4px; // c\n.card { &:hover { margin: #{$size} } /* x\n */ }\n%base { color: red }\n",
+        .less: "@size: 4px; // c\n@media screen { .card { margin: @size; } }\n.a-@{name} { color: #fff /* x\n */ }\n",
+        .toml: "[server] # c\nname = \"Libretto\"\ntext = \"\"\"\nmany\nlines\"\"\"\n[[bin]]\nports = [ [1, 2], [3] ]\npath = '''a\nb'''\n",
+        .ini: "; c\n[core]\nname = Libretto\nexport HOME=$HOME:/bin\nurl: \"http://x\" # not\n! bang\n",
+        .dockerfile: "FROM swift:6 AS build # c\nRUN apt-get update \\\n  && echo \"$HOME\n\"\nCOPY . /app\n",
+        .makefile: ".PHONY: all\nSRC := $(wildcard *.c) # c\nall: $(SRC)\n\tcc -o $@ $^ \"a\nb\"\n-include deps.mk\nx ?= 1\n",
+        .lua: "--[[ block\n comment ]] local s = [[long\nstring]] -- c\nfunction f() return 'a' end\n",
+        .dart: "@override\nString f() => '''a\nb''' /* c\n */ + \"x\"; // d\n",
+        .scala: "@main def run(): Unit = { val s = \"\"\"raw\\\nline\"\"\" /* c\n */ }\n",
+        .perl: "my %h = (a => 1); # c\nmy @list = `ls`;\nprint \"$name\n\";\n",
+        .r: "f <- function(x) { `odd name` + 'a\n' } # c\nTRUE\n",
+        .zig: "const std = @import(\"std\"); // c\npub fn main() u8 { return 'a'; }\n",
+        .elixir: "defmodule A do\n  @doc \"\"\"\n  many\n  \"\"\" # c\n  def f, do: :ok\nend\n",
+        .haskell: "{- block\n comment -} main :: IO () -- c\nmain = foldl' f 0 \"a\"\n",
+        .graphQL: "\"\"\"\ndoc\n\"\"\" type Query @key { user(id: $id): User } # c\n",
+        .diff: "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@ f\n x\n--- y\n+++ z\n\\ No newline at end of file\n w\n",
     ]
 
     /// Pieces that open and close what spans lines, and the rest.
@@ -262,9 +661,17 @@ struct SyntaxHighlighterTests {
         "let", "class", "x", "42", " ", "\t", "é", "", "", "",
     ]
 
+    /// Pieces of diffs: what starts their lines, and hunks' headers, whose counts the lines after them depend on.
+    private static let diffFragments = [
+        "\n", "\n", "\r\n", "+", "-", " ", "\\", "@@ -1,2 +1,3 @@", "@@ -1 +1 @@", "@@ ", " @@", ",", "2", "--- a", "x", "",
+    ]
+
     /// Edits `text` at random, checking after each edit that what was found
     /// again around it is what a scan of the whole text finds.
-    private func checkEdits(_ text: String, _ language: SourceLanguage, count: Int, seed: UInt64) {
+    private func checkEdits(
+        _ text: String, _ language: SourceLanguage, count: Int, seed: UInt64,
+        fragments: [String] = SyntaxHighlighterTests.fragments
+    ) {
         var random = SeededRandom(seed)
         let text = NSMutableString(string: text)
         var highlights = SyntaxHighlights(text as String, language: language)
@@ -274,7 +681,7 @@ struct SyntaxHighlighterTests {
             let location = atEnd ? text.length : Int.random(in: 0...text.length, using: &random)
             let longest = Int.random(in: 0..<8, using: &random) == 0 ? 40 : 3
             let removed = min(Int.random(in: 0...longest, using: &random), text.length - location)
-            let inserted = Self.fragments.randomElement(using: &random)!
+            let inserted = fragments.randomElement(using: &random)!
             let before = text.substring(with: NSRange(location: location, length: removed))
             text.replaceCharacters(in: NSRange(location: location, length: removed), with: inserted)
             let length = (inserted as NSString).length
@@ -297,6 +704,14 @@ struct SyntaxHighlighterTests {
         let text = Array(repeating: sample, count: 6).joined(separator: "\n")
         for seed in 1...8 {
             checkEdits(text, language, count: 150, seed: UInt64(seed * 7919 + language.rawValue.utf16.count))
+        }
+    }
+
+    @Test("Editing a diff's hunks and their headers")
+    func diffEdits() {
+        let text = Array(repeating: Self.samples[.diff]!, count: 6).joined(separator: "\n")
+        for seed in 1...8 {
+            checkEdits(text, .diff, count: 150, seed: UInt64(seed * 104_729), fragments: Self.diffFragments)
         }
     }
 
