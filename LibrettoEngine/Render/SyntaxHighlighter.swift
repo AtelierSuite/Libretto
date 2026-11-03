@@ -296,6 +296,26 @@ fileprivate struct ScanState: Equatable, Sendable {
 
 // MARK: - Languages
 
+/// How a language marks a comment: a line comment where it has one, and
+/// otherwise, as in HTML and CSS, a block comment.
+public struct CommentMarkers: Equatable, Sendable {
+    /// Every marker that starts a line comment, the one to write first.
+    public var line: [String]
+    public var blockOpen: String?
+    public var blockClose: String?
+}
+
+extension SourceLanguage {
+    /// Nothing for plain text and JSON, which have no comments.
+    public var commentMarkers: CommentMarkers? {
+        let rules = CodeRules(self)
+        guard !rules.lineComments.isEmpty || rules.blockComment != nil else { return nil }
+        return CommentMarkers(
+            line: rules.lineComments, blockOpen: rules.blockComment?.open, blockClose: rules.blockComment?.close
+        )
+    }
+}
+
 private struct CodeRules {
     struct StringRule {
         public var delimiter: String
@@ -442,6 +462,12 @@ private struct CodeRules {
             commentsStartWords = true
             colonsMarkKeys = true
         case .plainText, .html, .css:
+            // HTML and CSS are scanned on their own; their comments are here for commenting lines out.
+            blockComment = switch language {
+            case .html: (open: "<!--", close: "-->")
+            case .css: cStyle
+            default: nil
+            }
             strings = quoted
             keywords = []
         }
