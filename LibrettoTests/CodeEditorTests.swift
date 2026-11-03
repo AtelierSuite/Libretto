@@ -299,4 +299,33 @@ struct CodeEditorTests {
         #expect(IndentUnit.spaces(3).choices == [.tab, .spaces(2), .spaces(3), .spaces(4), .spaces(8)])
         #expect(IndentUnit.choices.allSatisfy { IndentUnit(id: $0.id) == $0 })
     }
+
+    @Test("Go to Line puts the caret at the line's start and scrolls it into view, a number past the end taken as the last line")
+    func goToLine() {
+        let source = (1...300).map { "let line\($0) = \($0)" }.joined(separator: "\n")
+        let (controller, _) = makeEditor(source)
+        let textView = controller.view.textView
+        #expect(controller.lineCount == 300)
+
+        /// Whether the line starting at `location` is on screen.
+        func isInView(_ location: Int) -> Bool {
+            let layoutManager = textView.layoutManager
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: location, length: 1), actualCharacterRange: nil)
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textView.textContainer)
+            return textView.bounds.intersects(rect.offsetBy(dx: 0, dy: textView.textContainerInset.top))
+        }
+
+        let location = PlainText.location(ofLine: 250, in: source)
+        #expect(!isInView(location))
+        controller.goToLine(250)
+        #expect(textView.selectedRange == NSRange(location: location, length: 0))
+        #expect((textView.text as NSString).substring(from: location).hasPrefix("let line250 "))
+        #expect(isInView(location))
+
+        controller.goToLine(1000)
+        #expect(textView.selectedRange.location == PlainText.location(ofLine: 300, in: source))
+        controller.goToLine(1)
+        #expect(textView.selectedRange.location == 0)
+        #expect(isInView(0))
+    }
 }

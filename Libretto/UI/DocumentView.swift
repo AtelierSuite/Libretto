@@ -17,6 +17,8 @@ struct DocumentView: View {
     @State private var photo: PhotosPickerItem?
     /// Whether the document is being saved as a copy somewhere the user picks.
     @State private var isSavingCopy = false
+    /// The line number typed into the Go to Line prompt.
+    @State private var lineNumber = ""
     /// The document as it was opened or last saved as a copy, for a document
     /// that cannot be saved where it is. `nil` for one that saves itself.
     @State private var keptDocument: WordDocument?
@@ -149,6 +151,16 @@ struct DocumentView: View {
             } message: {
                 Text(state.errorMessage ?? "")
             }
+            .alert("CodeEditor.GoToLine.Title", isPresented: $state.isGoingToLine) {
+                TextField("CodeEditor.GoToLine.Placeholder", text: $lineNumber)
+                    .keyboardType(.numberPad)
+                    .accessibilityIdentifier("lineNumber")
+                Button("CodeEditor.GoToLine.Go", action: goToLine)
+                    .keyboardShortcut(.defaultAction)
+                Button("Common.Cancel", role: .cancel) { lineNumber = "" }
+            } message: {
+                Text(String(format: String(localized: "CodeEditor.GoToLine.Message"), state.codeEditor?.lineCount ?? 1))
+            }
     }
 
     /// Whether the document is source code, which opens in the code editor.
@@ -267,6 +279,14 @@ struct DocumentView: View {
             state.wantsFind = true
             setMode(.page)
         }
+    }
+
+    /// Goes to the line typed into the prompt; anything but a number goes nowhere.
+    private func goToLine() {
+        defer { lineNumber = "" }
+        guard let number = Int(lineNumber.trimmingCharacters(in: .whitespaces)) else { return }
+        // Once the prompt is gone, so the text can take the keyboard back from it.
+        DispatchQueue.main.async { state.codeEditor?.goToLine(number) }
     }
 
     private func setMode(_ mode: ViewMode) {
@@ -483,6 +503,10 @@ struct DocumentView: View {
     @ViewBuilder
     private var panelButtons: some View {
         Section {
+            if isCode {
+                Button("CodeEditor.GoToLine", systemImage: "arrow.forward.to.line") { state.isGoingToLine = true }
+                    .accessibilityIdentifier("goToLine")
+            }
             if !isCode {
                 Button("Toolbar.Comments", systemImage: "text.bubble") { openPanel(.comments) }
                     .accessibilityIdentifier("comments")
