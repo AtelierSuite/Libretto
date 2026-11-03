@@ -32,8 +32,16 @@ public enum ObjectRenderer: Sendable {
 
     // MARK: - Shapes
 
+    /// Where a shape's outline runs within its picture: in from each edge by half its line, so
+    /// the stroke stays inside, but never past the middle, so a line as thin as a rule keeps a
+    /// place to run along rather than having nowhere at all.
+    public static func outlineRect(for shape: ShapeSpec, in rect: CGRect) -> CGRect {
+        let margin = shape.lineWidth / 2 + 0.5
+        return rect.insetBy(dx: min(margin, rect.width / 2), dy: min(margin, rect.height / 2))
+    }
+
     public static func draw(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
-        let inset = rect.insetBy(dx: shape.lineWidth / 2 + 0.5, dy: shape.lineWidth / 2 + 0.5)
+        let inset = outlineRect(for: shape, in: rect)
         let path = self.path(shape.geometry, in: inset)
         if let fill = shape.fillHex {
             color(fill).setFill()
