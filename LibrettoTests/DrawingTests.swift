@@ -102,6 +102,19 @@ struct DrawingTests {
         #expect(xml.contains("<a:schemeClr val=\"accent2\"/>"))
     }
 
+    @Test("A line thinner than its stroke, such as a rule, is drawn along its middle")
+    func hairline() {
+        // Word writes a horizontal rule as a connector 0.05pt tall with a 0.75pt line; its picture is 1pt tall.
+        let shape = ShapeSpec(geometry: "straightConnector1", fillHex: nil, lineHex: "000000", lineWidth: 0.75)
+        let outline = ObjectRenderer.outlineRect(for: shape, in: CGRect(x: 0, y: 0, width: 336, height: 1))
+        #expect(!outline.isNull)
+        #expect(outline == CGRect(x: 0.875, y: 0.5, width: 334.25, height: 0))
+        let path = ObjectRenderer.path(shape.geometry, in: outline)
+        #expect(path.bounds.minX.isFinite && path.bounds.width > 300)
+        let image = ObjectRenderer.image(for: .shape(shape), size: CGSize(width: 336, height: 0.05))
+        #expect(image.size == CGSize(width: 336, height: 1))
+    }
+
     @Test("A chart is read from its part's cached values and drawn")
     func chart() throws {
         let chartXML = """
