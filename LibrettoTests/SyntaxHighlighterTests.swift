@@ -199,6 +199,19 @@ struct SyntaxHighlighterTests {
         }
     }
 
+    @Test("Files known by their name rather than their extension")
+    func filenames() {
+        #expect(SourceLanguage(contentType: .data, filename: "Gemfile") == .ruby)
+        #expect(SourceLanguage(contentType: .data, filename: "Podfile") == .ruby)
+        #expect(SourceLanguage(contentType: .data, filename: "Rakefile") == .ruby)
+        #expect(SourceLanguage(contentType: .data, filename: ".zshrc") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: "/Users/me/.bashrc") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: ".profile") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: ".gitignore") == .shell)
+        #expect(SourceLanguage(contentType: .data, filename: "Gemfile.lock") == nil)
+        #expect(SourceLanguage(contentType: .data, filename: "notes") == nil)
+    }
+
     @Test("Every language has a name for the menu")
     func names() {
         #expect(SourceLanguage.allCases.first == .plainText)

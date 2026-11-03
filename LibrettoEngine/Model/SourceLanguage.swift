@@ -105,8 +105,25 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    /// Files known by their whole name rather than an extension, in lower case.
+    public static let filenames: [String: SourceLanguage] = [
+        "gemfile": .ruby, "podfile": .ruby, "rakefile": .ruby, "brewfile": .ruby, "vagrantfile": .ruby,
+        "fastfile": .ruby, "appfile": .ruby, "guardfile": .ruby, "dangerfile": .ruby,
+        ".bashrc": .shell, ".bash_profile": .shell, ".bash_logout": .shell, ".profile": .shell,
+        ".zshrc": .shell, ".zshenv": .shell, ".zprofile": .shell, ".zlogin": .shell, ".zlogout": .shell,
+        ".kshrc": .shell, "pkgbuild": .shell,
+        // Their `#` comments read as the shell's, and little else in them looks like code.
+        ".gitignore": .shell, ".gitattributes": .shell, ".dockerignore": .shell, ".npmignore": .shell,
+        ".env": .shell,
+    ]
+
     /// The language of a file, from its name if it has one, or else its type.
     public init?(contentType: UTType, filename: String?) {
+        // A name the language is known by comes before an extension, which `.zshrc` would seem to be.
+        if let name = (filename as NSString?)?.lastPathComponent.lowercased(), let language = Self.filenames[name] {
+            self = language
+            return
+        }
         let pathExtension = (filename as NSString?)?.pathExtension.lowercased() ?? ""
         if let language = Self.allCases.first(where: { $0.fileExtensions.contains(pathExtension) }) {
             self = language
