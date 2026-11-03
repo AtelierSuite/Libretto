@@ -44,6 +44,16 @@ public enum SyntaxHighlighter: Sendable {
         SyntaxHighlights(text, language: language).tokens
     }
 
+    /// The quotes that start a string in `language`: the first character of
+    /// each of its string delimiters. Plain text has none.
+    public static func quotes(for language: SourceLanguage) -> Set<UInt16> {
+        switch language {
+        case .plainText: return []
+        case .html, .css: return [0x22, 0x27]
+        default: return Set(CodeRules(language).strings.compactMap { $0.delimiter.utf16.first })
+        }
+    }
+
     /// Colours `text` by its syntax, and what is not syntax in `plainColor`.
     /// Only what changes colour is touched, so the layout of the rest stands.
     public static func apply(
@@ -206,6 +216,9 @@ public struct SyntaxColoring: Sendable {
     private var edit: (range: NSRange, changeInLength: Int)?
 
     public init() {}
+
+    /// What the text was last coloured by, which is nothing before it is first coloured.
+    public var tokens: [SyntaxToken] { highlights?.tokens ?? [] }
 
     /// Notes an edit to the text's characters: `range` is what it left, and
     /// `delta` how much longer it made the text.

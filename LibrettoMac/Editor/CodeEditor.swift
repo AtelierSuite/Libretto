@@ -13,8 +13,14 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
     let scrollView: NSScrollView
     let textView: NSTextView
     private var syncTask: Task<Void, Never>?
-    /// The syntax colouring, kept so that an edit colours only the lines around it.
+    /// The syntax colouring, kept so that an edit colours only the lines around it. Bracket matching
+    /// and auto-closing read the tokens it last coloured by.
     private var coloring = SyntaxColoring()
+    /// Set while the editor makes an edit itself, so it is not taken for typing.
+    private var isEditing = false
+    private lazy var typing = CodeTyping(language: language)
+    /// The bracket beside the insertion point and the one it pairs with, while there is such a pair.
+    private(set) var matchedBrackets: [Int] = []
 
     /// Hands a changed document to whoever owns it.
     var onChange: ((WordDocument, EditScope) -> Void)?
@@ -77,7 +83,9 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
     func setLanguage(_ new: SourceLanguage) {
         guard new != language else { return }
         language = new
+        typing.language = new
         highlight()
+        matchBrackets()
     }
 
     private var textAttributes: [NSAttributedString.Key: Any] {
@@ -116,7 +124,9 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         let length = (text as NSString).length
         let location = min(selection.location, length)
         textView.setSelectedRange(NSRange(location: location, length: min(selection.length, length - location)))
+        typing.reset()
         highlight()
+        matchBrackets()
     }
 
     private func highlight() {
@@ -133,8 +143,58 @@ final class CodeEditor: NSObject, NSTextViewDelegate, @MainActor NSTextStorageDe
         coloring.noteEdit(editedRange, changeInLength: delta)
     }
 
+    /// Marks the bracket beside the insertion point and its pair, behind the text.
+    private func matchBrackets() {
+        guard let layoutManager = textView.layoutManager else { return }
+        // Everywhere, as the marks move with the text it was typed into.
+        let whole = NSRange(location: 0, length: layoutManager.attributedString().length)
+        if !matchedBrackets.isEmpty {
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: whole)
+        }
+        let selection = textView.selectedRange()
+        if selection.length == 0, let pair = CodeTyping.matchingBracket(
+            at: selection.location, in: textView.string as NSString, tokens: coloring.tokens
+        ) {
+            matchedBrackets = [pair.bracket, pair.match]
+        } else {
+            matchedBrackets = []
+        }
+        for position in matchedBrackets {
+            layoutManager.addTemporaryAttribute(
+                .backgroundColor, value: NSColor.systemYellow.withAlphaComponent(0.4),
+                forCharacterRange: NSRange(location: position, length: 1)
+            )
+        }
+    }
+
+    func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString text: String?) -> Bool {
+        // Text still being composed, as with a Japanese input method, is the input method's until it is committed.
+        guard !isEditing, let text, !textView.hasMarkedText(),
+              let edit = typing.edit(
+                  replacing: range, with: text, in: textView.string as NSString, tokens: coloring.tokens
+              )
+        else { return true }
+        isEditing = true
+        if !edit.movesOnly, textView.shouldChangeText(in: edit.range, replacementString: edit.replacement) {
+            textView.textStorage?.replaceCharacters(
+                in: edit.range, with: NSAttributedString(string: edit.replacement, attributes: textAttributes)
+            )
+            textView.didChangeText()
+        }
+        textView.setSelectedRange(edit.selection)
+        textView.scrollRangeToVisible(edit.selection)
+        isEditing = false
+        return false
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        if !isEditing { typing.selectionDidChange(textView.selectedRange(), in: textView.string as NSString) }
+        matchBrackets()
+    }
+
     func textDidChange(_ notification: Notification) {
         highlight()
+        matchBrackets()
         syncTask?.cancel()
         syncTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(350))

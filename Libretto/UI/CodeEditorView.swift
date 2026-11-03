@@ -58,8 +58,12 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     private var syncTask: Task<Void, Never>?
     /// Set while the editor makes an edit itself, so it is not taken for typing.
     private var isEditing = false
-    /// The syntax colouring, kept so that an edit colours only the lines around it.
+    /// The syntax colouring, kept so that an edit colours only the lines around it. Bracket matching
+    /// and auto-closing read the tokens it last coloured by.
     private var coloring = SyntaxColoring()
+    private var typing: CodeTyping
+    /// The bracket beside the caret and the one it pairs with, while there is such a pair.
+    private(set) var matchedBrackets: [Int] = []
 
     /// Hands a changed document to whoever owns it.
     var onChange: ((WordDocument) -> Void)?
@@ -68,6 +72,7 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
         self.document = document
         self.language = language
         self.scheme = scheme
+        typing = CodeTyping(language: language)
         view = CodeEditorContainer()
         super.init()
         textView.delegate = self
@@ -114,6 +119,7 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
         let length = (text as NSString).length
         let location = min(selection.location, length)
         textView.selectedRange = NSRange(location: location, length: min(selection.length, length - location))
+        typing.reset()
         textDidChange()
     }
 
@@ -124,6 +130,20 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     private func textDidChange() {
         highlight()
         view.textDidChange()
+        matchBrackets()
+    }
+
+    /// Marks the bracket beside the caret and its pair, while the caret is in the text.
+    private func matchBrackets() {
+        let selection = textView.selectedRange
+        if selection.length == 0, let pair = CodeTyping.matchingBracket(
+            at: selection.location, in: textView.text as NSString, tokens: coloring.tokens
+        ) {
+            matchedBrackets = [pair.bracket, pair.match]
+        } else {
+            matchedBrackets = []
+        }
+        view.markBrackets(textView.isFirstResponder ? matchedBrackets : [])
     }
 
     private func scheduleSync() {
@@ -145,15 +165,22 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     // MARK: - Text view
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-        guard !isEditing, text == "\n" else { return true }
-        // A new line starts as indented as the one it breaks.
-        let string = textView.text as NSString
-        let line = string.lineRange(for: NSRange(location: range.location, length: 0))
-        let before = string.substring(with: NSRange(location: line.location, length: range.location - line.location))
-        let indent = String(before.prefix { $0 == " " || $0 == "\t" })
-        guard !indent.isEmpty else { return true }
+        // Text still being composed, as with a Japanese keyboard, is the keyboard's until it is committed.
+        guard !isEditing, textView.markedTextRange == nil,
+              let edit = typing.edit(
+                  replacing: range, with: text, in: textView.text as NSString, tokens: coloring.tokens
+              )
+        else { return true }
         isEditing = true
-        textView.insertText("\n" + indent)
+        if !edit.movesOnly {
+            textView.selectedRange = edit.range
+            if edit.replacement.isEmpty {
+                textView.deleteBackward()
+            } else {
+                textView.insertText(edit.replacement)
+            }
+        }
+        textView.selectedRange = edit.selection
         isEditing = false
         return false
     }
@@ -166,7 +193,17 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {
+        if !isEditing { typing.selectionDidChange(textView.selectedRange, in: textView.text as NSString) }
         view.selectionDidChange()
+        matchBrackets()
+    }
+
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        matchBrackets()
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+        matchBrackets()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -198,6 +235,9 @@ final class CodeEditorContainer: UIView {
     private var widestLine: CGFloat = 0
     /// The editor runs under the keyboard; its text scrolls clear of it.
     private lazy var keyboard = KeyboardOverlap(view: self)
+    /// The brackets marked as a pair, and what marks them, behind the text.
+    private var markedBrackets: [Int] = []
+    private var bracketMarks: [UIView] = []
 
     /// The text's size before Dynamic Type scales it, which pinching and
     /// ⌘+ and ⌘− change, and which is kept for the next file opened.
@@ -376,6 +416,7 @@ final class CodeEditorContainer: UIView {
         setNeedsLayout()
         layoutIfNeeded()
         gutter.setNeedsDisplay()
+        layoutBracketMarks()
     }
 
     // MARK: Changes
@@ -400,6 +441,33 @@ final class CodeEditorContainer: UIView {
         guard caret.minX.isFinite else { return }
         let margin = characterWidth * 4
         sideways.scrollRectToVisible(CGRect(x: caret.minX - margin, y: 0, width: margin * 2, height: 1), animated: false)
+    }
+
+    /// Marks the characters at `positions`, a bracket and its pair, behind the text.
+    func markBrackets(_ positions: [Int]) {
+        markedBrackets = positions
+        while bracketMarks.count > positions.count { bracketMarks.removeLast().removeFromSuperview() }
+        while bracketMarks.count < positions.count {
+            let mark = UIView()
+            mark.backgroundColor = .systemYellow.withAlphaComponent(0.4)
+            mark.layer.cornerRadius = 3
+            mark.isUserInteractionEnabled = false
+            textView.insertSubview(mark, at: 0)
+            bracketMarks.append(mark)
+        }
+        layoutBracketMarks()
+    }
+
+    private func layoutBracketMarks() {
+        let layoutManager = textView.layoutManager
+        let inset = textView.textContainerInset
+        for (mark, position) in zip(bracketMarks, markedBrackets) {
+            let glyphs = layoutManager.glyphRange(
+                forCharacterRange: NSRange(location: position, length: 1), actualCharacterRange: nil
+            )
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textView.textContainer)
+            mark.frame = rect.offsetBy(dx: inset.left, dy: inset.top).insetBy(dx: -1, dy: 0)
+        }
     }
 
     /// The widest line's width. Columns times the width of a character, the
