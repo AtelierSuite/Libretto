@@ -54,6 +54,13 @@ final class DocumentTextView: NSTextView {
         pasteAsPlainText(sender)
     }
 
+    /// AppKit's own plain-text paste puts nothing in this text view, so the
+    /// pasteboard's string goes in the way typing does, through the editor.
+    override func pasteAsPlainText(_ sender: Any?) {
+        guard let string = NSPasteboard.general.string(forType: .string), !string.isEmpty else { return }
+        insertText(string, replacementRange: selectedRange())
+    }
+
     override func pasteAsRichText(_ sender: Any?) {
         pasteAsPlainText(sender)
     }
