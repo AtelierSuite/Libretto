@@ -165,6 +165,16 @@ struct SyntaxHighlighterTests {
         #expect(yaml["yes"] == .keyword)
     }
 
+    @Test("JSX and TSX open as JavaScript and TypeScript")
+    func jsx() {
+        #expect(SourceLanguage(contentType: .plainText, filename: "App.jsx") == .javaScript)
+        #expect(SourceLanguage(contentType: .plainText, filename: "App.tsx") == .typeScript)
+        #expect(SourceLanguage(contentType: .jsxSource, filename: nil) == .javaScript)
+        let found = tokens("export const App = () => <div className=\"app\">{count}</div>", .javaScript)
+        #expect(found["export"] == .keyword)
+        #expect(found["\"app\""] == .string)
+    }
+
     @Test("Every language has a name for the menu")
     func names() {
         #expect(SourceLanguage.allCases.first == .plainText)

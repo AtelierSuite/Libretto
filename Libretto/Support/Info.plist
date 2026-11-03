@@ -54,6 +54,7 @@
 				<string>public.swift-source</string>
 				<string>public.python-script</string>
 				<string>com.netscape.javascript-source</string>
+				<string>org.reactjs.jsx</string>
 				<string>com.microsoft.typescript</string>
 				<string>public.mpeg-2-transport-stream</string>
 				<string>public.html</string>
@@ -229,10 +230,32 @@
 					<string>ts</string>
 					<string>mts</string>
 					<string>cts</string>
+					<string>tsx</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>
 					<string>application/typescript</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.netscape.javascript-source</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>JSX Source</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.reactjs.jsx</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>jsx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/jsx</string>
 				</array>
 			</dict>
 		</dict>

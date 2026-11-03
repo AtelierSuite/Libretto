@@ -5,6 +5,8 @@ extension UTType {
     /// TypeScript, declared by the app. The system gives `.ts` to MPEG-2
     /// transport streams, so a TypeScript file usually arrives as one of those.
     public static let typeScriptSource = UTType("com.microsoft.typescript") ?? .sourceCode
+    /// JavaScript with JSX in it, which the system has no type for.
+    public static let jsxSource = UTType(importedAs: "org.reactjs.jsx", conformingTo: .javaScript)
     // Each declared by the app as well, for the systems that have no type of their own for them.
     public static let cSharpSource = UTType(importedAs: "com.microsoft.c-sharp", conformingTo: .sourceCode)
     public static let javaSource = UTType(importedAs: "com.sun.java-source", conformingTo: .sourceCode)
@@ -42,7 +44,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
 
     /// The types Libretto opens as source, most particular first.
     public static let contentTypes: [UTType] = [
-        .swiftSource, .pythonScript, .typeScriptSource, .javaScript, .html, .css, .shellScript,
+        .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .css, .shellScript,
         .objectiveCSource, .objectiveCPlusPlusSource, .cPlusPlusSource, .cPlusPlusHeader, .cSource, .cHeader,
         .cSharpSource, .javaSource, .kotlinSource, .goSource, .rustSource, .rubyScript, .phpScript, .sqlSource,
         .json, .yaml, .mpeg2TransportStream,
@@ -85,7 +87,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .go: return ["go"]
         case .html: return ["html", "htm"]
         case .java: return ["java"]
-        case .javaScript: return ["js", "mjs", "cjs"]
+        case .javaScript: return ["js", "mjs", "cjs", "jsx"]
         case .json: return ["json"]
         case .kotlin: return ["kt", "kts"]
         case .objectiveC: return ["m", "mm"]
@@ -96,7 +98,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         case .shell: return ["sh", "bash", "zsh"]
         case .sql: return ["sql"]
         case .swift: return ["swift"]
-        case .typeScript: return ["ts", "mts", "cts"]
+        case .typeScript: return ["ts", "mts", "cts", "tsx"]
         case .yaml: return ["yaml", "yml"]
         }
     }
