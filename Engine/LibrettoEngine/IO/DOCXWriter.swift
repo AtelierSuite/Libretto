@@ -335,8 +335,11 @@ public enum DrawingWriter: Sendable {
         default: wrap = "<wp:wrapNone/>"
         }
         let behind = image.wrap == .behindText ? "1" : "0"
+        let distances = image.wrapDistances
+        func emu(_ points: Double) -> Int { Int((points * 12_700).rounded()) }
         return """
-            <w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" \
+            <w:drawing><wp:anchor distT="\(emu(distances.top))" distB="\(emu(distances.bottom))" \
+            distL="\(emu(distances.left))" distR="\(emu(distances.right))" simplePos="0" \
             relativeHeight="251659264" behindDoc="\(behind)" locked="0" layoutInCell="1" allowOverlap="1">\
             <wp:simplePos x="0" y="0"/>\(horizontal)\(vertical)\(common)\(wrap)\(tail)</wp:anchor></w:drawing>
             """

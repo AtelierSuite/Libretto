@@ -107,6 +107,27 @@ struct PictureTests {
         #expect(image.wrapDistances == WrapDistances(top: 0, bottom: 0, left: 9, right: 9))
     }
 
+    @Test("Wrap distances are written back as they were read")
+    func writesWrapDistances() throws {
+        let distances = WrapDistances(top: 2, bottom: 4, left: 18, right: 0)
+        let image = InlineImage(
+            relationshipID: "rId1", width: 100, height: 50, isFloating: true, wrap: .tight, wrapDistances: distances
+        )
+        let xml = DrawingWriter.xml(for: image, id: 1)
+        #expect(xml.contains(#"distT="25400" distB="50800" distL="228600" distR="0""#))
+
+        let drawing = try XMLLite.parse(Data(xml.replacingOccurrences(
+            of: "<w:drawing>", with: #"<w:drawing xmlns:w="w" xmlns:wp="wp" xmlns:a="a" xmlns:pic="pic" xmlns:r="r">"#
+        ).utf8))
+        var back = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(of: try #require(drawing.firstChild(named: "anchor")), into: &back)
+        #expect(back.wrapDistances == distances)
+        #expect(back.wrap == .tight)
+
+        let plain = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true, wrap: .square)
+        #expect(DrawingWriter.xml(for: plain, id: 1).contains(#"distT="0" distB="0" distL="114300" distR="114300""#))
+    }
+
     @Test("Text keeps to a floating picture's wrap distances")
     func keepsToWrapDistances() throws {
         for (wrap, left) in [(ImageWrap.square, 36.0), (.tight, 0), (.square, 9)] {
