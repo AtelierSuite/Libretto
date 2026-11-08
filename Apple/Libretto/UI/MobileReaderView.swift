@@ -217,6 +217,15 @@ struct MobileTextBuilder {
             case .pageBreak, .columnBreak, .image: continue
             case .runChild(_, let display), .paragraphChild(_, let display):
                 guard let display, !display.isEmpty else { continue }
+                if inline.displayRuns != nil {
+                    // Each run it holds in its own formatting.
+                    for run in inline.displayPieces(display) {
+                        var piece = runText(run.text, format: run.format, paragraph: paragraph, revision: inline.revision)
+                        if let url = inline.hyperlink?.url { piece.link = url }
+                        result += piece
+                    }
+                    continue
+                }
                 string = display
             case .note(let reference):
                 guard let number = context.noteNumbers["\(reference.kind.rawValue):\(reference.id)"] else { continue }

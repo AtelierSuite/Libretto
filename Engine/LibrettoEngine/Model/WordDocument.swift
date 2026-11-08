@@ -552,15 +552,28 @@ public struct Inline: Equatable, Sendable {
     public var hyperlink: Hyperlink?
     /// The tracked change it is part of, if any.
     public var revision: Revision?
+    /// For a kept element shown as its text, the runs that text is made of,
+    /// each in its own formatting, when they differ: a smart tag around words
+    /// partly in bold, say. Only how it is drawn; the element is written back
+    /// as it was. `nil` when it all looks like `format`.
+    public var displayRuns: [DisplayRun]?
 
     public init(
         _ content: InlineContent, format: RunFormat = RunFormat(), hyperlink: Hyperlink? = nil,
-        revision: Revision? = nil
+        revision: Revision? = nil, displayRuns: [DisplayRun]? = nil
     ) {
         self.content = content
         self.format = format
         self.hyperlink = hyperlink
         self.revision = revision
+        self.displayRuns = displayRuns
+    }
+
+    /// The pieces its display is drawn as: `displayRuns` when they make up
+    /// exactly `display`, otherwise all of it in `format`.
+    public func displayPieces(_ display: String) -> [DisplayRun] {
+        if let displayRuns, displayRuns.map(\.text).joined() == display { return displayRuns }
+        return [DisplayRun(text: display, format: format)]
     }
 
     public var plainText: String {
@@ -572,6 +585,17 @@ public struct Inline: Equatable, Sendable {
         case .image, .note: return ""
         case .runChild(_, let display), .paragraphChild(_, let display): return display ?? ""
         }
+    }
+}
+
+/// Part of a kept element's text and the formatting of the run it is in.
+public struct DisplayRun: Equatable, Sendable {
+    public var text: String
+    public var format: RunFormat
+
+    public init(text: String, format: RunFormat) {
+        self.text = text
+        self.format = format
     }
 }
 

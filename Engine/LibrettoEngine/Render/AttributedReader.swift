@@ -113,7 +113,7 @@ public enum AttributedReader: Sendable {
         let string = text.string as NSString
         var result: [Inline] = []
         var seenMarkers: Set<ObjectIdentifier> = []
-        var token: (box: InlineBox, text: String, revision: Revision?)?
+        var token: (box: InlineBox, text: String, revision: Revision?, pieces: [(String, RunFormat)])?
 
         func flushToken() {
             guard let current = token else { return }
@@ -122,6 +122,12 @@ public enum AttributedReader: Sendable {
                 var inline = current.box.inline
                 inline.revision = current.revision
                 result.append(inline)
+            } else if current.box.inline.displayRuns != nil {
+                // Edited: what it was is gone, and what is left is plain text, each part as it was drawn.
+                for (text, format) in current.pieces where !text.isEmpty {
+                    result.append(Inline(.text(text), format: format,
+                                         hyperlink: current.box.inline.hyperlink, revision: current.revision))
+                }
             } else if !current.text.isEmpty {
                 // Edited: what it was is gone, and what is left is plain text.
                 result.append(Inline(.text(current.text), format: current.box.inline.format,
@@ -138,7 +144,11 @@ public enum AttributedReader: Sendable {
             let run = attributes[.librettoRun] as? RunBox
             if let box = attributes[.librettoToken] as? InlineBox {
                 if token?.box !== box { flushToken() }
-                token = (box, (token?.text ?? "") + string.substring(with: range), token?.revision ?? run?.revision)
+                let piece = string.substring(with: range)
+                token = (
+                    box, (token?.text ?? "") + piece, token?.revision ?? run?.revision,
+                    (token?.pieces ?? []) + [(piece, run?.format ?? box.inline.format)]
+                )
                 return
             }
             flushToken()

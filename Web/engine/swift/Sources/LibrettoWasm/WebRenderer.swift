@@ -131,7 +131,18 @@ struct WebRenderer {
                 run["t"] = Self.display(of: inline, noteNumbers: noteNumbers)
             case .runChild, .paragraphChild:
                 run["k"] = "tok"
-                run["t"] = Self.display(of: inline, noteNumbers: noteNumbers)
+                let display = Self.display(of: inline, noteNumbers: noteNumbers) ?? ""
+                run["t"] = display
+                if inline.displayRuns != nil {
+                    // Its runs, each in its own formatting; the token is still one.
+                    var pieces: [[String: Any]] = []
+                    for piece in inline.displayPieces(display) {
+                        let style = runStyle(piece.format.style, paragraphStyleID: direct.styleID, styles: styles,
+                                             hyperlink: inline.hyperlink, background: background)
+                        pieces.append(["t": piece.text, "s": style])
+                    }
+                    run["pc"] = pieces
+                }
             }
             if let hyperlink = inline.hyperlink {
                 if let url = hyperlink.url ?? hyperlink.relationshipID.flatMap(linkTarget) {
