@@ -251,10 +251,16 @@ private final class ReadContext {
             return token(child, display: HeaderFooterReader.plainText(of: child), hyperlink: hyperlink, revision: revision)
         case "sdt":
             report.insert(.contentControls)
-            return token(child, display: HeaderFooterReader.plainText(of: child), hyperlink: hyperlink, revision: revision)
+            return token(
+                child, display: HeaderFooterReader.plainText(of: child), hyperlink: hyperlink, revision: revision,
+                drawsRuns: true
+            )
         default:
-            // fldSimple, smartTag, customXml and the like: kept whole, shown as their text.
-            return token(child, display: HeaderFooterReader.plainText(of: child), hyperlink: hyperlink, revision: revision)
+            // fldSimple, smartTag, customXml and the like: kept whole, shown as their text, each run in its formatting.
+            return token(
+                child, display: HeaderFooterReader.plainText(of: child), hyperlink: hyperlink, revision: revision,
+                drawsRuns: true
+            )
         }
     }
 
@@ -273,13 +279,56 @@ private final class ReadContext {
         return [Inline(.paragraphChild(xml: xml, display: nil), hyperlink: hyperlink, revision: revision)]
     }
 
-    private func token(_ element: XMLElement, display: String?, hyperlink: Hyperlink?, revision: Revision?) -> [Inline] {
+    private func token(
+        _ element: XMLElement, display: String?, hyperlink: Hyperlink?, revision: Revision?, drawsRuns: Bool = false
+    ) -> [Inline] {
         guard let xml = serialize(element) else { return [] }
         let firstRun = firstDescendant(named: "r", in: element)
         let format = firstRun.flatMap { $0.firstChild(named: "rPr") }.map(runFormat) ?? RunFormat()
         // Shown within its paragraph, so its own line breaks must not end it.
         let shown = display.flatMap { $0.isEmpty ? nil : $0.replacingOccurrences(of: "\n", with: "\u{2028}") }
-        return [Inline(.paragraphChild(xml: xml, display: shown), format: format, hyperlink: hyperlink, revision: revision)]
+        var inline = Inline(.paragraphChild(xml: xml, display: shown), format: format, hyperlink: hyperlink, revision: revision)
+        if drawsRuns, let shown {
+            let runs = displayRuns(of: element, outside: format)
+            // Only when they read as the element does, and do not all look alike.
+            if runs.map(\.text).joined() == shown, runs.contains(where: { $0.format != format }) {
+                inline.displayRuns = runs
+            }
+        }
+        return [inline]
+    }
+
+    /// An element's text as `HeaderFooterReader.plainText` reads it, split where
+    /// the formatting of the runs it is in changes. Text outside any run looks like `outside`.
+    private func displayRuns(of element: XMLElement, outside: RunFormat) -> [DisplayRun] {
+        var runs: [DisplayRun] = []
+        var text = ""
+        func add(_ string: String, _ format: RunFormat) {
+            guard !string.isEmpty else { return }
+            text += string
+            let string = string.replacingOccurrences(of: "\n", with: "\u{2028}")
+            if let last = runs.last, last.format == format {
+                runs[runs.count - 1].text += string
+            } else {
+                runs.append(DisplayRun(text: string, format: format))
+            }
+        }
+        func visit(_ node: XMLElement, _ format: RunFormat) {
+            switch node.name {
+            case "t": add(node.text, format)
+            case "delText": return
+            case "tab": add("\t", format)
+            case "br", "cr": add("\n", format)
+            case "instrText", "rPr", "pPr": return
+            case "r":
+                let own = node.firstChild(named: "rPr").map(runFormat) ?? RunFormat()
+                node.children.forEach { visit($0, own) }
+            case "p" where !text.isEmpty: add("\n", format); node.children.forEach { visit($0, format) }
+            default: node.children.forEach { visit($0, format) }
+            }
+        }
+        visit(element, outside)
+        return runs
     }
 
     private func hyperlink(from element: XMLElement) -> Hyperlink {

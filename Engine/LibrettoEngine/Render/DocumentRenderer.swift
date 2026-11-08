@@ -82,6 +82,16 @@ public enum DocumentRenderer: Sendable {
         var pending: [Inline] = []
         var lastFormat = RunFormat()
 
+        func append(_ piece: NSMutableAttributedString) {
+            if !pending.isEmpty {
+                // The whole first character, which may be more than one UTF-16 unit.
+                let first = (piece.string as NSString).rangeOfComposedCharacterSequence(at: 0)
+                piece.addAttribute(.librettoMarkers, value: MarkersBox(pending), range: first)
+                pending = []
+            }
+            output.append(piece)
+        }
+
         for inline in paragraph.inlines {
             if inline.content.isMarker {
                 pending.append(inline)
@@ -118,22 +128,34 @@ public enum DocumentRenderer: Sendable {
                 string = TextCharacters.attachment
             case .runChild(_, let display), .paragraphChild(_, let display):
                 let shown = display ?? ""
-                attributes[.librettoToken] = InlineBox(inline, display: shown)
+                let box = InlineBox(inline, display: shown)
+                attributes[.librettoToken] = box
                 string = shown
+                if inline.displayRuns != nil, !shown.isEmpty {
+                    // Each run it holds in its own formatting, all one element: the box they share.
+                    let piece = NSMutableAttributedString()
+                    let pieces = inline.displayPieces(shown)
+                    for run in pieces {
+                        var look = base.merging(
+                            runAttributes(
+                                run.format, hyperlink: inline.hyperlink, revision: inline.revision,
+                                paragraph: paragraph, context: context
+                            )
+                        ) { _, run in run }
+                        look[.librettoToken] = box
+                        piece.append(NSAttributedString(string: run.text, attributes: look))
+                    }
+                    append(piece)
+                    lastFormat = pieces.last?.format ?? inline.format
+                    continue
+                }
             case .note(let reference):
                 let shown = context.noteNumbers["\(reference.kind.rawValue):\(reference.id)"] ?? "*"
                 attributes[.librettoToken] = InlineBox(inline, display: shown)
                 string = shown
             }
             guard !string.isEmpty else { continue }
-            let piece = NSMutableAttributedString(string: string, attributes: attributes)
-            if !pending.isEmpty {
-                // The whole first character, which may be more than one UTF-16 unit.
-                let first = (piece.string as NSString).rangeOfComposedCharacterSequence(at: 0)
-                piece.addAttribute(.librettoMarkers, value: MarkersBox(pending), range: first)
-                pending = []
-            }
-            output.append(piece)
+            append(NSMutableAttributedString(string: string, attributes: attributes))
             lastFormat = inline.format
         }
 
