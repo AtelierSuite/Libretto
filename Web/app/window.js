@@ -348,7 +348,6 @@ export class DocumentWindow {
         run: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()),
       },
       about: { label: t("Mac.Menu.About", "Libretto"), run: () => this.showAbout() },
-      sourceCode: { label: t("Mac.Menu.SourceCode"), run: () => window.open(SOURCE_CODE_URL, "_blank", "noopener") },
     };
   }
 
@@ -408,7 +407,7 @@ export class DocumentWindow {
       { label: t("Mac.Menu.Window"), get items() {
         return self.document ? [{ label: self.document.name, checked: true, action: () => self.focusEditor() }] : [{ label: "Libretto", disabled: true }];
       } },
-      { label: t("Mac.Menu.Help"), get items() { return self.items("sourceCode", "about"); } },
+      { label: t("Mac.Menu.Help"), get items() { return self.items("about"); } },
     ];
     const bar = this.root.querySelector("#menu-bar");
     this.menuBarOverflow = attachMenuBar(bar, menus, { label: t("Web.Menu.Label"), overflowLabel: t("Toolbar.More") });
