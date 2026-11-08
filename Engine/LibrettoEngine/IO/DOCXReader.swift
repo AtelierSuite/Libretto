@@ -808,6 +808,19 @@ public enum DrawingReader: Sendable {
         } else {
             image.wrap = behind ? .behindText : .inFrontOfText
         }
+        // The anchor's distances, or failing those, the wrapping element's.
+        let wrapping = ["wrapSquare", "wrapTight", "wrapThrough", "wrapTopAndBottom"].lazy
+            .compactMap { anchor.firstChild(named: $0) }.first
+        func distance(_ name: String, _ fallback: Double) -> Double {
+            guard let value = anchor.attribute(name) ?? wrapping?.attribute(name),
+                  let emu = Double(value), emu >= 0 else { return fallback }
+            return emu / 12_700
+        }
+        let defaults = WrapDistances()
+        image.wrapDistances = WrapDistances(
+            top: distance("distT", defaults.top), bottom: distance("distB", defaults.bottom),
+            left: distance("distL", defaults.left), right: distance("distR", defaults.right)
+        )
         if let horizontal = anchor.firstChild(named: "positionH") {
             image.isHorizontalFromPage = horizontal.attribute("relativeFrom") == "page"
             if let align = horizontal.firstChild(named: "align")?.text {

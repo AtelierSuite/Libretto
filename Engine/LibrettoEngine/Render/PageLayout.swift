@@ -336,10 +336,18 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             floats.append(PlacedFloat(
                 frame: frame, page: page, image: image, behindText: picture.wrap == .behindText, location: range.location
             ))
+            // Clear of the picture by the document's wrap distances.
+            let distance = picture.wrapDistances
+            let top = frame.minY - distance.top
+            let height = frame.height + distance.top + distance.bottom
             switch picture.wrap {
-            case .square, .tight: exclusions.append(frame.insetBy(dx: -9, dy: -2))
+            case .square, .tight:
+                exclusions.append(CGRect(
+                    x: frame.minX - distance.left, y: top,
+                    width: frame.width + distance.left + distance.right, height: height
+                ))
             case .topAndBottom:
-                exclusions.append(CGRect(x: -1, y: frame.minY - 2, width: geometry.contentWidth + 2, height: frame.height + 4))
+                exclusions.append(CGRect(x: -1, y: top, width: geometry.contentWidth + 2, height: height))
             default: break
             }
         }

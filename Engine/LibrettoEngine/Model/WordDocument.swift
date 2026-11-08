@@ -651,6 +651,8 @@ public struct InlineImage: Equatable, Sendable {
     public var isHorizontalFromPage = false
     public var verticalOffset: Double = 0
     public var verticalAnchor: VerticalAnchor = .paragraph
+    /// How far text keeps from a floating picture that it wraps around.
+    public var wrapDistances = WrapDistances()
 
     /// What a floating picture's place down the page is measured from.
     public enum VerticalAnchor: String, Sendable {
@@ -676,6 +678,7 @@ public struct InlineImage: Equatable, Sendable {
         isHorizontalFromPage: Bool = false,
         verticalOffset: Double = 0,
         verticalAnchor: VerticalAnchor = .paragraph,
+        wrapDistances: WrapDistances = WrapDistances(),
         crop: ImageCrop = ImageCrop(),
         isEdited: Bool = false,
         object: DrawingObject? = nil
@@ -691,6 +694,7 @@ public struct InlineImage: Equatable, Sendable {
         self.isHorizontalFromPage = isHorizontalFromPage
         self.verticalOffset = verticalOffset
         self.verticalAnchor = verticalAnchor
+        self.wrapDistances = wrapDistances
         self.crop = crop
         self.isEdited = isEdited
         self.object = object
@@ -803,6 +807,23 @@ public enum ImageWrap: String, CaseIterable, Sendable {
 
     /// Whether text keeps clear of it beside it, or above and below it.
     public var excludesText: Bool { self == .square || self == .tight || self == .topAndBottom }
+}
+
+/// How far text keeps from each side of a floating picture, in points:
+/// `wp:anchor`'s `distT`, `distB`, `distL` and `distR`. Word's own, for a
+/// picture that doesn't say, are none above and below and 9 pt either side.
+public struct WrapDistances: Equatable, Hashable, Sendable {
+    public var top: Double = 0
+    public var bottom: Double = 0
+    public var left: Double = 9
+    public var right: Double = 9
+
+    public init(top: Double = 0, bottom: Double = 0, left: Double = 9, right: Double = 9) {
+        self.top = top
+        self.bottom = bottom
+        self.left = left
+        self.right = right
+    }
 }
 
 public struct ImageCrop: Equatable, Hashable, Sendable {

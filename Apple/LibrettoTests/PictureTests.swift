@@ -81,4 +81,90 @@ struct PictureTests {
         #expect(xml.contains("<wp:inline "))
         #expect(controller.layoutManager.placedFloats.isEmpty)
     }
+
+    private func anchor(_ attributes: String, wrap: String) throws -> XMLElement {
+        try XMLLite.parse(Data("""
+            <wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" \
+            behindDoc="0"\(attributes)><wp:extent cx="1270000" cy="635000"/>\(wrap)</wp:anchor>
+            """.utf8))
+    }
+
+    @Test("Wrap distances come from the anchor, else the wrapping, else Word's own")
+    func readsWrapDistances() throws {
+        var image = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(
+            of: try anchor(#" distT="25400" distB="50800" distL="228600" distR="0""#, wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"),
+            into: &image
+        )
+        #expect(image.wrapDistances == WrapDistances(top: 2, bottom: 4, left: 18, right: 0))
+
+        DrawingReader.readPlacement(
+            of: try anchor("", wrap: #"<wp:wrapTight wrapText="bothSides" distL="38100" distR="38100"/>"#), into: &image
+        )
+        #expect(image.wrapDistances == WrapDistances(top: 0, bottom: 0, left: 3, right: 3))
+
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapTopAndBottom/>"), into: &image)
+        #expect(image.wrapDistances == WrapDistances(top: 0, bottom: 0, left: 9, right: 9))
+    }
+
+    @Test("Wrap distances are written back as they were read")
+    func writesWrapDistances() throws {
+        let distances = WrapDistances(top: 2, bottom: 4, left: 18, right: 0)
+        let image = InlineImage(
+            relationshipID: "rId1", width: 100, height: 50, isFloating: true, wrap: .tight, wrapDistances: distances
+        )
+        let xml = DrawingWriter.xml(for: image, id: 1)
+        #expect(xml.contains(#"distT="25400" distB="50800" distL="228600" distR="0""#))
+
+        let drawing = try XMLLite.parse(Data(xml.replacingOccurrences(
+            of: "<w:drawing>", with: #"<w:drawing xmlns:w="w" xmlns:wp="wp" xmlns:a="a" xmlns:pic="pic" xmlns:r="r">"#
+        ).utf8))
+        var back = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(of: try #require(drawing.firstChild(named: "anchor")), into: &back)
+        #expect(back.wrapDistances == distances)
+        #expect(back.wrap == .tight)
+
+        let plain = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true, wrap: .square)
+        #expect(DrawingWriter.xml(for: plain, id: 1).contains(#"distT="0" distB="0" distL="114300" distR="114300""#))
+    }
+
+    @Test("Text keeps to a floating picture's wrap distances")
+    func keepsToWrapDistances() throws {
+        for (wrap, left) in [(ImageWrap.square, 36.0), (.tight, 0), (.square, 9)] {
+            let (controller, _) = makeController()
+            controller.textView.selectedRange = NSRange(location: 0, length: 0)
+            controller.insertImage(png(width: 200, height: 100))
+            controller.textView.selectedRange = NSRange(location: 0, length: 1)
+            controller.updateSelectedImage { picture in
+                picture.wrap = wrap
+                picture.alignment = .trailing
+                picture.width = 100
+                picture.height = 50
+                picture.wrapDistances.left = left
+            }
+            let layout = controller.layoutManager
+            let placed = try #require(layout.placedFloats.first)
+            let firstLine = layout.lineFragmentRect(forGlyphAt: 1, effectiveRange: nil)
+            #expect(firstLine.maxX <= placed.frame.minX - left + 0.5, "\(wrap) \(left)")
+            #expect(firstLine.maxX >= placed.frame.minX - left - 0.5, "\(wrap) \(left)")
+        }
+
+        // Above and below: the text below starts the bottom distance under the picture.
+        let (controller, _) = makeController()
+        controller.textView.selectedRange = NSRange(location: 0, length: 0)
+        controller.insertImage(png(width: 200, height: 100))
+        controller.textView.selectedRange = NSRange(location: 0, length: 1)
+        controller.updateSelectedImage { picture in
+            picture.wrap = .topAndBottom
+            picture.width = 100
+            picture.height = 50
+            picture.wrapDistances.bottom = 24
+        }
+        let layout = controller.layoutManager
+        let placed = try #require(layout.placedFloats.first)
+        let below = (1..<layout.numberOfGlyphs).lazy
+            .map { layout.lineFragmentRect(forGlyphAt: $0, effectiveRange: nil) }
+            .first { $0.minY >= placed.frame.minY }
+        #expect(try #require(below).minY >= placed.frame.maxY + 24 - 0.5)
+    }
 }
