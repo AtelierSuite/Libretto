@@ -537,7 +537,8 @@ public enum ListKind: String, Sendable {
 
 // MARK: - Unsupported features
 
-/// What an opened file uses that Libretto shows or keeps, but cannot edit.
+/// What an opened file uses that Libretto shows or keeps, but cannot edit,
+/// and what it keeps but draws differently from Word or Pages.
 public struct UnsupportedFeatureReport: Equatable, Sendable {
     public var features: Set<Feature> = []
 
@@ -546,6 +547,10 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         case shapes
         case contentControls
         case embeddedObjects
+        /// A section set in more than one column, drawn as one.
+        case multipleColumns
+        /// A floating picture text wraps tightly around or through, drawn as wrapping around its box.
+        case tightWrapping
 
         public var label: String {
             switch self {
@@ -553,6 +558,18 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
             case .shapes: return String(localized: "Unsupported.Shapes", bundle: .engine)
             case .contentControls: return String(localized: "Unsupported.ContentControls", bundle: .engine)
             case .embeddedObjects: return String(localized: "Unsupported.EmbeddedObjects", bundle: .engine)
+            case .multipleColumns: return String(localized: "Unsupported.MultipleColumns", bundle: .engine)
+            case .tightWrapping: return String(localized: "Unsupported.TightWrapping", bundle: .engine)
+            }
+        }
+
+        /// Kept and editable, but drawn differently from Word or Pages, so
+        /// the document may not look as it does there. Remove a feature from
+        /// here, and the report, once Libretto draws it as they do.
+        public var isDrawnDifferently: Bool {
+            switch self {
+            case .multipleColumns, .tightWrapping: return true
+            case .macros, .shapes, .contentControls, .embeddedObjects: return false
             }
         }
     }
@@ -566,6 +583,12 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
     public var orderedFeatures: [Feature] {
         Feature.allCases.filter(features.contains)
     }
+
+    /// What Libretto can show but not edit.
+    public var readOnlyFeatures: [Feature] { orderedFeatures.filter { !$0.isDrawnDifferently } }
+
+    /// What Libretto draws differently from Word or Pages.
+    public var drawnDifferentlyFeatures: [Feature] { orderedFeatures.filter(\.isDrawnDifferently) }
 
     public init(features: Set<Feature> = []) {
         self.features = features

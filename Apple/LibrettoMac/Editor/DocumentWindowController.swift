@@ -196,12 +196,24 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         let report = libretto.content.unsupportedFeatures
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = String(localized: "Notice.UnsupportedFeatures.Title")
-        let message = libretto.savesPages ? "Notice.UnsupportedFeatures.PagesMessage"
-            : libretto.content.importedFormat != nil ? "Notice.UnsupportedFeatures.ImportedMessage"
-            : "Notice.UnsupportedFeatures.Message"
-        alert.informativeText = String(localized: String.LocalizationValue(message)) + "\n\n"
-            + report.orderedFeatures.map { "• " + $0.label }.joined(separator: "\n")
+        let readOnly = report.readOnlyFeatures
+        let drawnDifferently = report.drawnDifferentlyFeatures
+        alert.messageText = readOnly.isEmpty ? String(localized: "Notice.DrawnDifferently.Title")
+            : String(localized: "Notice.UnsupportedFeatures.Title")
+        func section(_ message: String, _ features: [UnsupportedFeatureReport.Feature]) -> String {
+            message + "\n\n" + features.map { "• " + $0.label }.joined(separator: "\n")
+        }
+        var sections: [String] = []
+        if !readOnly.isEmpty {
+            let message = libretto.savesPages ? "Notice.UnsupportedFeatures.PagesMessage"
+                : libretto.content.importedFormat != nil ? "Notice.UnsupportedFeatures.ImportedMessage"
+                : "Notice.UnsupportedFeatures.Message"
+            sections.append(section(String(localized: String.LocalizationValue(message)), readOnly))
+        }
+        if !drawnDifferently.isEmpty {
+            sections.append(section(String(localized: "Notice.DrawnDifferently.Message"), drawnDifferently))
+        }
+        alert.informativeText = sections.joined(separator: "\n\n")
         alert.beginSheetModal(for: window)
     }
 

@@ -15,7 +15,8 @@ ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignmen
           "Block.Preserved.Placeholder", "Comment.DefaultAuthor", "Contents.Empty", "Error.MissingBody",
           "Error.MissingMainDocument", "Language.Diff", "Language.PlainText", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
           "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
-          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
+          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.MultipleColumns", "Unsupported.Shapes",
+          "Unsupported.TightWrapping"]
 SHARED = ["Comment.DefaultAuthor"]
 
 S = {
@@ -60,6 +61,8 @@ S = {
  "Mobile.Edit": ["Edit", "編集", "편집", "编辑", "編輯"],
  "Mobile.Picture": ["Picture", "画像", "사진", "图片", "圖片"],
  "Mobile.WordCount": ["%lld words", "%lld語", "%lld단어", "%lld 个词", "%lld 個字詞"],
+ "Notice.DrawnDifferently.Message": ["Libretto draws some things in this document differently, so it may look different from how it looks in Word or Pages. They’re kept as they are, and saved back with the document.", "この書類の一部はLibrettoでの表示方法が異なるため、WordやPagesでの見た目と異なる場合があります。これらはそのまま保持され、書類と一緒に保存されます。", "이 문서의 일부 요소는 Libretto에서 다르게 표시되므로 Word 또는 Pages에서 보이는 것과 다르게 보일 수 있습니다. 이러한 요소는 그대로 유지되며 문서와 함께 저장됩니다.", "Libretto 对此文稿中的某些内容采用不同的显示方式，因此它看起来可能与在 Word 或 Pages 中不同。这些内容会原样保留，并随文稿一起存储。", "Libretto 對此文件中的某些內容採用不同的顯示方式，因此它看起來可能與在 Word 或 Pages 中不同。這些內容會原樣保留，並隨文件一起儲存。"],
+ "Notice.DrawnDifferently.Title": ["It May Look Different", "表示が異なる場合があります", "다르게 보일 수 있음", "可能看起来不同", "可能看起來不同"],
  "Notice.UnsupportedFeatures.Message": ["This document uses things Libretto can show but not edit. They’re kept as they are, and saved back with the document. Libretto never runs macros.", "この書類には、Librettoで表示はできても編集できない要素が含まれています。これらはそのまま保持され、書類と一緒に保存されます。Librettoがマクロを実行することはありません。", "이 문서에는 Libretto에서 표시할 수는 있지만 편집할 수 없는 요소가 있습니다. 이러한 요소는 그대로 유지되며 문서와 함께 저장됩니다. Libretto는 매크로를 실행하지 않습니다.", "此文稿包含 Libretto 可以显示但无法编辑的内容。这些内容会原样保留，并随文稿一起存储。Libretto 绝不会运行宏。", "此文件包含 Libretto 可以顯示但無法編輯的內容。這些內容會原樣保留，並隨文件一起儲存。Libretto 絕不會執行巨集。"],
  "Notice.UnsupportedFeatures.Title": ["Some Parts Are Read-Only", "一部は読み取り専用です", "일부는 읽기 전용입니다", "部分内容为只读", "部分內容為唯讀"],
  "PageSetup.Landscape": ["Landscape", "横", "가로", "横向", "橫向"],
@@ -116,7 +119,9 @@ S = {
  "Unsupported.ContentControls": ["Content controls, such as a table of contents", "目次などのコンテンツコントロール", "목차 등의 콘텐츠 컨트롤", "内容控件，例如目录", "內容控制項，例如目錄"],
  "Unsupported.EmbeddedObjects": ["Embedded objects", "埋め込みオブジェクト", "포함된 개체", "嵌入的对象", "內嵌物件"],
  "Unsupported.Macros": ["Macros, which are kept but never run", "マクロ（保持されますが実行されません）", "매크로(유지되지만 실행되지 않음)", "宏（会保留，但绝不运行）", "巨集（會保留，但絕不執行）"],
+ "Unsupported.MultipleColumns": ["Text in columns, which is shown in one column", "段組み（1段で表示されます）", "다단 텍스트(한 단으로 표시됨)", "分栏文本（以单栏显示）", "分欄文字（以單欄顯示）"],
  "Unsupported.Shapes": ["Shapes and text boxes", "図形とテキストボックス", "도형 및 텍스트 상자", "形状和文本框", "形狀和文字方塊"],
+ "Unsupported.TightWrapping": ["Tight or through text wrapping, which is shown as square", "「外周」または「内部」の折り返し（「四角」で表示されます）", "빽빽하게 또는 투과 텍스트 줄 바꿈(정사각형으로 표시됨)", "紧密型或穿越型文字环绕（以四周型显示）", "緊密或穿透文字環繞（以矩形顯示）"],
  "ViewMode.Mobile": ["Mobile View", "モバイル表示", "모바일 보기", "移动视图", "行動版顯示"],
  "ViewMode.Page": ["Full Document", "ドキュメント全体", "전체 문서", "完整文稿", "完整文件"],
  "Toolbar.SourceCode": ["Source Code", "ソースコード", "소스 코드", "源代码", "原始碼"],
@@ -540,7 +545,8 @@ MAC_REUSE = [
    "Highlight.None", "Highlight.blue", "Highlight.cyan", "Highlight.green", "Highlight.lightGray",
    "Highlight.magenta", "Highlight.red", "Highlight.yellow", "Insert.PageBreak", "Insert.Picture", "Insert.Table",
    "InsertTable.Insert", "Link.Address", "Link.Insert", "Link.Remove", "Link.Text", "Link.Update",
-   "Notice.Imported.Save", "Notice.Pages.Unsaved", "Notice.UnsupportedFeatures.ImportedMessage",
+   "Notice.DrawnDifferently.Message", "Notice.DrawnDifferently.Title", "Notice.Imported.Save", "Notice.Pages.Unsaved",
+   "Notice.UnsupportedFeatures.ImportedMessage",
    "Notice.UnsupportedFeatures.Message", "Notice.UnsupportedFeatures.PagesMessage",
    "Notice.UnsupportedFeatures.Title", "PageSetup.Landscape", "PageSetup.Paper.Legal", "PageSetup.Paper.Letter",
    "PageSetup.Portrait", "PageSetup.Section.Margins", "PageSetup.Section.Paper", "Panel.Comments.Title",

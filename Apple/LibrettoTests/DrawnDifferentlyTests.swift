@@ -1,0 +1,86 @@
+import Foundation
+import Testing
+@testable import LibrettoEngine
+
+@Suite("Features drawn differently from Word or Pages")
+struct DrawnDifferentlyTests {
+    private static let wps = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+
+    /// The fixture package with a body of its own, and the drawing prefixes it uses.
+    private func document(body: String) throws -> WordDocument {
+        var parts = Fixtures.parts(body: body)
+        var xml = String(decoding: parts["word/document.xml"]!, as: UTF8.self)
+        let declarations = [
+            "xmlns:wp=\"\(OOXML.drawingNamespace)\"", "xmlns:a=\"\(OOXML.drawingMainNamespace)\"",
+            "xmlns:wps=\"\(Self.wps)\"",
+        ].joined(separator: " ")
+        xml = xml.replacingOccurrences(of: "<w:document ", with: "<w:document \(declarations) ")
+        parts["word/document.xml"] = Data(xml.utf8)
+        return try DOCXReader.document(fromParts: parts)
+    }
+
+    private func floatingShape(wrap: String) -> String {
+        """
+        <w:p><w:r><w:drawing><wp:anchor behindDoc="0">\
+        <wp:positionH relativeFrom="margin"><wp:align>left</wp:align></wp:positionH>\
+        <wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>\
+        <wp:extent cx="1270000" cy="635000"/>\(wrap)<wp:docPr id="3" name="Rectangle 3"/>\
+        <a:graphic><a:graphicData uri="\(Self.wps)"><wps:wsp><wps:spPr><a:prstGeom prst="rect"/></wps:spPr>\
+        <wps:bodyPr/></wps:wsp></a:graphicData></a:graphic>\
+        </wp:anchor></w:drawing></w:r><w:r><w:t>Words beside it.</w:t></w:r></w:p>
+        """
+    }
+
+    @Test("A document using neither says nothing")
+    func plain() throws {
+        let document = try Fixtures.document()
+        #expect(document.unsupportedFeatures.drawnDifferentlyFeatures.isEmpty)
+    }
+
+    @Test("A final section in two columns is noticed")
+    func columnsInFinalSection() throws {
+        let section = """
+            <w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="2" w:space="720"/></w:sectPr></w:pPr>\
+            <w:r><w:t>In two columns</w:t></w:r></w:p>
+            """
+        let document = try document(body: section)
+        #expect(document.unsupportedFeatures.features.contains(.multipleColumns))
+        #expect(document.unsupportedFeatures.drawnDifferentlyFeatures == [.multipleColumns])
+        #expect(document.unsupportedFeatures.readOnlyFeatures.isEmpty)
+    }
+
+    @Test("A section in one column is not")
+    func oneColumn() throws {
+        let section = """
+            <w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="1" w:space="720"/></w:sectPr></w:pPr>\
+            <w:r><w:t>In one column</w:t></w:r></w:p>
+            """
+        let document = try document(body: section)
+        #expect(!document.unsupportedFeatures.features.contains(.multipleColumns))
+    }
+
+    @Test("Tight and through wrapping are noticed, square wrapping is not", arguments: [
+        ("<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>", true),
+        ("<wp:wrapThrough wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapThrough>", true),
+        ("<wp:wrapSquare wrapText=\"bothSides\"/>", false),
+    ])
+    func wrapping(wrap: String, noticed: Bool) throws {
+        let document = try document(body: floatingShape(wrap: wrap))
+        let floats = document.allParagraphs.flatMap(\.inlines).contains {
+            if case .image(let image) = $0.content { return image.isFloating } else { return false }
+        }
+        #expect(floats)
+        #expect(document.unsupportedFeatures.features.contains(.tightWrapping) == noticed)
+    }
+
+    @Test("What is drawn differently is told apart from what is read-only, each in order")
+    func split() {
+        let report = UnsupportedFeatureReport(features: [.tightWrapping, .macros, .multipleColumns, .shapes])
+        #expect(report.readOnlyFeatures == [.macros, .shapes])
+        #expect(report.drawnDifferentlyFeatures == [.multipleColumns, .tightWrapping])
+        #expect(!report.isEmpty)
+        for feature in UnsupportedFeatureReport.Feature.allCases {
+            #expect(!feature.label.hasPrefix("Unsupported."), "\(feature) has no words of its own")
+        }
+    }
+}
