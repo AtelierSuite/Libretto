@@ -1,4 +1,8 @@
+#if canImport(SwiftUI)
 import SwiftUI
+#else
+import Foundation
+#endif
 
 /// Adapts document colours to the current appearance.
 ///
@@ -166,6 +170,7 @@ extension Color {
 
     /// "AARRGGBB" representation, for round-tripping through OOXML.
     public var argbHex: String? {
+        #if canImport(SwiftUI)
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         #if canImport(UIKit)
         guard PlatformColor(self).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
@@ -173,11 +178,15 @@ extension Color {
         guard let converted = PlatformColor(self).usingColorSpace(.sRGB) else { return nil }
         converted.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
         #endif
+        #else
+        let (red, green, blue, alpha) = (self.red, self.green, self.blue, opacity)
+        #endif
         let components = [alpha, red, green, blue].map { UInt8(max(0, min(1, $0)) * 255) }
         return components.map { String(format: "%02X", $0) }.joined()
     }
 }
 
+#if canImport(SwiftUI)
 extension AdaptiveColor {
     /// The platform's colour, for text drawn through TextKit.
     public static func platformColor(hex: String?, for scheme: ColorScheme, isText: Bool) -> PlatformColor? {
@@ -188,3 +197,4 @@ extension AdaptiveColor {
         resolveText(hex: hex, on: fillHex, for: scheme).map(PlatformColor.init)
     }
 }
+#endif
