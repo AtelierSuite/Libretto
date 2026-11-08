@@ -4,9 +4,9 @@ import json, sys, os
 
 LANGS = ["en", "ja", "ko", "zh-Hans", "zh-Hant"]
 here = os.path.dirname(os.path.abspath(__file__))
-tables_path = os.path.join(here, "..", "..", "Tables", "Tables", "Support", "Localizable.xcstrings")
+tables_path = os.path.join(here, "..", "..", "..", "Tables", "Apple", "Shared", "Resources", "Localizable.xcstrings")
 out_path = os.path.join(here, "..", "Libretto", "Support", "Localizable.xcstrings")
-engine_path = os.path.join(here, "..", "LibrettoEngine", "Localizable.xcstrings")
+engine_path = os.path.join(here, "..", "..", "LibrettoEngine", "Localizable.xcstrings")
 mac_path = os.path.join(here, "..", "LibrettoMac", "Support", "Localizable.xcstrings")
 
 # What the engine says itself, from its own bundle, for either app. Those the
