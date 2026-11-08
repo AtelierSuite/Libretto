@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Libretto</title>
+<meta name="description" content="A word processor that opens and saves Word documents, Markdown, plain text and source code, and opens Pages documents. Works offline.">
+<link rel="canonical" href="https://libretto.atelier.ktgk.app/">
+<meta name="application-name" content="Libretto">
+<meta name="apple-mobile-web-app-title" content="Libretto">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Atelier Suite">
+<meta property="og:title" content="Libretto">
+<meta property="og:description" content="A word processor that opens and saves Word documents, Markdown, plain text and source code, and opens Pages documents. Works offline.">
+<meta property="og:url" content="https://libretto.atelier.ktgk.app/">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ja_JP">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta property="og:locale:alternate" content="zh_TW">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Libretto">
+<meta name="twitter:description" content="A word processor that opens and saves Word documents, Markdown, plain text and source code, and opens Pages documents. Works offline.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Libretto",
+  "url": "https://libretto.atelier.ktgk.app/",
+  "description": "A word processor that opens and saves Word documents, Markdown, plain text and source code, and opens Pages documents. Works offline.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript and WebAssembly",
+  "inLanguage": ["en", "ja", "ko", "zh-Hans", "zh-Hant"],
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Atelier Suite", "url": "https://atelier.ktgk.app" }
+}
+</script>
+<meta name="theme-color" content="#f4f4f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#262626" media="(prefers-color-scheme: dark)">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="app/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="app/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="design/tokens.css">
+<link rel="stylesheet" href="design/components.css">
+<link rel="stylesheet" href="app/app.css">
+<script src="build/version.js"></script>
+<script type="module" src="app/main.js"></script>
+</head>
+<body>
+<div id="app" class="app ds-window">
+  <div class="app__loading" role="status" aria-label="Libretto">
+    <div class="ds-spinner"></div>
+    <div class="ds-progress app__loading-progress" role="progressbar" aria-label="Libretto" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><div class="ds-progress__bar"></div></div>
+    <span class="ds-caption">Libretto</span>
+  </div>
+</div>
+<noscript>
+  <p class="app__noscript" lang="en">Libretto needs JavaScript and WebAssembly.</p>
+  <p class="app__noscript" lang="ja">Libretto を使うには JavaScript と WebAssembly が必要です。</p>
+  <p class="app__noscript" lang="ko">Libretto를 사용하려면 JavaScript와 WebAssembly가 필요합니다.</p>
+  <p class="app__noscript" lang="zh-Hans">Libretto 需要 JavaScript 和 WebAssembly。</p>
+  <p class="app__noscript" lang="zh-Hant">Libretto 需要 JavaScript 和 WebAssembly。</p>
+</noscript>
+</body>
+</html>

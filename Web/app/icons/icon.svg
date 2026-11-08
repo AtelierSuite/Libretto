@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- The Libretto app icon (Apple/Libretto/Support/AppIcon.icon) for the web: the same page glyph on the app's blue. -->
+  <defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3D7FE6"/><stop offset="1" stop-color="#1F55B8"/></linearGradient></defs>
+  <rect x="40" y="40" width="944" height="944" rx="212" fill="url(#fill)"/>
+  <g fill="#FFFFFF">
+    <path d="M300 196H604L764 356V780A48 48 0 0 1 716 828H300A48 48 0 0 1 252 780V244A48 48 0 0 1 300 196Z" opacity="0.32"/>
+    <path d="M604 196L764 356H644A40 40 0 0 1 604 316V196Z" opacity="0.85"/>
+    <rect x="324" y="420" width="368" height="28" rx="14" opacity="0.8"/>
+    <rect x="324" y="492" width="368" height="28" rx="14" opacity="0.8"/>
+    <rect x="324" y="564" width="368" height="28" rx="14" opacity="0.8"/>
+    <rect x="324" y="636" width="248" height="28" rx="14" opacity="0.8"/>
+  </g>
+</svg>

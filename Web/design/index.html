@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Libretto Design System</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<style>
+  .specimen {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--ds-spacing-07) var(--ds-spacing-05) var(--ds-spacing-09);
+  }
+  .specimen__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--ds-spacing-05);
+    margin-bottom: var(--ds-spacing-07);
+  }
+  .specimen__intro {
+    max-width: 640px;
+    margin: var(--ds-spacing-03) 0 0;
+    color: var(--ds-text-secondary);
+  }
+  .specimen__section {
+    margin-top: var(--ds-spacing-09);
+  }
+  .specimen__section > h2 {
+    margin-bottom: var(--ds-spacing-02);
+  }
+  .specimen__section > p {
+    margin: 0 0 var(--ds-spacing-05);
+    color: var(--ds-text-secondary);
+    max-width: 720px;
+  }
+  .specimen__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ds-spacing-05);
+    padding: var(--ds-spacing-06);
+    background: var(--ds-layer-01);
+  }
+  .specimen__row + .specimen__row { margin-top: 1px; }
+  .specimen__cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+    gap: 1px;
+    background: var(--ds-border-subtle-00);
+  }
+  .specimen__cols > * { min-width: 0; overflow-x: auto; background: var(--ds-layer-01); padding: var(--ds-spacing-06); }
+  .specimen__window { height: 560px; position: relative; }
+  .ds-document-content.specimen__page { width: 420px; min-height: 540px; padding: 56px 64px; font-family: Georgia, serif; font-size: 15px; line-height: 1.5; }
+  .ds-document-content .specimen__page-title { margin: 0 0 12px; font-size: 22px; font-weight: 400; }
+  .specimen__code { height: 120px; }
+  .specimen__swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1px;
+    background: var(--ds-border-subtle-00);
+  }
+  .specimen__swatch {
+    display: grid;
+    gap: var(--ds-spacing-02);
+    padding: var(--ds-spacing-04);
+    background: var(--ds-background);
+    font: var(--ds-type-caption);
+  }
+  .specimen__swatch-fill {
+    height: 48px;
+    background: var(--ds-swatch);
+    box-shadow: inset 0 0 0 1px var(--ds-border-subtle-00);
+  }
+  .specimen__type > * + * { margin-top: var(--ds-spacing-05); }
+  .specimen__type-meta { font: var(--ds-type-caption); color: var(--ds-text-helper); }
+  .specimen__rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 1px;
+    background: var(--ds-border-subtle-00);
+  }
+  .specimen__rule { background: var(--ds-layer-01); padding: var(--ds-spacing-05); }
+  .specimen__rule h3 { margin-bottom: var(--ds-spacing-03); }
+  .specimen__rule p { margin: 0; color: var(--ds-text-secondary); font: var(--ds-type-body-compact); }
+  .specimen__menu-stage { display: flex; flex-wrap: wrap; gap: var(--ds-spacing-07); align-items: flex-start; }
+  .specimen__sheet-stage {
+    position: relative;
+    height: 300px;
+    background: var(--ds-background);
+    border: 1px solid var(--ds-border-subtle-01);
+  }
+  .specimen__sheet-stage .ds-toolbar { position: absolute; inset: 0 0 auto 0; }
+  .specimen__window {
+    container-type: inline-size;
+    resize: horizontal;
+    overflow: hidden;
+    min-width: 240px;
+    max-width: 100%;
+  }
+  @container (max-width: 720px) {
+    .ds-window > .ds-source-list, .ds-window > .ds-inspector { display: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-chevron-up" viewBox="0 0 16 16"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 10l4 4" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-add" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16"><path d="M5 4L2 7l3 3M2 7h7.5a3.5 3.5 0 010 7H7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 16 16"><path d="M11 4l3 3-3 3M14 7H6.5a3.5 3.5 0 000 7H9" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 3v10" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-inspector" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 3v10" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 16 16"><path d="M2 14h12M4 12V8M8 12V4M12 12V6" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-comment" viewBox="0 0 16 16"><path d="M2.75 2.75h10.5v8H7l-3 2.5v-2.5H2.75z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-table" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 6.5h12M2 10h12M6 3v10" stroke="currentColor" stroke-width="1.2"/></symbol>
+    <symbol id="i-function" viewBox="0 0 16 16"><path d="M10.5 2.5c-2 0-2.5 1-2.8 3L6.3 13c-.3 1.2-1 1.5-2.3 1.5M5 6.5h5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-align-left" viewBox="0 0 16 16"><path d="M2 3.5h12M2 6.5h8M2 9.5h12M2 12.5h8" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-align-center" viewBox="0 0 16 16"><path d="M2 3.5h12M4 6.5h8M2 9.5h12M4 12.5h8" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-align-right" viewBox="0 0 16 16"><path d="M2 3.5h12M6 6.5h8M2 9.5h12M6 12.5h8" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 10.5h-1.5V7h1.5zM8 5.75a1 1 0 110-2 1 1 0 010 2z"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 16 16"><path d="M8 1L.5 15h15zm.75 11.5h-1.5V11h1.5zm0-2.5h-1.5V6h1.5z"/></symbol>
+    <symbol id="i-error" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm3 9.6L10.6 11 8 8.4 5.4 11 5 10.6 7.6 8 5 5.4 5.4 5 8 7.6 10.6 5l.4.4L8.4 8z"/></symbol>
+    <symbol id="i-success" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM7 11L4 8l1-1 2 2 4-4 1 1z"/></symbol>
+  </defs>
+</svg>
+
+<main class="specimen">
+  <header class="specimen__header">
+    <div>
+      <h1 class="ds-heading-04">Libretto design system</h1>
+      <p class="specimen__intro ds-body">IBM Carbon styling on macOS components, for the offline Libretto web app. Everything on this page is built from <a href="tokens.css">tokens.css</a> and <a href="components.css">components.css</a>; the rules are written up in <a href="DESIGN.md">DESIGN.md</a>.</p>
+    </div>
+    <div class="ds-segmented" role="radiogroup" aria-label="Appearance" id="theme-switch">
+      <button class="ds-segmented__segment" role="radio" aria-checked="true" data-theme-value="">System</button>
+      <button class="ds-segmented__segment" role="radio" aria-checked="false" data-theme-value="light">Light</button>
+      <button class="ds-segmented__segment" role="radio" aria-checked="false" data-theme-value="dark">Dark</button>
+    </div>
+  </header>
+
+  <section class="specimen__section" aria-labelledby="window-title">
+    <h2 class="ds-heading-03" id="window-title">Document window</h2>
+    <p class="ds-body">The document window as it is assembled from the components below: menu bar, unified toolbar, pages on their canvas, status bar, and the inspector. Drag the window's bottom-right corner to narrow it: menu titles and toolbar items that no longer fit move into » menus, and the inspector hides. Right-click the page for a context menu.</p>
+    <div class="specimen__window">
+      <div class="ds-window">
+        <div class="ds-menu-bar" id="window-menu-bar"></div>
+        <div class="ds-toolbar" id="window-toolbar">
+          <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Show Sidebar" title="Show Sidebar" data-overflow="never"><svg class="ds-icon"><use href="#i-sidebar"/></svg></button>
+          <div class="ds-toolbar__title" data-overflow="never">Proposal.docx<span class="ds-toolbar__subtitle">Edited</span></div>
+          <div class="ds-toolbar__separator"></div>
+          <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Undo" title="Undo"><svg class="ds-icon"><use href="#i-undo"/></svg></button>
+          <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Redo" title="Redo"><svg class="ds-icon"><use href="#i-redo"/></svg></button>
+          <div class="ds-toolbar__separator"></div>
+          <span class="ds-popup ds-popup--xs"><select class="ds-popup__select" aria-label="Paragraph Style"><option>Body</option><option>Title</option><option>Heading 1</option><option>Heading 2</option><option>Quote</option></select><svg class="ds-icon ds-popup__chevron"><use href="#i-chevron-down"/></svg></span>
+          <div class="ds-segmented ds-segmented--xs ds-segmented--icons" role="group" aria-label="Text style">
+            <button class="ds-segmented__segment" aria-pressed="true" title="Bold"><strong>B</strong></button>
+            <button class="ds-segmented__segment" aria-pressed="false" title="Italic"><em>I</em></button>
+            <button class="ds-segmented__segment" aria-pressed="false" title="Underline"><u>U</u></button>
+          </div>
+          <div class="ds-segmented ds-segmented--xs ds-segmented--icons" role="radiogroup" aria-label="Alignment">
+            <button class="ds-segmented__segment" role="radio" aria-checked="true" title="Align Left"><svg class="ds-icon"><use href="#i-align-left"/></svg></button>
+            <button class="ds-segmented__segment" role="radio" aria-checked="false" title="Centre"><svg class="ds-icon"><use href="#i-align-center"/></svg></button>
+            <button class="ds-segmented__segment" role="radio" aria-checked="false" title="Align Right"><svg class="ds-icon"><use href="#i-align-right"/></svg></button>
+          </div>
+          <div class="ds-toolbar__spacer"></div>
+          <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Add Comment" title="Add Comment"><svg class="ds-icon"><use href="#i-comment"/></svg></button>
+          <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Find" title="Find"><svg class="ds-icon"><use href="#i-search"/></svg></button>
+          <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Hide Inspector" aria-pressed="true" title="Hide Inspector" data-overflow="never" id="inspector-toggle"><svg class="ds-icon"><use href="#i-inspector"/></svg></button>
+        </div>
+
+        <div class="ds-window__content">
+          <div class="ds-page-canvas" id="window-pages" style="height: 100%">
+            <div class="ds-page-canvas__column">
+              <div class="ds-page ds-document-content specimen__page">
+                <h3 class="specimen__page-title">A proposal for the spring term</h3>
+                <p>Libretto opens Word documents, Markdown, plain text and source code, and keeps them as they were written: styles, lists, tables, comments and tracked changes.</p>
+                <p>Pages are paper on a canvas, flat and outlined, set in the document's own fonts. The interface around them stays in the system font.</p>
+              </div>
+              <div class="ds-page ds-document-content specimen__page"><p>The second page.</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ds-status-bar">
+          <span>Page 1 of 2</span><span>64 words</span>
+          <span class="ds-status-bar__spacer"></span><span id="window-status">Saved on this device</span>
+        </div>
+
+        <aside class="ds-inspector ds-on-layer" aria-label="Inspector">
+          <div class="ds-inspector__switcher">
+            <div class="ds-segmented ds-segmented--xs ds-segmented--fill" role="tablist">
+              <button class="ds-segmented__segment" role="tab" aria-selected="true">Text</button>
+              <button class="ds-segmented__segment" role="tab" aria-selected="false">Layout</button>
+              <button class="ds-segmented__segment" role="tab" aria-selected="false">Document</button>
+            </div>
+          </div>
+          <div class="ds-inspector__body">
+            <details class="ds-disclosure" open>
+              <summary><svg class="ds-icon ds-disclosure__triangle"><use href="#i-chevron-right"/></svg>Font</summary>
+              <div class="ds-disclosure__body ds-form">
+                <span class="ds-form__label">Font</span>
+                <span class="ds-form__control"><span class="ds-popup ds-popup--xs" style="flex: 1"><select class="ds-popup__select" aria-label="Font"><option>Calibri</option><option>Georgia</option><option>Times New Roman</option></select><svg class="ds-icon ds-popup__chevron"><use href="#i-chevron-down"/></svg></span></span>
+                <span class="ds-form__label">Size</span>
+                <span class="ds-form__control">
+                  <span class="ds-stepper ds-stepper--xs"><input class="ds-stepper__input" type="number" value="11" aria-label="Size"><span class="ds-stepper__arrows"><button class="ds-stepper__arrow" aria-label="Increase"><svg class="ds-icon"><use href="#i-chevron-up"/></svg></button><button class="ds-stepper__arrow" aria-label="Decrease"><svg class="ds-icon"><use href="#i-chevron-down"/></svg></button></span></span>
+                </span>
+                <span class="ds-form__label">Colour</span>
+                <span class="ds-form__control"><input type="color" class="ds-color-well" id="fill-well" value="#296bdb" aria-label="Text Colour"></span>
+              </div>
+            </details>
+            <details class="ds-disclosure" open>
+              <summary><svg class="ds-icon ds-disclosure__triangle"><use href="#i-chevron-right"/></svg>Spacing</summary>
+              <div class="ds-disclosure__body ds-form">
+                <span class="ds-form__label">Line</span>
+                <span class="ds-form__control"><span class="ds-popup ds-popup--xs" style="flex: 1"><select class="ds-popup__select" aria-label="Line Spacing"><option>Single</option><option>1.5 Lines</option><option>Double</option></select><svg class="ds-icon ds-popup__chevron"><use href="#i-chevron-down"/></svg></span></span>
+                <span class="ds-form__label"></span>
+                <span class="ds-form__control"><label class="ds-check"><input type="checkbox" checked>Keep with Next</label></span>
+              </div>
+            </details>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="code-title">
+    <h2 class="ds-heading-03" id="code-title">Code editor</h2>
+    <p class="ds-body">Plain text and source code open in the code editor: numbered lines, and the code in the system's monospaced face, the one place it appears.</p>
+    <div class="ds-code-editor specimen__code">
+      <div class="ds-code-editor__gutter" aria-hidden="true">1
+2
+3</div>
+      <div class="ds-code-editor__text" contenteditable="plaintext-only" spellcheck="false" aria-label="Code">func greet(_ name: String) -&gt; String {
+    "Hello, \(name)!"
+}</div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="rules-title">
+    <h2 class="ds-heading-03" id="rules-title">Rules</h2>
+    <p class="ds-body">These are enforced by <a href="lint.mjs">lint.mjs</a> across everything in Web/.</p>
+    <div class="specimen__rules">
+      <div class="specimen__rule"><h3 class="ds-heading-compact">System font only</h3><p>Every piece of interface text uses the operating system's sans-serif through --ds-font. No web fonts and no monospace, except the code editor's code. Pages keep the document's own fonts.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">Default cursor</h3><p>Buttons, tabs, menus and controls keep the arrow cursor. The pointing hand appears only on underlined text links with an href.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No chips</h3><p>Choices are made with segmented controls, pop-up buttons, checkboxes or lists. No pill-shaped tags, filters or token fields.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No eyebrow text</h3><p>A heading stands on its own. No small label stacked above a title to categorise it.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No all caps</h3><p>Text is never transformed to capitals or small caps. Strings appear exactly as written in the string catalogues.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No wide tracking</h3><p>Letter-spacing is always zero. Numbers line up with tabular figures, not monospace.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No selectable UI text</h3><p>Labels, headings, menus and messages can't be selected. Only text fields, editable regions and document content can.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No draggable UI images</h3><p>Icons, images and other UI media never start a drag. Only objects the user moves on purpose are draggable.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">Square buttons</h3><p>Every button has square corners, including icon, segmented, help and menu-bar buttons. Only checkboxes, radios, switches and sliders are rounded.</p></div>
+      <div class="specimen__rule"><h3 class="ds-heading-compact">No fingernail strips</h3><p>No coloured bar along one edge of a card, row, tab or notification. Selection and status fill the whole surface.</p></div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="colour-title">
+    <h2 class="ds-heading-03" id="colour-title">Colour</h2>
+    <p class="ds-body">Carbon White theme in light appearance, Gray 100 in dark. Switch the appearance at the top of the page to compare.</p>
+    <div class="specimen__swatches" id="swatches"></div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="type-title">
+    <h2 class="ds-heading-03" id="type-title">Type</h2>
+    <p class="ds-body">Carbon's productive scale set in the system font. Weights are 400 and 600 only.</p>
+    <div class="specimen__row specimen__type" style="display: block">
+      <div><p class="ds-heading-04">Quarterly budget</p><span class="specimen__type-meta">heading-04 · 28/36 · 400</span></div>
+      <div><p class="ds-heading-03">Function reference</p><span class="specimen__type-meta">heading-03 · 20/28 · 400</span></div>
+      <div><p class="ds-heading-02">Delete this sheet?</p><span class="specimen__type-meta">heading-02 · 16/22 · 600</span></div>
+      <div><p class="ds-heading-compact">Data format</p><span class="specimen__type-meta">heading-compact · 13/18 · 600</span></div>
+      <div><p class="ds-body">Formulas recalculate as you type, and everything stays on this device.</p><span class="specimen__type-meta">body · 14/20 · 400</span></div>
+      <div><p class="ds-body-compact">Controls, menus, cells and inspector rows use the compact body size.</p><span class="specimen__type-meta">body-compact · 13/18 · 400</span></div>
+      <div><p class="ds-caption">Helper text, captions and the status bar.</p><span class="specimen__type-meta">caption · 12/16 · 400</span></div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="buttons-title">
+    <h2 class="ds-heading-03" id="buttons-title">Buttons</h2>
+    <p class="ds-body">Push buttons, borderless toolbar buttons and the help button. The default (Return) button is the only one filled with the accent colour in a view.</p>
+    <div class="specimen__row">
+      <button class="ds-button ds-button--primary">Save</button>
+      <button class="ds-button">Cancel</button>
+      <button class="ds-button ds-button--bordered">Options…</button>
+      <button class="ds-button ds-button--danger">Delete</button>
+      <button class="ds-button" disabled>Disabled</button>
+      <button class="ds-button ds-button--ghost">Borderless</button>
+      <button class="ds-button ds-button--ghost ds-button--icon" aria-label="Insert Chart"><svg class="ds-icon"><use href="#i-chart"/></svg></button>
+      <button class="ds-help-button" aria-label="Help">?</button>
+    </div>
+    <div class="specimen__row">
+      <button class="ds-button ds-button--primary ds-button--xs">Apply</button>
+      <button class="ds-button ds-button--bordered ds-button--xs">Reset</button>
+      <button class="ds-button ds-button--ghost ds-button--xs" aria-pressed="true">Toggled</button>
+      <button class="ds-button ds-button--ghost ds-button--icon ds-button--xs" aria-label="Add"><svg class="ds-icon"><use href="#i-add"/></svg></button>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="controls-title">
+    <h2 class="ds-heading-03" id="controls-title">Selection controls</h2>
+    <p class="ds-body">Segmented controls replace tabs and chips. Pop-up buttons are native selects, so the operating system draws their menus.</p>
+    <div class="specimen__cols ds-on-layer">
+      <div>
+        <div class="ds-form">
+          <span class="ds-form__label">View</span>
+          <span class="ds-form__control"><span class="ds-segmented" role="radiogroup" aria-label="View"><button class="ds-segmented__segment" role="radio" aria-checked="true">Values</button><button class="ds-segmented__segment" role="radio" aria-checked="false">Formulas</button><button class="ds-segmented__segment" role="radio" aria-checked="false">Comments</button></span></span>
+          <span class="ds-form__label">Chart type</span>
+          <span class="ds-form__control"><span class="ds-popup" style="width: 200px"><select class="ds-popup__select" aria-label="Chart type"><option>Column</option><option>Bar</option><option>Line</option><option>Area</option><option>Pie</option><option>Scatter</option></select><svg class="ds-icon ds-popup__chevron"><use href="#i-chevron-down"/></svg></span></span>
+          <span class="ds-form__label">Column width</span>
+          <span class="ds-form__control"><span class="ds-stepper"><input class="ds-stepper__input" type="number" value="88" aria-label="Column width"><span class="ds-stepper__arrows"><button class="ds-stepper__arrow" aria-label="Increase"><svg class="ds-icon"><use href="#i-chevron-up"/></svg></button><button class="ds-stepper__arrow" aria-label="Decrease"><svg class="ds-icon"><use href="#i-chevron-down"/></svg></button></span></span><span class="ds-caption">pt</span></span>
+        </div>
+      </div>
+      <div style="display: grid; gap: var(--ds-spacing-03); align-content: start">
+        <label class="ds-check"><input type="checkbox" checked>Show Gridlines</label>
+        <label class="ds-check"><input type="checkbox" id="indeterminate">Wrap Text</label>
+        <label class="ds-check"><input type="checkbox" disabled>Freeze Panes</label>
+        <label class="ds-radio"><input type="radio" name="calc" checked>Calculate Automatically</label>
+        <label class="ds-radio"><input type="radio" name="calc">Calculate Manually</label>
+        <label class="ds-switch"><input type="checkbox" role="switch" checked>Keep Copies on This Device</label>
+        <label class="ds-switch"><input type="checkbox" role="switch">Run Macros</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="fields-title">
+    <h2 class="ds-heading-03" id="fields-title">Text fields</h2>
+    <p class="ds-body">Carbon fields: a filled surface with a neutral one-pixel underline and an inset focus outline on all four sides.</p>
+    <div class="specimen__cols ds-on-layer">
+      <div style="display: grid; gap: var(--ds-spacing-05)">
+        <label class="ds-field"><span class="ds-field__label">Sheet name</span><input class="ds-text-input" value="Monthly"><span class="ds-field__helper">Up to 31 characters.</span></label>
+        <label class="ds-field"><span class="ds-field__label">Range</span><input class="ds-text-input" value="B2:Z" aria-invalid="true"><span class="ds-field__error">This range is incomplete. Add a row number after Z.</span></label>
+      </div>
+      <div style="display: grid; gap: var(--ds-spacing-05); align-content: start">
+        <div class="ds-search">
+          <svg class="ds-icon ds-search__icon"><use href="#i-search"/></svg>
+          <input class="ds-search__input" type="search" value="VLOOKUP" aria-label="Search functions">
+          <button class="ds-search__clear" aria-label="Clear"><svg class="ds-icon"><use href="#i-close"/></svg></button>
+        </div>
+        <label class="ds-field"><span class="ds-field__label">Comment</span><textarea class="ds-text-input" placeholder="Add a note to this cell"></textarea></label>
+      </div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="menus-title">
+    <h2 class="ds-heading-03" id="menus-title">Menus and popovers</h2>
+    <p class="ds-body">Menus follow NSMenu: a checkmark column, title, keyboard shortcut in the system font, and a submenu arrow. Open menus always fit the window: they flip above or to the other side at an edge, scroll when taller than the window, and ellipsise titles when narrower. Popovers anchor to the control that opened them.</p>
+    <div class="specimen__row specimen__menu-stage ds-on-layer">
+      <div class="ds-menu" role="menu" aria-label="Cell">
+        <div class="ds-menu__item" role="menuitem"><span class="ds-menu__check"></span><span class="ds-menu__label">Cut</span><span class="ds-menu__shortcut">⌘X</span><span></span></div>
+        <div class="ds-menu__item" role="menuitem" data-highlighted><span class="ds-menu__check"></span><span class="ds-menu__label">Copy</span><span class="ds-menu__shortcut">⌘C</span><span></span></div>
+        <div class="ds-menu__item" role="menuitem"><span class="ds-menu__check"></span><span class="ds-menu__label">Paste</span><span class="ds-menu__shortcut">⌘V</span><span></span></div>
+        <div class="ds-menu__item" role="menuitem" aria-disabled="true"><span class="ds-menu__check"></span><span class="ds-menu__label">Paste Values</span><span class="ds-menu__shortcut">⌥⇧⌘V</span><span></span></div>
+        <div class="ds-menu__separator" role="separator"></div>
+        <div class="ds-menu__header">Insert</div>
+        <div class="ds-menu__item" role="menuitem"><span class="ds-menu__check"></span><span class="ds-menu__label">Row Above</span><span class="ds-menu__shortcut"></span><span></span></div>
+        <div class="ds-menu__item" role="menuitem"><span class="ds-menu__check"></span><span class="ds-menu__label">Column Before</span><span class="ds-menu__shortcut"></span><span></span></div>
+        <div class="ds-menu__separator" role="separator"></div>
+        <div class="ds-menu__item" role="menuitemcheckbox" aria-checked="true"><svg class="ds-icon ds-menu__check"><use href="#i-check"/></svg><span class="ds-menu__label">Show Formulas</span><span class="ds-menu__shortcut">⌃`</span><span></span></div>
+        <div class="ds-menu__item" role="menuitem" aria-haspopup="menu"><span class="ds-menu__check"></span><span class="ds-menu__label">Sort</span><span class="ds-menu__shortcut"></span><svg class="ds-icon ds-menu__arrow"><use href="#i-chevron-right"/></svg></div>
+      </div>
+      <div style="padding-top: 8px">
+        <div class="ds-popover" role="dialog" aria-label="Fill Colour">
+          <p class="ds-popover__title">Fill colour</p>
+          <div class="ds-swatches" role="radiogroup" aria-label="Colours" id="popover-swatches"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: var(--ds-spacing-05)">
+            <button class="ds-button ds-button--ghost ds-button--xs">No Fill</button>
+            <button class="ds-button ds-button--bordered ds-button--xs" id="more-colours">More Colours…</button>
+            <input type="color" class="ds-visually-hidden" id="more-colours-picker" value="#d0e2ff" tabindex="-1" aria-label="More Colours">
+          </div>
+        </div>
+      </div>
+      <div style="display: grid; gap: var(--ds-spacing-03); justify-items: start">
+        <span class="ds-tooltip">Insert Chart</span>
+        <span class="ds-tooltip">Merges the selected cells into one cell, keeping the top-left value.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="sheets-title">
+    <h2 class="ds-heading-03" id="sheets-title">Sheets and alerts</h2>
+    <p class="ds-body">Window-modal sheets drop from under the toolbar. Buttons run right to left in order of importance: the default action is rightmost.</p>
+    <div class="specimen__sheet-stage">
+      <div class="ds-toolbar"><div class="ds-toolbar__title">Budget 2027.xlsx</div></div>
+      <div class="ds-sheet-backdrop">
+        <div class="ds-sheet ds-alert" role="alertdialog" aria-labelledby="alert-title" aria-describedby="alert-message">
+          <div class="ds-sheet__body">
+            <svg class="ds-alert__icon"><use href="#i-warning"/></svg>
+            <div>
+              <h3 class="ds-sheet__title" id="alert-title">Delete “Savings”?</h3>
+              <p class="ds-sheet__message" id="alert-message">Formulas on other sheets that refer to it will show #REF!. You can undo this.</p>
+            </div>
+          </div>
+          <div class="ds-sheet__buttons">
+            <button class="ds-button">Cancel</button>
+            <button class="ds-button ds-button--danger">Delete Sheet</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="status-title">
+    <h2 class="ds-heading-03" id="status-title">Status and progress</h2>
+    <p class="ds-body">Notifications tint their whole surface and lead with an icon. Progress uses a thin bar or a small spinner.</p>
+    <div style="display: grid; gap: var(--ds-spacing-03)">
+      <div class="ds-notification" role="status"><svg class="ds-icon ds-icon--20"><use href="#i-info"/></svg><div><span class="ds-notification__title">Ready to work offline.</span> Tables is installed and will open without a connection.</div><button class="ds-button ds-button--ghost ds-button--icon ds-button--xs" aria-label="Close"><svg class="ds-icon"><use href="#i-close"/></svg></button></div>
+      <div class="ds-notification ds-notification--success" role="status"><svg class="ds-icon ds-icon--20"><use href="#i-success"/></svg><div><span class="ds-notification__title">Saved.</span> Budget 2027.xlsx was written to your Documents folder.</div><span></span></div>
+      <div class="ds-notification ds-notification--warning" role="status"><svg class="ds-icon ds-icon--20"><use href="#i-warning"/></svg><div><span class="ds-notification__title">Some formatting was simplified.</span> 3 conditional formats use rules Tables cannot show yet.</div><span></span></div>
+      <div class="ds-notification ds-notification--error" role="alert"><svg class="ds-icon ds-icon--20"><use href="#i-error"/></svg><div><span class="ds-notification__title">This file could not be opened.</span> It is protected with a password.</div><span></span></div>
+      <div class="specimen__row" style="margin-top: var(--ds-spacing-03)">
+        <div style="flex: 1; display: grid; gap: var(--ds-spacing-02)"><span class="ds-caption">Opening Budget 2027.numbers</span><div class="ds-progress" role="progressbar" aria-valuenow="62" aria-valuemin="0" aria-valuemax="100" style="--ds-progress: 62%"><div class="ds-progress__bar"></div></div></div>
+        <div class="ds-spinner" role="progressbar" aria-label="Calculating"></div><span class="ds-caption">Calculating…</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="specimen__section" aria-labelledby="lists-title">
+    <h2 class="ds-heading-03" id="lists-title">Lists and tables</h2>
+    <p class="ds-body">A source list for navigation and a table view for records. Selected rows are filled; nothing marks a single edge.</p>
+    <div class="specimen__cols ds-on-layer">
+      <nav class="ds-source-list" style="width: auto; border: 0" aria-label="Function categories">
+        <div class="ds-source-list__section">
+          <h3 class="ds-source-list__heading">Recent</h3>
+          <button class="ds-source-list__item"><svg class="ds-icon"><use href="#i-table"/></svg>Budget 2027.xlsx</button>
+          <button class="ds-source-list__item" aria-current="true"><svg class="ds-icon"><use href="#i-table"/></svg>Inventory.numbers</button>
+        </div>
+        <div class="ds-source-list__section">
+          <h3 class="ds-source-list__heading">Functions</h3>
+          <button class="ds-source-list__item"><svg class="ds-icon"><use href="#i-function"/></svg>Financial<span class="ds-source-list__count">55</span></button>
+          <button class="ds-source-list__item"><svg class="ds-icon"><use href="#i-function"/></svg>Lookup and Reference<span class="ds-source-list__count">36</span></button>
+          <button class="ds-source-list__item"><svg class="ds-icon"><use href="#i-function"/></svg>Statistical<span class="ds-source-list__count">112</span></button>
+        </div>
+      </nav>
+      <div style="padding: 0">
+        <table class="ds-table ds-table--zebra">
+          <thead><tr><th>Name</th><th>Kind</th><th class="ds-numeric">Size</th></tr></thead>
+          <tbody>
+            <tr><td>Budget 2027.xlsx</td><td>Excel Workbook</td><td class="ds-numeric">48 KB</td></tr>
+            <tr aria-selected="true"><td>Inventory.numbers</td><td>Numbers Spreadsheet</td><td class="ds-numeric">1.2 MB</td></tr>
+            <tr><td>Contacts.csv</td><td>Comma-Separated Values</td><td class="ds-numeric">9 KB</td></tr>
+            <tr><td>Payroll.xlsm</td><td>Excel Macro-Enabled Workbook</td><td class="ds-numeric">212 KB</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+  import "./base.js";
+  import { attachMenuBar, attachToolbarOverflow, attachContextMenu } from "./menus.js";
+
+  const root = document.documentElement;
+  const switcher = document.getElementById("theme-switch");
+  switcher.addEventListener("click", (event) => {
+    const segment = event.target.closest("[data-theme-value]");
+    if (!segment) return;
+    for (const s of switcher.children) s.setAttribute("aria-checked", String(s === segment));
+    const value = segment.dataset.themeValue;
+    if (value) root.dataset.theme = value; else delete root.dataset.theme;
+  });
+
+  // Segmented controls: single-selection groups use aria-checked/aria-selected, toggle groups use aria-pressed.
+  document.addEventListener("click", (event) => {
+    const segment = event.target.closest(".ds-segmented__segment");
+    if (!segment || segment.closest("#theme-switch")) return;
+    const group = segment.parentElement;
+    if (segment.hasAttribute("aria-pressed")) {
+      segment.setAttribute("aria-pressed", String(segment.getAttribute("aria-pressed") !== "true"));
+      return;
+    }
+    const attr = segment.hasAttribute("aria-selected") ? "aria-selected" : "aria-checked";
+    for (const s of group.children) s.setAttribute(attr, String(s === segment));
+  });
+
+  document.getElementById("indeterminate").indeterminate = true;
+
+  const tokens = [
+    "accent", "accent-strong", "background", "layer-01", "layer-02", "field-01", "border-subtle-01", "border-strong-01",
+    "text-primary", "text-secondary", "text-helper", "interactive", "focus", "highlight",
+    "button-primary", "button-secondary", "button-danger", "support-error", "support-success",
+    "support-warning", "support-info", "page", "page-canvas", "page-border", "code-gutter", "background-inverse",
+  ];
+  const swatches = document.getElementById("swatches");
+  for (const token of tokens) {
+    const cell = document.createElement("div");
+    cell.className = "specimen__swatch";
+    cell.innerHTML = `<div class="specimen__swatch-fill" style="--ds-swatch: var(--ds-${token})"></div><span>--ds-${token}</span>`;
+    swatches.append(cell);
+  }
+
+  const palette = ["#161616", "#525252", "#8d8d8d", "#c6c6c6", "#e0e0e0", "#f4f4f4", "#ffffff", "#296bdb",
+    "#da1e28", "#ff832b", "#f1c21b", "#24a148", "#009d9a", "#1192e8", "#8a3ffc", "#ee5396",
+    "#ffd7d9", "#ffd9be", "#fcf4d6", "#defbe6", "#d9fbfb", "#d0e2ff", "#e8daff", "#ffd6e8"];
+  // The colour popover: swatches for quick picks, "More Colours…" for the system picker.
+  const fillWell = document.getElementById("fill-well");
+  const swatchGrid = document.getElementById("popover-swatches");
+  const markSwatch = (colour) => {
+    for (const s of swatchGrid.children) s.setAttribute("aria-checked", String(s.dataset.colour === colour));
+  };
+  for (const colour of palette) {
+    const b = document.createElement("button");
+    b.className = "ds-swatches__swatch";
+    b.dataset.colour = colour;
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", colour);
+    b.style.setProperty("--ds-swatch", colour);
+    b.addEventListener("click", () => { fillWell.value = colour; markSwatch(colour); });
+    swatchGrid.append(b);
+  }
+  markSwatch(fillWell.value);
+  const morePicker = document.getElementById("more-colours-picker");
+  document.getElementById("more-colours").addEventListener("click", () => {
+    morePicker.value = fillWell.value;
+    try { morePicker.showPicker(); } catch { morePicker.click(); }
+  });
+  morePicker.addEventListener("input", () => { fillWell.value = morePicker.value; markSwatch(morePicker.value); });
+  fillWell.addEventListener("input", () => markSwatch(fillWell.value));
+
+  // ---- Menus: data shaped like the Mac app's main menu (strings from its catalogues).
+  const isApple = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const key = (k, { shift = false, alt = false } = {}) =>
+    isApple
+      ? `${alt ? "⌥" : ""}${shift ? "⇧" : ""}⌘${k}`
+      : `Ctrl+${shift ? "Shift+" : ""}${alt ? "Alt+" : ""}${k}`;
+  const status = document.getElementById("window-status");
+  const say = (label) => () => { status.textContent = `Chose ${label}`; };
+  const item = (label, shortcut, extra = {}) => ({ label, shortcut, action: say(label), ...extra });
+  const sep = { separator: true };
+  const menus = [
+    { label: "File", items: [
+      item("New", key("N")), item("Open…", key("O")),
+      { label: "Open Recent", submenu: [item("Proposal.docx"), item("README.md"), item("Notes for the Spring Term Meeting with the Northern and Western Regions.docx"), sep, item("Clear Menu")] },
+      sep, item("Close", key("W")), item("Save", key("S")), item("Duplicate", key("S", { shift: true })), item("Rename…"),
+      sep, { label: "Export To", submenu: [item("Word Document…"), item("Markdown…"), item("Plain Text…")] },
+      sep, item("Print…", key("P")),
+    ] },
+    { label: "Edit", items: [
+      item("Undo", key("Z")), item("Redo", key("Z", { shift: true })), sep,
+      item("Cut", key("X")), item("Copy", key("C")), item("Paste", key("V")), item("Select All", key("A")), sep,
+      { label: "Find", submenu: [item("Find…", key("F")), item("Find Next", key("G")), item("Find Previous", key("G", { shift: true }))] },
+    ] },
+    { label: "Insert", items: [
+      item("Table…"), item("Picture…"), sep, item("Page Break", key("↩")), sep, item("Comment", key("M", { alt: true })), item("Footnote"),
+    ] },
+    { label: "Format", items: [
+      { label: "Font", submenu: [item("Bold", key("B")), item("Italic", key("I")), item("Underline", key("U")), item("Strikethrough"), sep, item("Bigger", key("+")), item("Smaller", key("-"))] },
+      { label: "Text", submenu: [item("Align Left", undefined, { checked: true }), item("Centre"), item("Align Right"), item("Justify")] },
+      { label: "Style", submenu: ["Body", "Title", "Subtitle", "Heading 1", "Heading 2", "Heading 3", "Quote"].map((t) => item(t, undefined, { checked: t === "Body" })) },
+      sep, item("Bulleted List"), item("Numbered List"), sep, item("Clear Formatting"),
+    ] },
+    { label: "View", items: [
+      item("Zoom In", key("+")), item("Zoom Out", key("-")), item("Actual Size", key("0")), sep,
+      item("Show Inspector", undefined, { checked: true }), item("Show Toolbar", undefined, { checked: true }), sep,
+      item("Enter Full Screen", key("F", { shift: true })),
+    ] },
+    { label: "Window", items: [item("Minimise", key("M")), item("Zoom"), sep, item("Proposal.docx", undefined, { checked: true })] },
+    { label: "Help", items: [item("Libretto Help")] },
+  ];
+
+  attachMenuBar(document.getElementById("window-menu-bar"), menus, { label: "Document menus" });
+  attachToolbarOverflow(document.getElementById("window-toolbar"), { before: document.getElementById("inspector-toggle") });
+
+  attachContextMenu(document.getElementById("window-pages"), () => [
+    item("Cut", key("X")), item("Copy", key("C")), item("Paste", key("V")),
+    sep, item("Comment"), item("Clear Formatting"),
+  ]);
+
+  // Toolbar buttons report what they did, so overflow-menu choices are visible.
+  for (const button of document.querySelectorAll("#window-toolbar button[title]")) {
+    button.addEventListener("click", () => { status.textContent = `Chose ${button.title}`; });
+  }
+</script>
+</body>
+</html>

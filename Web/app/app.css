@@ -1,0 +1,674 @@
+/*
+ * The Libretto window: layout only. Components and tokens come from the design
+ * system (design/tokens.css, design/components.css); everything here must pass
+ * `node design/lint.mjs`.
+ */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--ds-layer-01);
+}
+
+.app {
+  height: 100vh;
+  height: 100dvh;
+  border: 0;
+  position: relative;
+}
+
+.app[hidden] {
+  display: none;
+}
+
+.app__loading,
+.app__failure {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  align-self: center;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-spacing-04);
+  margin: var(--ds-spacing-05);
+}
+
+.app__loading {
+  gap: var(--ds-spacing-03);
+}
+
+.app__loading-progress {
+  width: 120px;
+}
+
+/* While the engine downloads: the bar, with the percentage under it. */
+.app__loading.is-downloading {
+  flex-direction: column;
+}
+
+.app__loading.is-downloading .ds-caption {
+  font-variant-numeric: tabular-nums;
+}
+
+.app__noscript {
+  padding: var(--ds-spacing-06);
+}
+
+/* Room for the window controls when installed with the title bar overlay. */
+@media (display-mode: window-controls-overlay) {
+  .app > .ds-menu-bar {
+    padding-inline-start: env(titlebar-area-x, 0);
+    padding-inline-end: calc(100vw - env(titlebar-area-x, 0) - env(titlebar-area-width, 100vw));
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .app > .ds-menu-bar > * {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
+/* MARK: - Toolbar */
+
+.app__title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app__subtitle:empty {
+  display: none;
+}
+
+/* MARK: - Find bar and banners */
+
+.app__accessory {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app__banners {
+  display: grid;
+  gap: 1px;
+}
+
+.app__banners:empty {
+  display: none;
+}
+
+.app__banner {
+  grid-template-columns: 20px 1fr auto;
+}
+
+.app__banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-spacing-02);
+}
+
+/* MARK: - Content */
+
+.app__content {
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-background);
+}
+
+.app.is-empty #toolbar > :not(.ds-toolbar__title):not(.ds-toolbar__spacer),
+.app.is-empty .app__pages,
+.app.is-empty .app__code,
+.app.is-empty .app__accessory > .app__find,
+.app.is-empty .app__status > :not(.ds-status-bar__spacer),
+.app.is-empty .app__inspector {
+  display: none;
+}
+
+/* Plain text and source code have no formatting to offer; documents have no language. */
+.app.is-text #toolbar > .app__rich,
+.app:not(.is-text) #toolbar > .app__plain,
+.app.is-text .app__zoom {
+  display: none;
+}
+
+.app__style-popup {
+  width: 136px;
+}
+
+/* MARK: - Find bar */
+
+.app__find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-spacing-03);
+  padding: var(--ds-spacing-03) var(--ds-spacing-04);
+  background: var(--ds-layer-01);
+  border-bottom: 1px solid var(--ds-border-subtle-01);
+}
+
+.app__find[hidden],
+.app__find:not(.is-replacing) > .app__replace-input,
+.app__find:not(.is-replacing) > [data-find="replace"],
+.app__find:not(.is-replacing) > [data-find="replaceAll"] {
+  display: none;
+}
+
+.app__find-field {
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+.app__replace-input {
+  flex: 1 1 160px;
+  max-width: 240px;
+}
+
+.app__find-count {
+  min-width: 64px;
+  color: var(--ds-text-secondary);
+}
+
+.app__find > [data-find="done"] {
+  margin-inline-start: auto;
+}
+
+/* MARK: - Pages */
+
+.app__pages {
+  flex: 1;
+  min-height: 0;
+}
+
+.app__pages[hidden],
+.app__code[hidden] {
+  display: none;
+}
+
+.pages {
+  position: relative;
+}
+
+.pages__sizer {
+  position: relative;
+  margin: var(--ds-spacing-07) auto;
+}
+
+.pages__column {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.pages__sheets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pages__sheet {
+  position: absolute;
+}
+
+/* Headers and footers, drawn on each page behind the text, dimmed as in the Apple apps. */
+.pages__margin-text {
+  position: absolute;
+  color: var(--ds-text-secondary);
+  white-space: pre-wrap;
+}
+
+.pages__flow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flow-root;
+  color: var(--ds-text-primary);
+  outline: none;
+  cursor: text;
+  caret-color: var(--ds-text-primary);
+  /* Word's single spacing, near enough; paragraphs set their own. */
+  line-height: 1.15;
+  font-size: 11pt;
+  tab-size: 36pt;
+  overflow-wrap: break-word;
+}
+
+.pages__flow > *,
+.pages__flow td > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.pages__p {
+  position: relative;
+  margin: 0;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+}
+
+/* A list item's label hangs in its indent, drawn rather than typed, as the Apple apps draw it. */
+.pages__p--listed::before {
+  content: attr(data-l);
+  position: absolute;
+  left: var(--pages-label-x, 0);
+  white-space: pre;
+  pointer-events: none;
+}
+
+.pages__p--shaded,
+.pages__cell--shaded {
+  background: var(--pages-shading);
+}
+
+.pages__tab {
+  white-space: pre;
+}
+
+.pages__break {
+  display: inline-block;
+  width: 0;
+}
+
+.pages__note {
+  vertical-align: super;
+  font-size: 0.7em;
+}
+
+.pages__equation {
+  font-style: italic;
+}
+
+.pages__link {
+  text-decoration-line: underline;
+}
+
+.pages__ins {
+  color: var(--pages-reviewer);
+  text-decoration-line: underline;
+  text-decoration-color: var(--pages-reviewer);
+}
+
+.pages__del {
+  color: var(--pages-reviewer);
+  text-decoration-line: line-through;
+  text-decoration-color: var(--pages-reviewer);
+}
+
+.pages__picture {
+  vertical-align: baseline;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.pages__picture--left {
+  float: left;
+  margin: 0 var(--ds-spacing-04) var(--ds-spacing-03) 0;
+}
+
+.pages__picture--right {
+  float: right;
+  margin: 0 0 var(--ds-spacing-03) var(--ds-spacing-04);
+}
+
+.pages__picture--centre {
+  display: block;
+  margin: 0 auto;
+}
+
+.pages__picture--missing {
+  background: var(--ds-layer-02);
+  box-shadow: inset 0 0 0 1px var(--ds-border-subtle-01);
+}
+
+.pages__object {
+  display: inline-grid;
+  place-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: baseline;
+  background: var(--pages-object-fill, var(--ds-layer-02));
+  box-shadow: inset 0 0 0 1px var(--ds-border-subtle-01);
+  text-align: center;
+}
+
+.pages__kept {
+  padding: var(--ds-spacing-03);
+  background: var(--ds-layer-02);
+  color: var(--ds-text-secondary);
+  white-space: pre-wrap;
+}
+
+.pages__table {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.pages__table td {
+  padding: 0 5.4pt;
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.pages__table--bordered td {
+  border: 1px solid var(--pages-table-border, currentColor);
+}
+
+/* Rows are moved on to the next page by a row of nothing, drawn as nothing. */
+.pages__table tr.pages__spacer td {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pages__p--shaded,
+  :root:not([data-theme="light"]) .pages__cell--shaded {
+    background: var(--pages-shading-dark);
+  }
+
+  :root:not([data-theme="light"]) .pages__table--bordered td {
+    border-color: var(--pages-table-border-dark, currentColor);
+  }
+
+  :root:not([data-theme="light"]) .pages__object {
+    background: var(--pages-object-fill-dark, var(--ds-layer-02));
+  }
+}
+
+:root[data-theme="dark"] .pages__p--shaded,
+:root[data-theme="dark"] .pages__cell--shaded {
+  background: var(--pages-shading-dark);
+}
+
+:root[data-theme="dark"] .pages__table--bordered td {
+  border-color: var(--pages-table-border-dark, currentColor);
+}
+
+:root[data-theme="dark"] .pages__object {
+  background: var(--pages-object-fill-dark, var(--ds-layer-02));
+}
+
+/* MARK: - Code editor */
+
+.app__code {
+  flex: 1;
+  min-height: 0;
+}
+
+.app__code-editor-stack {
+  position: relative;
+  min-width: max-content;
+}
+
+.app__code-editor-colours {
+  pointer-events: none;
+}
+
+/* The text typed is laid exactly over its coloured copy: its own letters don't show, its caret and selection do. */
+.app__code-editor-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ds-text-primary);
+  -webkit-text-fill-color: transparent;
+}
+
+.app__code-editor-input::selection {
+  background: var(--ds-highlight);
+}
+
+/* MARK: - Start screen */
+
+.app__start {
+  flex: 1;
+  overflow: auto;
+  background: var(--ds-background);
+}
+
+.app__start-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--ds-spacing-09) var(--ds-spacing-05);
+}
+
+.app__start-intro {
+  margin: var(--ds-spacing-03) 0 var(--ds-spacing-06);
+  color: var(--ds-text-secondary);
+}
+
+.app__start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-spacing-03);
+  margin-bottom: var(--ds-spacing-08);
+}
+
+.app__start-heading {
+  margin-bottom: var(--ds-spacing-03);
+  color: var(--ds-text-secondary);
+}
+
+.app__recents td:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-spacing-03);
+  height: var(--ds-control-sm);
+}
+
+.app__recents td:first-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app__recents tr:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: -2px;
+}
+
+.app__recent-note,
+.app__recent-date {
+  color: var(--ds-text-helper);
+  font: var(--ds-type-caption);
+  white-space: nowrap;
+}
+
+.app__recent-remove {
+  width: 40px;
+}
+
+/* MARK: - Dropping a file */
+
+.app__drop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  place-items: center;
+  background: color-mix(in srgb, var(--ds-background) 85%, transparent);
+  outline: 2px dashed var(--ds-interactive);
+  outline-offset: -12px;
+  pointer-events: none;
+}
+
+.app.is-dropping .app__drop {
+  display: grid;
+}
+
+/* MARK: - Inspector */
+
+.app__inspector[hidden] {
+  display: none;
+}
+
+.app__inspector .ds-form {
+  grid-template-columns: 88px 1fr;
+}
+
+.app__inspector .ds-form__control {
+  flex-wrap: wrap;
+}
+
+.app__inspector .ds-form__label {
+  font: var(--ds-type-label);
+}
+
+.app__inspector-popup {
+  flex: 1;
+  min-width: 0;
+}
+
+.app__inspector-buttons {
+  gap: var(--ds-spacing-02);
+}
+
+.app__comments {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--ds-spacing-04);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app__comment {
+  display: grid;
+  gap: var(--ds-spacing-02);
+}
+
+.app__comment.is-done {
+  color: var(--ds-text-helper);
+}
+
+.app__comment-text {
+  font: var(--ds-type-body-compact);
+  white-space: pre-wrap;
+}
+
+.app__table-size {
+  width: 80px;
+}
+
+/* The disclosure triangle points down when open; the design system rotates a right-pointing one. */
+.app__triangle {
+  transform: rotate(-90deg);
+}
+
+.ds-disclosure[open] > summary .app__triangle {
+  transform: none;
+}
+
+/* MARK: - Sheets */
+
+.app__sheet-backdrop {
+  position: absolute;
+  inset: calc(var(--ds-toolbar-height) + 28px) 0 0 0;
+  z-index: 30;
+}
+
+.app__sheet-backdrop .ds-text-input {
+  margin-top: var(--ds-spacing-04);
+}
+
+/* The Update button, at the menu bar's trailing end: borderless and the bar's
+   full height like the menu titles. */
+.app__update {
+  align-self: stretch;
+  height: auto;
+  gap: var(--ds-spacing-02);
+  margin-inline-start: auto;
+  font: var(--ds-type-body-compact);
+}
+
+.app__update-body .ds-progress {
+  margin-top: var(--ds-spacing-05);
+}
+
+.app__about-suite {
+  margin-top: var(--ds-spacing-03);
+}
+
+.app__about-version {
+  margin: 0 0 var(--ds-spacing-03);
+}
+
+/* The About sheet shows the app's own icon, at macOS alert size. */
+.app__about .ds-sheet__body {
+  grid-template-columns: 48px 1fr;
+}
+
+.app__about-icon {
+  display: block;
+  width: 48px;
+  height: 48px;
+}
+
+/* MARK: - Narrow windows */
+
+@media (max-width: 720px) {
+  /* The inspector floats over the pages, below the find bar and any banners,
+     rather than taking a column of its own. */
+  .app > .app__inspector {
+    grid-column: 2;
+    grid-row: 4;
+    justify-self: end;
+    position: relative;
+    z-index: 10;
+    max-width: 100%;
+    box-shadow: var(--ds-shadow-float);
+  }
+
+  .app__status-encoding {
+    display: none;
+  }
+
+  .app__style-popup {
+    width: 104px;
+  }
+}
+
+/* MARK: - Printing */
+
+/* Only the pages print, each on a sheet of its own. */
+@media print {
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .app {
+    display: block;
+    height: auto;
+  }
+
+  .app > :not(.ds-window__content),
+  .app__content > :not(.app__pages) {
+    display: none;
+  }
+
+  .pages,
+  .pages__sizer {
+    overflow: visible;
+    margin: 0;
+    background: #fff;
+  }
+
+  .pages__sheet {
+    box-shadow: none;
+  }
+}
