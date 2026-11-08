@@ -1,5 +1,10 @@
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// Reads a document from Pages '09 and before, whose package holds the whole
 /// document as `index.xml`, gzipped when the package is a folder.
@@ -452,7 +457,7 @@ private struct Pages09Converter {
         }
         guard hex.count == 6 else { return nil }
         let color = components(hex)
-        return Typography.highlightColors.min { first, second in
+        return RunStyle.highlightColors.min { first, second in
             func distance(_ other: String) -> Int { zip(color, components(other)).reduce(0) { $0 + ($1.0 - $1.1) * ($1.0 - $1.1) } }
             return (distance(first.value), first.key) < (distance(second.value), second.key)
         }?.key
@@ -1098,19 +1103,23 @@ private struct Pages09Converter {
         let white = attributes["w"].flatMap(Self.measure)
         var components = white.map { [$0] } ?? ["r", "g", "b"].map { attributes[$0].flatMap(Self.measure) ?? 0 }
         // Calibrated colours are in Apple's generic profiles, which Word's sRGB shows darker.
+        #if canImport(CoreGraphics)
         if attributes["type"]?.contains("calibrated") == true,
            let space = white == nil ? genericRGB : genericGray, let sRGB,
            let converted = CGColor(colorSpace: space, components: components.map { CGFloat($0) } + [1])?
                .converted(to: sRGB, intent: .defaultIntent, options: nil)?.components {
             components = converted.prefix(3).map { Double($0) }
         }
+        #endif
         if components.count == 1 { components = Array(repeating: components[0], count: 3) }
         return components.map { String(format: "%02X", Int((min(max($0, 0), 1) * 255).rounded())) }.joined()
     }
 
+    #if canImport(CoreGraphics)
     private static let genericRGB = CGColorSpace(name: "kCGColorSpaceGenericRGB" as CFString)
     private static let genericGray = CGColorSpace(name: "kCGColorSpaceGenericGray" as CFString)
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)
+    #endif
 
     // MARK: Lists
 

@@ -196,10 +196,10 @@ public enum Fields: Sendable {
     /// A number in a field's `\*` format.
     public static func number(_ value: Int, _ format: String?) -> String {
         switch format {
-        case "roman": return ListLabeler.format(value, as: "lowerRoman")
-        case "ROMAN": return ListLabeler.format(value, as: "upperRoman")
-        case "alphabetic": return ListLabeler.format(value, as: "lowerLetter")
-        case "ALPHABETIC": return ListLabeler.format(value, as: "upperLetter")
+        case "roman": return ListCounter.format(value, as: "lowerRoman")
+        case "ROMAN": return ListCounter.format(value, as: "upperRoman")
+        case "alphabetic": return ListCounter.format(value, as: "lowerLetter")
+        case "ALPHABETIC": return ListCounter.format(value, as: "upperLetter")
         default: return String(value)
         }
     }

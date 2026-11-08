@@ -5,6 +5,9 @@ import Foundation
 /// `sum_(i=1)^n`, `prod` and `int` big operators, `sin` and the like
 /// functions, brackets that grow, and `\alpha`, `\pm`, `\infty` and the like.
 public enum LinearMath: Sendable {
+    /// Office Math's namespace.
+    public static let namespace = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
     public static let names: [String: String] = [
         "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "zeta": "ζ", "eta": "η", "theta": "θ",
         "iota": "ι", "kappa": "κ", "lambda": "λ", "mu": "μ", "nu": "ν", "xi": "ξ", "pi": "π", "rho": "ρ", "sigma": "σ",
@@ -182,7 +185,7 @@ public enum LinearMath: Sendable {
     /// An equation's Office Math as a line to edit, as near as the syntax comes.
     public static func linear(fromXML xml: String) -> String {
         var namespaces = DOCXPatcher.namespaceBindings(for: xml)
-        namespaces["m"] = MathRenderer.namespace
+        namespaces["m"] = Self.namespace
         guard let element = XMLLite.fragment(xml, namespaces: namespaces) else { return "" }
         return linear(element).trimmed
     }

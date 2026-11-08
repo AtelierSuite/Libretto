@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 #if canImport(UIKit)
 import UIKit
 #else
@@ -8,7 +9,7 @@ import AppKit
 /// big operators, delimiters, functions, accents, bars, limits, matrices and
 /// equation arrays, each a box with a width, an ascent and a descent.
 public enum MathRenderer: Sendable {
-    public static let namespace = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+    public static let namespace = LinearMath.namespace
 
     nonisolated(unsafe) private static let equationPattern = #/^<(?:[\w.\-]+:)?oMath(?:Para)?\b/#
 
@@ -382,3 +383,4 @@ public enum MathRenderer: Sendable {
         }
     }
 }
+#endif

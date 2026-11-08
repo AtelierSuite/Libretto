@@ -24,7 +24,7 @@ public enum ListPreset: String, CaseIterable, Identifiable, Sendable {
             guard let level = levels[index] else { return "" }
             if level.format == "bullet" { return level.text }
             var text = level.text
-            for placeholder in 1...9 { text = text.replacingOccurrences(of: "%\(placeholder)", with: ListLabeler.format(1, as: levels[placeholder - 1]?.format ?? "decimal")) }
+            for placeholder in 1...9 { text = text.replacingOccurrences(of: "%\(placeholder)", with: ListCounter.format(1, as: levels[placeholder - 1]?.format ?? "decimal")) }
             return text
         }.joined(separator: "  ")
     }

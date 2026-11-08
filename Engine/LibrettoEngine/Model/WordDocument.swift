@@ -865,6 +865,14 @@ public struct RunStyle: Equatable, Hashable, Sendable {
         case baseline
     }
 
+    /// Word's `w:highlight` names, and the colours they are.
+    public static let highlightColors: [String: String] = [
+        "yellow": "FFFF00", "green": "00FF00", "cyan": "00FFFF", "magenta": "FF00FF", "blue": "0000FF",
+        "red": "FF0000", "darkBlue": "000080", "darkCyan": "008080", "darkGreen": "008000",
+        "darkMagenta": "800080", "darkRed": "800000", "darkYellow": "808000", "darkGray": "808080",
+        "lightGray": "C0C0C0", "black": "000000", "white": "FFFFFF",
+    ]
+
     public func merged(with other: RunStyle) -> RunStyle {
         RunStyle(
             characterStyleID: other.characterStyleID ?? characterStyleID,
@@ -1223,7 +1231,7 @@ public struct HeaderFooterText: Equatable, Sendable {
 
     /// The text page `page` shows, its number in a list format such as `lowerRoman`.
     public func resolved(page: Int, of count: Int, format: String? = nil) -> String {
-        text.replacingOccurrences(of: Self.pageNumberPlaceholder, with: ListLabeler.format(page, as: format ?? "decimal"))
+        text.replacingOccurrences(of: Self.pageNumberPlaceholder, with: ListCounter.format(page, as: format ?? "decimal"))
             .replacingOccurrences(of: Self.pageCountPlaceholder, with: String(count))
     }
 
@@ -1355,7 +1363,7 @@ public enum NoteNumbering: Sendable {
             guard result[key] == nil else { continue }
             counts[reference.kind, default: 0] += 1
             let format = reference.kind == .footnote ? document.footnoteFormat : document.endnoteFormat
-            result[key] = ListLabeler.format(counts[reference.kind]!, as: format)
+            result[key] = ListCounter.format(counts[reference.kind]!, as: format)
         }
         return result
     }

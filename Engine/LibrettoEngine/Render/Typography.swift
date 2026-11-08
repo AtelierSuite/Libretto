@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -216,12 +217,7 @@ public enum Typography: Sendable {
     }
 
     /// Word's `w:highlight` names.
-    public static let highlightColors: [String: String] = [
-        "yellow": "FFFF00", "green": "00FF00", "cyan": "00FFFF", "magenta": "FF00FF", "blue": "0000FF",
-        "red": "FF0000", "darkBlue": "000080", "darkCyan": "008080", "darkGreen": "008000",
-        "darkMagenta": "800080", "darkRed": "800000", "darkYellow": "808000", "darkGray": "808080",
-        "lightGray": "C0C0C0", "black": "000000", "white": "FFFFFF",
-    ]
+    public static let highlightColors = RunStyle.highlightColors
 
     private static let installedFamilies = Set(PlatformFont.installedFamilyNames)
 
@@ -291,8 +287,7 @@ public enum Typography: Sendable {
 
     /// The list a paragraph is in, its own or its style's.
     public static func listReference(_ resolved: ParagraphProperties) -> ListReference? {
-        guard let list = resolved.list, list.numberingID != 0 else { return nil }
-        return list
+        ListCounter.listReference(resolved)
     }
 
     public static func indents(
@@ -364,110 +359,27 @@ public enum Typography: Sendable {
 
 // MARK: - List labels
 
-/// Numbers list paragraphs in reading order, the way Word counts them.
+/// Numbers list paragraphs in reading order, the way Word counts them, and
+/// places each label in the paragraph's indent.
 public struct ListLabeler: Sendable {
     public let context: RenderContext
-    /// Per abstract list, the current count at each level. Lists that share
-    /// an abstract definition share their count.
-    private var counters: [Int: [Int: Int]] = [:]
-    /// Instances already met, whose overrides, if any, have started their levels over.
-    private var started: Set<Int> = []
+    private var counter: ListCounter
 
     public init(context: RenderContext) {
         self.context = context
+        counter = ListCounter(styles: context.styles, numbering: context.numbering)
     }
 
     /// The label for the next paragraph, or `nil` if it is not in a list.
     public mutating func label(for direct: ParagraphProperties) -> ListLabelBox? {
+        guard let text = counter.label(for: direct) else { return nil }
         let resolved = Typography.resolvedParagraph(direct, context: context)
-        guard let list = Typography.listReference(resolved),
-              let abstract = context.numbering.instances[list.numberingID],
-              let level = context.numbering.level(list.level, of: list.numberingID) else { return nil }
-
-        var counts = counters[abstract] ?? [:]
-        if started.insert(list.numberingID).inserted, let restarts = context.numbering.overrides[list.numberingID] {
-            // An instance that starts over does so at its first paragraph.
-            for (restarted, start) in restarts {
-                counts[restarted] = start - 1
-                for deeper in counts.keys where deeper > restarted { counts[deeper] = nil }
-            }
-        }
-        counts[list.level] = (counts[list.level] ?? (level.start - 1)) + 1
-        // Moving up a level starts the levels below it over.
-        for deeper in counts.keys where deeper > list.level { counts[deeper] = nil }
-        counters[abstract] = counts
-
-        let text: String
-        if level.format == "bullet" {
-            text = Self.bullet(level.text)
-        } else if level.format == "none" {
-            text = ""
-        } else {
-            var result = level.text
-            for index in (0...8).reversed() {
-                let placeholder = "%\(index + 1)"
-                guard result.contains(placeholder) else { continue }
-                let format = context.numbering.level(index, of: list.numberingID)
-                let start = format?.start ?? 1
-                let value = counts[index] ?? start
-                result = result.replacingOccurrences(
-                    of: placeholder, with: Self.format(value, as: format?.format ?? "decimal")
-                )
-            }
-            text = result
-        }
         let indents = Typography.indents(direct: direct, resolved: resolved, context: context)
         return ListLabelBox(text: text, indent: max(0, indents.left + indents.firstLine))
     }
 
-    /// Bullets set in Symbol or Wingdings use private-use code points; these
-    /// are what they look like.
-    public static func bullet(_ text: String) -> String {
-        guard let scalar = text.unicodeScalars.first else { return "\u{2022}" }
-        switch scalar.value {
-        case 0xF0B7, 0xF06C, 0xF09F: return "\u{2022}"
-        case 0xF0A7, 0xF06E: return "\u{25AA}"
-        case 0xF0D8, 0xF0E0: return "\u{27A2}"
-        case 0xF0FC: return "\u{2713}"
-        case 0xF000...0xF0FF: return "\u{2022}"
-        default: return scalar.value == 0x6F ? "\u{25E6}" : text
-        }
-    }
+    public static func bullet(_ text: String) -> String { ListCounter.bullet(text) }
 
-    public static func format(_ value: Int, as format: String) -> String {
-        switch format {
-        case "lowerLetter": return letters(value).lowercased()
-        case "upperLetter": return letters(value)
-        case "lowerRoman": return roman(value).lowercased()
-        case "upperRoman": return roman(value)
-        case "decimalZero": return value < 10 ? "0\(value)" : String(value)
-        case "decimalEnclosedCircle" where (1...20).contains(value):
-            return String(Character(UnicodeScalar(0x2460 + value - 1)!))
-        default: return String(value)
-        }
-    }
-
-    private static func letters(_ value: Int) -> String {
-        guard value > 0 else { return "" }
-        // Word repeats the letter rather than counting on: Y, Z, AA, BB.
-        let letter = Character(UnicodeScalar(65 + (value - 1) % 26)!)
-        return String(repeating: letter, count: (value - 1) / 26 + 1)
-    }
-
-    private static func roman(_ value: Int) -> String {
-        guard value > 0, value < 4000 else { return String(value) }
-        let table: [(Int, String)] = [
-            (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
-            (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
-        ]
-        var remaining = value
-        var result = ""
-        for (amount, numeral) in table {
-            while remaining >= amount {
-                result += numeral
-                remaining -= amount
-            }
-        }
-        return result
-    }
+    public static func format(_ value: Int, as format: String) -> String { ListCounter.format(value, as: format) }
 }
+#endif
