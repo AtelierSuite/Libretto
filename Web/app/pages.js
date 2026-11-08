@@ -233,7 +233,17 @@ ${darkRules.split("\n").filter(Boolean).map((rule) => `:root[data-theme="dark"] 
         element = document.createElement("span");
         element.className = run.note ? "pages__field pages__note" : run.eq ? "pages__field pages__equation" : "pages__field";
         element.contentEditable = "false";
-        element.textContent = run.t;
+        if (run.pc) {
+          // Its runs, each in its own formatting; read back whole, by its text.
+          for (const piece of run.pc) {
+            const part = document.createElement("span");
+            part.className = `r${piece.s}`;
+            part.textContent = piece.t;
+            element.append(part);
+          }
+        } else {
+          element.textContent = run.t;
+        }
         break;
       default:
         element = document.createElement("span");
@@ -587,7 +597,10 @@ ${darkRules.split("\n").filter(Boolean).map((rule) => `:root[data-theme="dark"] 
       if (current.nodeType === Node.ELEMENT_NODE && current !== paragraph && current.getAttribute(KIND)) {
         if (current.contains(node)) {
           // Inside a run that counts as a whole, such as a field: before or after it.
-          if (offset > 0 || node !== current.firstChild) total += PageEditor.length(current);
+          // Its text may be in parts, each in its own span: at its start only before the first character of the first.
+          let atStart = offset === 0;
+          for (let inner = node; atStart && inner !== current; inner = inner.parentNode) atStart = inner === inner.parentNode.firstChild;
+          if (!atStart) total += PageEditor.length(current);
           return true;
         }
         total += PageEditor.length(current);
