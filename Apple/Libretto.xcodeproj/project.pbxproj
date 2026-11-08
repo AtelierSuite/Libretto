@@ -116,7 +116,7 @@
 		A1E0000000000000000000E3 /* LibrettoEngine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			name = LibrettoEngine;
-			path = ../LibrettoEngine;
+			path = ../Engine/LibrettoEngine;
 			sourceTree = "<group>";
 		};
 		A1F000000000000000000003 /* LibrettoMac */ = {
