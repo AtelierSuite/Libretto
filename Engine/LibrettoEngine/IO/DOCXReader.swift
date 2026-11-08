@@ -62,6 +62,8 @@ public enum DOCXReader: Sendable {
         let sections = [pageSetup] + blocks.compactMap { block -> PageSetup? in
             if case .paragraph(let paragraph) = block { return paragraph.section } else { return nil }
         }
+        // Columns are kept, but every section is drawn in one.
+        if sections.contains(where: { $0.columns > 1 }) { report.insert(.multipleColumns) }
         let references = sections.flatMap { section in
             section.headerFooters.headers.values.map { ($0, false) } + section.headerFooters.footers.values.map { ($0, true) }
         }
@@ -388,7 +390,7 @@ private final class ReadContext {
             func fraction(_ name: String) -> Double { (Double(source.attribute(name) ?? "") ?? 0) / 100_000 }
             image.crop = ImageCrop(left: fraction("l"), top: fraction("t"), right: fraction("r"), bottom: fraction("b"))
         }
-        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
+        if container.name == "anchor" { placeFloating(&image, from: container) }
         return image
     }
 
@@ -405,8 +407,14 @@ private final class ReadContext {
             xml: serialize(kept), isFloating: container.name == "anchor"
         )
         image.object = object
-        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
+        if container.name == "anchor" { placeFloating(&image, from: container) }
         return image
+    }
+
+    /// Where a floating drawing sits; tight wrapping is drawn as square, so the report says so.
+    private func placeFloating(_ image: inout InlineImage, from anchor: XMLElement) {
+        DrawingReader.readPlacement(of: anchor, into: &image)
+        if image.wrap == .tight { report.insert(.tightWrapping) }
     }
 
     private func firstDescendant(named name: String, in element: XMLElement) -> XMLElement? {
