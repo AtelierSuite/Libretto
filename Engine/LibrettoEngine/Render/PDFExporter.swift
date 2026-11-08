@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -109,3 +110,4 @@ public enum HeaderFooterDrawing: Sendable {
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 #if canImport(UIKit)
 import UIKit
 #else
@@ -63,3 +64,4 @@ public enum SectionLayout: Sendable {
         return spans + [PageLayoutManager.SectionSpan(end: Int.max, setup: final)]
     }
 }
+#endif

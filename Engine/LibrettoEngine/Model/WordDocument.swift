@@ -89,13 +89,41 @@ public struct WordDocument: Equatable, Sendable {
     /// The document's words, for the word count.
     public var wordCount: Int {
         allParagraphs.reduce(0) { total, paragraph in
+            #if canImport(Darwin)
             var count = 0
             paragraph.plainText.enumerateSubstrings(
                 in: paragraph.plainText.startIndex..., options: [.byWords, .substringNotRequired]
             ) { _, _, _, _ in count += 1 }
             return total + count
+            #else
+            return total + Self.wordCount(paragraph.plainText)
+            #endif
         }
     }
+
+    #if !canImport(Darwin)
+    /// Words counted without the system's word breaking, which Foundation
+    /// has only on Apple platforms: runs of letters and digits, with each
+    /// character of a script written without spaces, Chinese or Japanese
+    /// say, a word of its own.
+    static func wordCount(_ text: String) -> Int {
+        var count = 0
+        var inWord = false
+        for scalar in text.unicodeScalars {
+            let properties = scalar.properties
+            if properties.isIdeographic || (0x3040...0x30FF).contains(scalar.value) {
+                count += 1
+                inWord = false
+            } else if properties.isAlphabetic || properties.numericType != nil || scalar == "'" && inWord {
+                if !inWord { count += 1 }
+                inWord = true
+            } else {
+                inWord = false
+            }
+        }
+        return count
+    }
+    #endif
 
     /// The default header and footer of the last section.
     public var header: HeaderFooterText? { headerFooter(.default, isFooter: false, in: pageSetup) }

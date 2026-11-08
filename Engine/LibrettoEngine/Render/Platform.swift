@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 import SwiftUI
 
 #if canImport(UIKit)
@@ -259,3 +260,4 @@ public enum PlatformGraphics: Sendable {
         #endif
     }
 }
+#endif

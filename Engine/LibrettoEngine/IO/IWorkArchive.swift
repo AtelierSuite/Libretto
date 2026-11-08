@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
+#endif
 
 public enum IWorkError: LocalizedError, Sendable {
     case notAnIWorkDocument
@@ -92,11 +94,24 @@ public struct IWorkArchive: Sendable {
         guard let first = inner.first else { return true }
         if inner.count == 1 { return !first.hasPrefix("preview") }
         if first == "QuickLook" { return false }
+        #if canImport(UniformTypeIdentifiers)
         if first == "Data", let type = UTType(filenameExtension: (path as NSString).pathExtension) {
             return !type.conforms(to: .audiovisualContent)
         }
+        #else
+        if first == "Data" {
+            return !audiovisualExtensions.contains((path as NSString).pathExtension.lowercased())
+        }
+        #endif
         return true
     }
+
+    #if !canImport(UniformTypeIdentifiers)
+    /// Films and sound, by extension, where there are no system types to ask.
+    private static let audiovisualExtensions: Set = [
+        "mov", "mp4", "m4v", "avi", "mpg", "mpeg", "m4a", "mp3", "wav", "aif", "aiff", "aifc", "caf", "aac",
+    ]
+    #endif
 
     /// The archives the document's text and styles are in, without which there is nothing to read.
     private static let essentialArchives: Set = ["Index/Document.iwa", "Index/DocumentStylesheet.iwa"]

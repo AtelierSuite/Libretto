@@ -163,6 +163,7 @@ public enum TextEncoding: String, CaseIterable, Sendable {
         }
         if let text = String(data: data, encoding: .utf8) { return (text, .utf8) }
         let older: [TextEncoding] = [.shiftJIS, .eucJP, .windowsLatin1]
+        #if canImport(Darwin)
         var converted: NSString?
         var isLossy: ObjCBool = false
         let found = NSString.stringEncoding(for: data, encodingOptions: [
@@ -173,6 +174,12 @@ public enum TextEncoding: String, CaseIterable, Sendable {
         if let encoding = older.first(where: { $0.stringEncoding.rawValue == found }), let converted {
             return (converted as String, encoding)
         }
+        #else
+        // No guessing which reads most like text here: the first that reads at all.
+        for encoding in older {
+            if let text = String(data: data, encoding: encoding.stringEncoding) { return (text, encoding) }
+        }
+        #endif
         return (String(data: data, encoding: .isoLatin1) ?? "", .isoLatin1)
     }
 }

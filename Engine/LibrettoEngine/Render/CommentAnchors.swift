@@ -17,6 +17,7 @@ public enum CommentAnchors: Sendable {
         }
     }
 
+    #if canImport(UIKit) || canImport(AppKit)
     /// Each comment's range of text, by comment ID.
     public static func ranges(in text: NSAttributedString, trailing: [Inline]) -> [String: NSRange] {
         var starts: [String: Int] = [:]
@@ -38,6 +39,7 @@ public enum CommentAnchors: Sendable {
         visit(trailing, at: text.length)
         return result
     }
+    #endif
 
     public static func start(_ id: String) -> Inline {
         Inline(.paragraphChild(xml: "<w:commentRangeStart w:id=\"\(XMLLite.escape(id))\"/>", display: nil))
@@ -72,6 +74,7 @@ public enum BookmarkAnchors: Sendable {
         return nil
     }
 
+    #if canImport(UIKit) || canImport(AppKit)
     /// Each bookmark's range of text, by name.
     public static func ranges(in text: NSAttributedString, trailing: [Inline]) -> [String: NSRange] {
         var starts: [String: (name: String, location: Int)] = [:]
@@ -94,6 +97,7 @@ public enum BookmarkAnchors: Sendable {
         visit(trailing, at: text.length)
         return result
     }
+    #endif
 
     /// Bookmark names across a document's blocks, in reading order.
     public static func names(in blocks: [Block]) -> [String] {

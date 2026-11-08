@@ -1,4 +1,5 @@
 import Foundation
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
 
 extension UTType {
@@ -16,6 +17,7 @@ extension UTType {
     public static let pagesDocument = UTType(importedAs: "com.apple.iwork.pages.sffpages")
     public static let pagesPackage = UTType(importedAs: "com.apple.iwork.pages.pages", conformingTo: .package)
 }
+#endif
 
 /// Reading and writing the files Libretto opens: `.docx` and `.docm`,
 /// Markdown, source code and plain text, and Pages documents.
@@ -28,6 +30,7 @@ extension UTType {
 /// can; one from Pages '09, or a page layout one, is only read, and is saved
 /// as a Word document to keep changes.
 public enum DocumentFile: Sendable {
+    #if canImport(UniformTypeIdentifiers)
     public static let readableContentTypes: [UTType] = [
         .openXMLDocument, .macroEnabledDocument, .markdownDocument, .pagesDocument, .pagesPackage,
     ] + SourceLanguage.contentTypes + [.plainText]
@@ -67,6 +70,8 @@ public enum DocumentFile: Sendable {
         }
     }
 
+    #endif
+
     /// A package's files, by their paths within it, leaving out those the readers have no use for.
     private static func files(in wrapper: FileWrapper, under prefix: String = "") -> [String: Data] {
         guard wrapper.isDirectory else { return [:] }
@@ -81,6 +86,7 @@ public enum DocumentFile: Sendable {
         return files
     }
 
+    #if canImport(UniformTypeIdentifiers)
     /// The file a document is saved as, in a type.
     public static func fileWrapper(for document: WordDocument, contentType: UTType) throws -> FileWrapper {
         // A Pages document is saved back into itself, and is never overwritten with something Pages cannot open.
@@ -102,5 +108,109 @@ public enum DocumentFile: Sendable {
         return FileWrapper(regularFileWithContents: try DOCXWriter.data(
             from: keepsMacros ? document : document.withoutMacros
         ))
+    }
+    #endif
+}
+
+// MARK: - By name
+
+extension DocumentFile {
+    /// The kinds of file Libretto reads and writes, told apart by name: for
+    /// platforms with no system file types, such as WebAssembly, and for files
+    /// that arrive with nothing but a name.
+    public enum Format: Equatable, Sendable {
+        case word
+        /// A `.docm`, which may carry macros.
+        case macroEnabledWord
+        case markdown
+        /// A Pages document as a single file, or a package zipped.
+        case pages
+        case plainText
+        case source(SourceLanguage)
+
+        /// The format a file's name says it is in; `nil` for one Libretto does not open.
+        public init?(filename: String) {
+            switch (filename as NSString).pathExtension.lowercased() {
+            case "docx", "dotx": self = .word
+            case "docm", "dotm": self = .macroEnabledWord
+            case "md", "markdown", "mdown", "mkd": self = .markdown
+            case "pages": self = .pages
+            case "txt", "text": self = .plainText
+            default:
+                guard let language = SourceLanguage(filename: filename) else { return nil }
+                self = language == .plainText ? .plainText : .source(language)
+            }
+        }
+
+        /// The extension a file in the format is saved with.
+        public var fileExtension: String {
+            switch self {
+            case .word: return "docx"
+            case .macroEnabledWord: return "docm"
+            case .markdown: return "md"
+            case .pages: return "pages"
+            case .plainText: return "txt"
+            case .source(let language): return language.fileExtensions.first ?? "txt"
+            }
+        }
+
+        /// The MIME type a file in the format is saved as.
+        public var mimeType: String {
+            switch self {
+            case .word: return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            case .macroEnabledWord: return "application/vnd.ms-word.document.macroEnabled.12"
+            case .markdown: return "text/markdown"
+            case .pages: return "application/vnd.apple.pages"
+            case .plainText, .source: return "text/plain"
+            }
+        }
+
+        /// Whether the format keeps no more than text, and opens in the code editor.
+        public var isText: Bool {
+            switch self {
+            case .plainText, .source: return true
+            default: return false
+            }
+        }
+    }
+
+    /// The document a file holds, read as its format says.
+    public static func read(_ data: Data, format: Format) throws -> WordDocument {
+        switch format {
+        case .word, .macroEnabledWord:
+            return try DOCXReader.document(from: data)
+        case .markdown:
+            return MarkdownReader.document(from: data)
+        case .pages:
+            return try PagesReader.document(from: data)
+        case .plainText:
+            return PlainText.document(from: data)
+        case .source(let language):
+            var document = PlainText.document(from: data, format: PlainText.codeFormat)
+            document.sourceLanguage = language
+            return document
+        }
+    }
+
+    /// A document's file, in a format: a Pages document is saved back into
+    /// itself, as a single file.
+    public static func data(for document: WordDocument, format: Format) throws -> Data {
+        if format == .pages {
+            return try PagesWriter.data(for: document)
+        }
+        // Text has no way to track changes; it is saved as it reads with them accepted.
+        var text = document
+        text.body = Revisions.resolve(document.body, accept: true)
+        switch format {
+        case .markdown:
+            return MarkdownWriter.data(from: text)
+        case .plainText, .source:
+            return PlainText.data(from: text)
+        case .macroEnabledWord:
+            return try DOCXWriter.data(from: document)
+        default:
+            // A `.docx` cannot hold macros, and Word will not open one that claims to.
+            return try DOCXWriter.data(from: document.withoutMacros)
+        }
     }
 }

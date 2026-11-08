@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 #if canImport(UIKit)
 import UIKit
 #else
@@ -348,3 +349,4 @@ private struct ChartDrawing {
         value.formatted(.number.precision(.fractionLength(0...2)))
     }
 }
+#endif

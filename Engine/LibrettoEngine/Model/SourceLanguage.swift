@@ -1,4 +1,5 @@
 import Foundation
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
 
 extension UTType {
@@ -38,6 +39,7 @@ extension UTType {
     public static let storyboard = UTType(importedAs: "com.apple.InterfaceBuilder3.Storyboard.XIB", conformingTo: .xml)
     public static let msBuildProject = UTType(importedAs: "com.microsoft.msbuild-project", conformingTo: .xml)
 }
+#endif
 
 /// The language of a file opened in the code editor. Plain text has no syntax colouring.
 ///
@@ -82,6 +84,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
     case yaml
     case zig
 
+    #if canImport(UniformTypeIdentifiers)
     /// The types Libretto opens as source, most particular first.
     public static let contentTypes: [UTType] = [
         .swiftSource, .pythonScript, .typeScriptSource, .jsxSource, .javaScript, .html, .scssSource, .lessSource, .css,
@@ -92,6 +95,7 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         .ini, .javaProperties, .interfaceBuilderDocument, .storyboard, .msBuildProject, .propertyList, .svg, .xml,
         .mpeg2TransportStream,
     ]
+    #endif
 
     /// The language's name, as a menu of them shows it.
     public var displayName: String {
@@ -203,16 +207,25 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
         return nil
     }
 
-    /// The language of a file, from its name if it has one, or else its type.
-    public init?(contentType: UTType, filename: String?) {
+    /// The language of a file, from its whole name or else its extension.
+    public init?(filename: String) {
         // A name the language is known by comes before an extension, which `.zshrc` would seem to be.
-        if let name = (filename as NSString?)?.lastPathComponent.lowercased(),
-           let language = Self.language(named: name) {
+        let name = (filename as NSString).lastPathComponent.lowercased()
+        if let language = Self.language(named: name) {
             self = language
             return
         }
-        let pathExtension = (filename as NSString?)?.pathExtension.lowercased() ?? ""
-        if let language = Self.allCases.first(where: { $0.fileExtensions.contains(pathExtension) }) {
+        let pathExtension = (name as NSString).pathExtension
+        guard let language = Self.allCases.first(where: { $0.fileExtensions.contains(pathExtension) }) else {
+            return nil
+        }
+        self = language
+    }
+
+    #if canImport(UniformTypeIdentifiers)
+    /// The language of a file, from its name if it has one, or else its type.
+    public init?(contentType: UTType, filename: String?) {
+        if let filename, let language = SourceLanguage(filename: filename) {
             self = language
             return
         }
@@ -238,4 +251,5 @@ public enum SourceLanguage: String, CaseIterable, Sendable {
             return nil
         }
     }
+    #endif
 }

@@ -1,8 +1,10 @@
-import SwiftUI
+import Foundation
 #if canImport(UIKit)
+import SwiftUI
 import UIKit
-#else
+#elseif canImport(AppKit)
 import AppKit
+import SwiftUI
 #endif
 
 /// What a stretch of source code is, for colouring.
@@ -59,6 +61,7 @@ public enum SyntaxHighlighter: Sendable {
         }
     }
 
+    #if canImport(UIKit) || canImport(AppKit)
     /// Colours `text` by its syntax, and what is not syntax in `plainColor`.
     /// Only what changes colour is touched, so the layout of the rest stands.
     public static func apply(
@@ -104,29 +107,33 @@ public enum SyntaxHighlighter: Sendable {
         text.endEditing()
     }
 
-    /// Xcode's default colours, light and dark, darkened or lightened in
-    /// their own hue where they fell short of a contrast of 7.5:1 against
-    /// white, or 10:1 against black.
+    /// The colour of `kind`, as the platform draws it.
     public static func color(for kind: SyntaxKind, scheme: ColorScheme) -> PlatformColor {
-        let dark = scheme == .dark
-        let hex: UInt32
-        switch kind {
-        case .keyword: hex = dark ? 0xFF91BF : 0x912189
-        case .type: hex = dark ? 0xDABAFF : 0x3900A0
-        case .string: hex = dark ? 0xFF978A : 0xA81613
-        case .comment: hex = dark ? 0xACB5BC : 0x4A5660
-        case .number: hex = dark ? 0xD9C97C : 0x1C00CF
-        case .attribute: hex = dark ? 0xD6AB85 : 0x6D5003
-        case .tag: hex = dark ? 0x5DD8FF : 0x0D5786
-        case .property: hex = dark ? 0x7CC1B0 : 0x2A5B60
-        case .variable: hex = dark ? 0xC8A7F0 : 0x6C36A9
-        case .added: hex = dark ? 0x85DB8F : 0x175E1E
-        case .removed: hex = dark ? 0xFF9C9C : 0x9C1A1F
-        }
+        let hex = rgb(for: kind, isDark: scheme == .dark)
         return PlatformColor.sRGB(
             red: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255,
             blue: CGFloat(hex & 0xFF) / 255, alpha: 1
         )
+    }
+    #endif
+
+    /// Xcode's default colours as 0xRRGGBB, light or dark, darkened or
+    /// lightened in their own hue where they fell short of a contrast of
+    /// 7.5:1 against white, or 10:1 against black.
+    public static func rgb(for kind: SyntaxKind, isDark dark: Bool) -> UInt32 {
+        switch kind {
+        case .keyword: return dark ? 0xFF91BF : 0x912189
+        case .type: return dark ? 0xDABAFF : 0x3900A0
+        case .string: return dark ? 0xFF978A : 0xA81613
+        case .comment: return dark ? 0xACB5BC : 0x4A5660
+        case .number: return dark ? 0xD9C97C : 0x1C00CF
+        case .attribute: return dark ? 0xD6AB85 : 0x6D5003
+        case .tag: return dark ? 0x5DD8FF : 0x0D5786
+        case .property: return dark ? 0x7CC1B0 : 0x2A5B60
+        case .variable: return dark ? 0xC8A7F0 : 0x6C36A9
+        case .added: return dark ? 0x85DB8F : 0x175E1E
+        case .removed: return dark ? 0xFF9C9C : 0x9C1A1F
+        }
     }
 }
 
@@ -241,6 +248,7 @@ public struct SyntaxColoring: Sendable {
         self.edit = (NSRange(location: start, length: end - start), edit.changeInLength + delta)
     }
 
+    #if canImport(UIKit) || canImport(AppKit)
     /// Colours `text` as `SyntaxHighlighter.apply` does, scanning only
     /// around the edits since it was last coloured when it can: when the
     /// language and scheme are the same, and the edits are all accounted for.
@@ -268,6 +276,7 @@ public struct SyntaxColoring: Sendable {
             self.scheme = scheme
         }
     }
+    #endif
 }
 
 /// A point the scan reached at the start of a line.

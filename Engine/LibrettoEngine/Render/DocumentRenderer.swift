@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 #if canImport(UIKit)
 import UIKit
 #else
@@ -345,3 +346,4 @@ public enum DocumentRenderer: Sendable {
         return changed
     }
 }
+#endif

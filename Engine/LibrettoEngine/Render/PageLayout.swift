@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -976,3 +977,4 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         NSAttributedString(string: label.text, attributes: attributes).draw(at: point)
     }
 }
+#endif

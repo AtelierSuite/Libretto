@@ -1,4 +1,6 @@
+#if canImport(CoreText)
 import CoreText
+#endif
 import Foundation
 
 /// Saves edits to a Pages document back into the Pages file it was read
@@ -1271,6 +1273,7 @@ private struct PagesBodyWriter {
 
     /// The PostScript name of a family's face, bold or italic as asked, if it is installed.
     private static func postScriptName(family: String, bold: Bool, italic: Bool) -> String? {
+        #if canImport(CoreText)
         let font = CTFontCreateWithName(family as CFString, 12, nil)
         guard (CTFontCopyFamilyName(font) as String).caseInsensitiveCompare(family) == .orderedSame else { return nil }
         var traits: CTFontSymbolicTraits = []
@@ -1278,6 +1281,10 @@ private struct PagesBodyWriter {
         if italic { traits.insert(.traitItalic) }
         let face = traits.isEmpty ? font : CTFontCreateCopyWithSymbolicTraits(font, 12, nil, traits, [.traitBold, .traitItalic]) ?? font
         return CTFontCopyPostScriptName(face) as String
+        #else
+        // No fonts to ask: the base style's face, or the family itself, is named instead.
+        return nil
+        #endif
     }
 
     // MARK: Made styles

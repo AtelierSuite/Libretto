@@ -57,6 +57,7 @@ public enum TableStyling: Sendable {
         }
     }
 
+    #if canImport(UIKit) || canImport(AppKit)
     /// A context whose defaults carry the cell's table style formatting,
     /// which Word places above the document's defaults and below its styles.
     public static func context(_ context: RenderContext, for appearance: CellAppearance) -> RenderContext {
@@ -67,4 +68,5 @@ public enum TableStyling: Sendable {
             .merged(with: appearance.condition.paragraphProperties)
         return styled
     }
+    #endif
 }

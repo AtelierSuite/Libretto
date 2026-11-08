@@ -1,7 +1,11 @@
+#if canImport(CoreText)
 import CoreText
+#endif
 import Foundation
+#if canImport(ImageIO)
 import ImageIO
 import UniformTypeIdentifiers
+#endif
 
 /// Reads a Pages document into a new word-processing document. The Pages
 /// file is kept, with where the body's content came from, for `PagesWriter`
@@ -1044,6 +1048,7 @@ public struct PagesConverter {
 
     /// An image as Word reads it: PNG and JPEG as they are, anything else as PNG.
     public static func wordImage(_ data: Data) -> (Data, String, String)? {
+        #if canImport(ImageIO)
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source).flatMap({ UTType($0 as String) }) else { return nil }
         if type.conforms(to: .png) { return (data, "png", "image/png") }
@@ -1055,6 +1060,12 @@ public struct PagesConverter {
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return (output as Data, "png", "image/png")
+        #else
+        // Without ImageIO only what Word reads as it is: there is nothing to convert the rest with.
+        if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return (data, "png", "image/png") }
+        if data.starts(with: [0xFF, 0xD8, 0xFF]) { return (data, "jpeg", "image/jpeg") }
+        return nil
+        #endif
     }
 
     // MARK: Footnotes
@@ -1643,12 +1654,17 @@ private final class PagesFontCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if let known = fonts[postScriptName] { return known }
+        #if canImport(CoreText)
         let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
         var result: (family: String, isBold: Bool, isItalic: Bool)?
         if CTFontCopyPostScriptName(font) as String == postScriptName {
             let traits = CTFontGetSymbolicTraits(font)
             result = (CTFontCopyFamilyName(font) as String, traits.contains(.traitBold), traits.contains(.traitItalic))
         }
+        #else
+        // No fonts to ask: the name is taken apart instead.
+        let result: (family: String, isBold: Bool, isItalic: Bool)? = nil
+        #endif
         fonts[postScriptName] = .some(result)
         return result
     }

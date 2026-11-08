@@ -1,3 +1,4 @@
+#if canImport(UIKit) || canImport(AppKit)
 #if canImport(UIKit)
 import UIKit
 #else
@@ -215,3 +216,4 @@ public enum AttributedReader: Sendable {
         }
     }
 }
+#endif
