@@ -331,7 +331,8 @@ final class Bridge {
                 ["id": comment.id, "author": comment.author, "date": comment.date ?? "", "text": comment.text, "done": comment.isDone]
             },
             "notes": document.notes.map { ["kind": $0.kind.rawValue, "id": $0.id, "text": $0.text] },
-            "unsupported": document.unsupportedFeatures.features.map(\.label).sorted(),
+            "unsupported": document.unsupportedFeatures.readOnlyFeatures.map(\.label).sorted(),
+            "drawnDifferently": document.unsupportedFeatures.drawnDifferentlyFeatures.map(\.label),
             "pageSetup": [
                 "width": Double(document.pageSetup.width) / 20, "height": Double(document.pageSetup.height) / 20,
                 "top": Double(document.pageSetup.marginTop) / 20, "bottom": Double(document.pageSetup.marginBottom) / 20,

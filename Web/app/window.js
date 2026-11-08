@@ -1107,12 +1107,15 @@ export class DocumentWindow {
     if (!sticky) setTimeout(() => banner.remove(), kind === "error" ? 8000 : 5000);
   }
 
-  /** What the document has that Libretto keeps but can't edit, and what can't be saved back. */
+  /** What the document has that Libretto keeps but can't edit or draws differently, and what can't be saved back. */
   showNotices() {
     const info = this.engine.info;
     if (!info) return;
     if (info.unsupported?.length) {
       this.showMessage(`${t("Notice.UnsupportedFeatures.Message")} ${new Intl.ListFormat(language, { type: "conjunction" }).format(info.unsupported)}`, "info");
+    }
+    if (info.drawnDifferently?.length) {
+      this.showMessage(`${t("Notice.DrawnDifferently.Message")} ${new Intl.ListFormat(language, { type: "conjunction" }).format(info.drawnDifferently)}`, "info");
     }
     if (info.format === "pages" && !info.saveFormats.some((format) => format.key === "pages")) {
       this.showMessage(t("Mac.Notice.Converted"), "info");
