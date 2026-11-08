@@ -588,7 +588,8 @@ struct DocumentView: View {
 }
 
 /// What the More menu's warning says: which parts of the file Libretto can
-/// only show and keep, and that macros never run.
+/// only show and keep, that macros never run, and what it draws differently
+/// from Word or Pages.
 ///
 /// A sheet rather than an alert: nothing here needs deciding, so it has no
 /// business stopping the user before they have seen their document.
@@ -602,27 +603,46 @@ private struct UnsupportedFeatureNotice: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Notice.UnsupportedFeatures.Title", systemImage: "exclamationmark.triangle")
+                let readOnly = report.readOnlyFeatures
+                let drawnDifferently = report.drawnDifferentlyFeatures
+                Label(
+                    readOnly.isEmpty ? "Notice.DrawnDifferently.Title" : "Notice.UnsupportedFeatures.Title",
+                    systemImage: "exclamationmark.triangle"
+                )
                     .font(.headline)
                     .labelStyle(.titleAndIcon)
-                Text(
-                    keepsWhatIsLeftOut ? "Notice.UnsupportedFeatures.PagesMessage"
-                        : isImported ? "Notice.UnsupportedFeatures.ImportedMessage" : "Notice.UnsupportedFeatures.Message"
-                )
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(report.orderedFeatures, id: \.self) { feature in
-                        Label(feature.label, systemImage: feature == .macros ? "curlybraces" : "circle.fill")
-                            .font(.callout)
-                            .labelStyle(BulletLabelStyle(isMacro: feature == .macros))
-                    }
+                if !readOnly.isEmpty {
+                    section(
+                        keepsWhatIsLeftOut ? "Notice.UnsupportedFeatures.PagesMessage"
+                            : isImported ? "Notice.UnsupportedFeatures.ImportedMessage" : "Notice.UnsupportedFeatures.Message",
+                        features: readOnly
+                    )
+                }
+                if !drawnDifferently.isEmpty {
+                    section("Notice.DrawnDifferently.Message", features: drawnDifferently)
+                        .padding(.top, readOnly.isEmpty ? 0 : 8)
+                        .accessibilityIdentifier("drawnDifferently")
                 }
             }
             .multilineTextAlignment(.leading)
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func section(_ message: LocalizedStringKey, features: [UnsupportedFeatureReport.Feature]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(features, id: \.self) { feature in
+                    Label(feature.label, systemImage: feature == .macros ? "curlybraces" : "circle.fill")
+                        .font(.callout)
+                        .labelStyle(BulletLabelStyle(isMacro: feature == .macros))
+                }
+            }
         }
     }
 

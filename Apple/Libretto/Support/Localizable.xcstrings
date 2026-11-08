@@ -7841,6 +7841,76 @@
         }
       }
     },
+    "Notice.DrawnDifferently.Message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libretto draws some things in this document differently, so it may look different from how it looks in Word or Pages. They’re kept as they are, and saved back with the document."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この書類の一部はLibrettoでの表示方法が異なるため、WordやPagesでの見た目と異なる場合があります。これらはそのまま保持され、書類と一緒に保存されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 문서의 일부 요소는 Libretto에서 다르게 표시되므로 Word 또는 Pages에서 보이는 것과 다르게 보일 수 있습니다. 이러한 요소는 그대로 유지되며 문서와 함께 저장됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libretto 对此文稿中的某些内容采用不同的显示方式，因此它看起来可能与在 Word 或 Pages 中不同。这些内容会原样保留，并随文稿一起存储。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libretto 對此文件中的某些內容採用不同的顯示方式，因此它看起來可能與在 Word 或 Pages 中不同。這些內容會原樣保留，並隨文件一起儲存。"
+          }
+        }
+      }
+    },
+    "Notice.DrawnDifferently.Title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It May Look Different"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示が異なる場合があります"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다르게 보일 수 있음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能看起来不同"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能看起來不同"
+          }
+        }
+      }
+    },
     "Notice.Imported.Message": {
       "extractionState": "manual",
       "localizations": {
