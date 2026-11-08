@@ -106,4 +106,44 @@ struct PictureTests {
         DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapTopAndBottom/>"), into: &image)
         #expect(image.wrapDistances == WrapDistances(top: 0, bottom: 0, left: 9, right: 9))
     }
+
+    @Test("Text keeps to a floating picture's wrap distances")
+    func keepsToWrapDistances() throws {
+        for (wrap, left) in [(ImageWrap.square, 36.0), (.tight, 0), (.square, 9)] {
+            let (controller, _) = makeController()
+            controller.textView.selectedRange = NSRange(location: 0, length: 0)
+            controller.insertImage(png(width: 200, height: 100))
+            controller.textView.selectedRange = NSRange(location: 0, length: 1)
+            controller.updateSelectedImage { picture in
+                picture.wrap = wrap
+                picture.alignment = .trailing
+                picture.width = 100
+                picture.height = 50
+                picture.wrapDistances.left = left
+            }
+            let layout = controller.layoutManager
+            let placed = try #require(layout.placedFloats.first)
+            let firstLine = layout.lineFragmentRect(forGlyphAt: 1, effectiveRange: nil)
+            #expect(firstLine.maxX <= placed.frame.minX - left + 0.5, "\(wrap) \(left)")
+            #expect(firstLine.maxX >= placed.frame.minX - left - 0.5, "\(wrap) \(left)")
+        }
+
+        // Above and below: the text below starts the bottom distance under the picture.
+        let (controller, _) = makeController()
+        controller.textView.selectedRange = NSRange(location: 0, length: 0)
+        controller.insertImage(png(width: 200, height: 100))
+        controller.textView.selectedRange = NSRange(location: 0, length: 1)
+        controller.updateSelectedImage { picture in
+            picture.wrap = .topAndBottom
+            picture.width = 100
+            picture.height = 50
+            picture.wrapDistances.bottom = 24
+        }
+        let layout = controller.layoutManager
+        let placed = try #require(layout.placedFloats.first)
+        let below = (1..<layout.numberOfGlyphs).lazy
+            .map { layout.lineFragmentRect(forGlyphAt: $0, effectiveRange: nil) }
+            .first { $0.minY >= placed.frame.minY }
+        #expect(try #require(below).minY >= placed.frame.maxY + 24 - 0.5)
+    }
 }
