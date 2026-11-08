@@ -13,7 +13,20 @@ import { dismissSheet } from "../design/sheets.js";
 import * as fonts from "./fonts.js";
 
 const isApple = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+/** Libretto for iPhone, iPad and Mac: one App Store listing, opened in the visitor's own storefront. */
+const APP_STORE_URL = "https://apps.apple.com/app/atelier-libretto/id6819683632";
 const SOURCE_CODE_URL = "https://github.com/AtelierSuite/Libretto";
+/**
+ * Which Apple app to offer, from the device the page is open on: "ios" on an
+ * iPhone or iPad, "mac" on a Mac, null elsewhere. iPadOS asks for desktop
+ * pages and calls itself a Mac, but a Mac has no touch screen.
+ */
+const appStorePlatform = (() => {
+  const agent = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(agent)) return "ios";
+  if (/Macintosh/.test(agent)) return navigator.maxTouchPoints > 1 ? "ios" : "mac";
+  return null;
+})();
 const AUTOSAVE_DELAY = 1500;
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 /** Word's paper sizes, in points. */
@@ -348,6 +361,10 @@ export class DocumentWindow {
         run: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()),
       },
       about: { label: t("Mac.Menu.About", "Libretto"), run: () => this.showAbout() },
+      downloadApp: {
+        label: t(appStorePlatform === "mac" ? "Web.Help.DownloadMacApp" : "Web.Help.DownloadiOSApp"),
+        run: () => window.open(`${APP_STORE_URL}?platform=${appStorePlatform === "mac" ? "mac" : "iphone"}`, "_blank", "noopener"),
+      },
     };
   }
 
@@ -407,7 +424,7 @@ export class DocumentWindow {
       { label: t("Mac.Menu.Window"), get items() {
         return self.document ? [{ label: self.document.name, checked: true, action: () => self.focusEditor() }] : [{ label: "Libretto", disabled: true }];
       } },
-      { label: t("Mac.Menu.Help"), get items() { return self.items("about"); } },
+      { label: t("Mac.Menu.Help"), get items() { return self.items(...(appStorePlatform ? ["downloadApp", "-"] : []), "about"); } },
     ];
     const bar = this.root.querySelector("#menu-bar");
     this.menuBarOverflow = attachMenuBar(bar, menus, { label: t("Web.Menu.Label"), overflowLabel: t("Toolbar.More") });
