@@ -81,4 +81,29 @@ struct PictureTests {
         #expect(xml.contains("<wp:inline "))
         #expect(controller.layoutManager.placedFloats.isEmpty)
     }
+
+    private func anchor(_ attributes: String, wrap: String) throws -> XMLElement {
+        try XMLLite.parse(Data("""
+            <wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" \
+            behindDoc="0"\(attributes)><wp:extent cx="1270000" cy="635000"/>\(wrap)</wp:anchor>
+            """.utf8))
+    }
+
+    @Test("Wrap distances come from the anchor, else the wrapping, else Word's own")
+    func readsWrapDistances() throws {
+        var image = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(
+            of: try anchor(#" distT="25400" distB="50800" distL="228600" distR="0""#, wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"),
+            into: &image
+        )
+        #expect(image.wrapDistances == WrapDistances(top: 2, bottom: 4, left: 18, right: 0))
+
+        DrawingReader.readPlacement(
+            of: try anchor("", wrap: #"<wp:wrapTight wrapText="bothSides" distL="38100" distR="38100"/>"#), into: &image
+        )
+        #expect(image.wrapDistances == WrapDistances(top: 0, bottom: 0, left: 3, right: 3))
+
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapTopAndBottom/>"), into: &image)
+        #expect(image.wrapDistances == WrapDistances(top: 0, bottom: 0, left: 9, right: 9))
+    }
 }
