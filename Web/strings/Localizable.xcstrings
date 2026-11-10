@@ -6511,41 +6511,6 @@
         }
       }
     },
-    "Web.Offline.Ready" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Libretto is ready to work offline."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Libretto はオフラインで使えるようになりました。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이제 Libretto를 오프라인에서 사용할 수 있습니다."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Libretto 已可离线使用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Libretto 已可離線使用。"
-          }
-        }
-      }
-    },
     "Web.PageSetup.Paper.A5" : {
       "extractionState" : "manual",
       "localizations" : {

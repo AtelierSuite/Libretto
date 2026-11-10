@@ -72,11 +72,8 @@ function usesServiceWorker() {
 
 function registerServiceWorker(app) {
   if (!usesServiceWorker()) return;
-  const firstInstall = !navigator.serviceWorker.controller;
   navigator.serviceWorker.register(new URL("../sw.js", import.meta.url), { scope: "../" }).then(async (registration) => {
-    const installing = Boolean(registration.installing);
     await navigator.serviceWorker.ready;
-    if (firstInstall && installing) app.showMessage(t("Web.Offline.Ready"), "success");
     watchForUpdates(app, registration);
   }).catch(() => {
     // Without a service worker Libretto still works; it just needs the network to load.
