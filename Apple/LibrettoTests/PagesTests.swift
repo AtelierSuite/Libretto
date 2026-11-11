@@ -401,19 +401,38 @@ struct PagesTests {
         #expect(!amount.isNewStorage)
     }
 
-    @Test("A page layout document's text boxes, shapes and pictures read down the page")
+    /// The floating objects in a paragraph, in order.
+    private static func objects(_ paragraph: Paragraph) -> [InlineImage] {
+        paragraph.inlines.compactMap { if case .image(let image) = $0.content { image } else { nil } }
+    }
+
+    private static func shape(_ image: InlineImage) -> ShapeSpec? {
+        if case .shape(let shape)? = image.object { shape } else { nil }
+    }
+
+    @Test("A page layout document's text boxes, shapes and pictures stay where they are placed on the page")
     func pageLayout() throws {
         let document = try PagesReader.document(from: Data(
             contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Layout.pages")
         ))
         let paragraphs = document.allParagraphs
-        #expect(paragraphs.map(\.plainText) == ["Top box text", "", "In a shape", "Lower box text"])
-        guard case .image(let image) = paragraphs[1].inlines.first?.content else {
-            Issue.record("No picture")
-            return
-        }
-        #expect(image.width == 120)
-        #expect(image.height == 60)
+        #expect(paragraphs.count == 1)
+        let objects = Self.objects(paragraphs[0])
+        // In the order Pages stacks them, each fixed to the page where it is placed.
+        #expect(objects.map { Self.shape($0)?.text } == ["Lower box text", "Top box text", nil, "In a shape"])
+        #expect(objects.map(\.horizontalOffset) == [72, 72, 72, 300])
+        #expect(objects.map(\.verticalOffset) == [400, 72, 200, 200])
+        #expect(objects.allSatisfy { $0.isFloating && $0.page == 0 && $0.wrap == .inFrontOfText })
+        #expect(objects.allSatisfy { $0.isHorizontalFromPage && $0.verticalAnchor == .page })
+        #expect(objects[2].object == nil)
+        #expect(objects[2].width == 120)
+        #expect(objects[2].height == 60)
+        // A filled shape keeps its fill, and its text the formatting it was set in.
+        let filled = try #require(Self.shape(objects[3]))
+        #expect(filled.fillHex == "000000")
+        #expect(!filled.isTextBox)
+        #expect(filled.formattedParagraphs?.first?.runs.first?.style.colorHex == "FFFFFF")
+        #expect(try #require(Self.shape(objects[0])).isTextBox)
         #expect(document.unsupportedFeatures.isEmpty)
     }
 
@@ -422,8 +441,42 @@ struct PagesTests {
         let document = try PagesReader.document(from: Data(
             contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/TwoPages.pages")
         ))
-        #expect(document.allParagraphs.map(\.plainText) == ["First page box", "Second page box"])
-        #expect(document.allParagraphs[0].inlines.last?.content == .pageBreak)
+        let paragraphs = document.allParagraphs
+        #expect(paragraphs.map { Self.objects($0).compactMap { Self.shape($0)?.text } } == [["First page box"], ["Second page box"]])
+        #expect(paragraphs.map { Self.objects($0).map(\.page) } == [[0], [1]])
+        #expect(paragraphs[0].inlines.last?.content == .pageBreak)
+    }
+
+    @Test("Objects placed on the pages of a word-processing document float on their pages, the text wrapping round them")
+    func floatingObjects() throws {
+        // `FloatingObjects.pages`: two pages of text, a shape, a text box and a picture placed on
+        // the first page, and a text box on the second.
+        let document = try PagesReader.document(from: Data(
+            contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/FloatingObjects.pages")
+        ))
+        let paragraphs = document.allParagraphs
+        #expect(paragraphs[0].plainText.hasPrefix("Floating objects sit on the page"))
+        let objects = Self.objects(paragraphs[0])
+        #expect(objects.map(\.page) == [0, 0, 0, 1])
+        #expect(objects.map(\.horizontalOffset) == [380, 72, 360, 300])
+        #expect(objects.map(\.verticalOffset) == [120, 330, 420, 100])
+        #expect(objects.map(\.width) == [140, 180, 160, 200])
+        // Pages' Automatic wrap: down the side with more room, 12 points clear.
+        #expect(objects.allSatisfy { $0.wrap == .square && $0.wrapSide == .largest })
+        #expect(objects.allSatisfy { $0.wrapDistances == WrapDistances(top: 12, bottom: 12, left: 12, right: 12) })
+        #expect(Self.shape(objects[0])?.fillHex == "000000")
+        #expect(Self.shape(objects[1])?.text == "Text box on the page")
+        #expect(objects[2].object == nil && document.package.addedMedia[objects[2].relationshipID] != nil)
+        #expect(Self.shape(objects[3])?.text == "Second page box")
+        #expect(document.unsupportedFeatures.isEmpty)
+        // No other paragraph holds any.
+        #expect(paragraphs.dropFirst().allSatisfy { Self.objects($0).isEmpty })
+
+        // Written for Word, they are anchored to the page where Pages places them.
+        let xml = Fixtures.text(try Fixtures.written(document), "word/document.xml")
+        #expect(xml.contains("<wp:positionH relativeFrom=\"page\"><wp:posOffset>4826000</wp:posOffset></wp:positionH>"))
+        #expect(xml.contains("<wp:wrapSquare wrapText=\"largest\"/>"))
+        #expect(xml.contains("Text box on the page"))
     }
 
     @Test("A password-protected document is recognised")

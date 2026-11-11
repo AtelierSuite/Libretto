@@ -237,4 +237,21 @@ struct PictureTests {
         shape.text = "Edited"
         #expect(shape.formattedParagraphs == nil)
     }
+
+    @Test("Objects placed on the pages of a Pages document sit on their own pages, as large as placed")
+    func pagesObjectsOnTheirPages() throws {
+        let document = try PagesReader.document(from: PagesWriterTests.data("FloatingObjects.pages"))
+        let controller = DocumentTextController(document: document, scheme: .light)
+        let layout = controller.layoutManager
+        let geometry = controller.geometry
+        let placed = layout.placedFloats.sorted { ($0.page, $0.frame.minY) < ($1.page, $1.frame.minY) }
+        #expect(placed.map(\.page) == [0, 0, 0, 1])
+        // Where Pages put them on the page, measured from its corner.
+        for (float, (x, y)) in zip(placed, [(380.0, 120.0), (72, 330), (360, 420), (300, 100)]) {
+            let pageTop = geometry.textTop(float.page) - geometry.shape(float.page).margins.top
+            #expect(abs(float.frame.minX + geometry.textLeft - x) < 0.5)
+            #expect(abs(float.frame.minY - pageTop - y) < 0.5)
+        }
+        #expect(placed.first?.frame.size == CGSize(width: 140, height: 100))
+    }
 }
