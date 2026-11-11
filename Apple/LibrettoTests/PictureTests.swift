@@ -202,4 +202,63 @@ struct PictureTests {
         DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"), into: &image)
         #expect(image.wrapPolygon == nil)
     }
+
+    @Test("Tight wrapping keeps clear of the whole outline across each band, through wrapping fills its open parts")
+    func wrapPolygonBands() {
+        // A U, open at the top: two arms 0–0.25 and 0.75–1 across, joined below halfway.
+        let cup = WrapPolygon(points: [
+            .init(x: 0, y: 0), .init(x: 0, y: 1), .init(x: 1, y: 1), .init(x: 1, y: 0),
+            .init(x: 0.75, y: 0), .init(x: 0.75, y: 0.5), .init(x: 0.25, y: 0.5), .init(x: 0.25, y: 0),
+        ])
+        let tight = cup.exclusions(x: 100, y: 0, width: 100, height: 100, left: 5, right: 3, through: false, step: 10)
+        #expect(tight.allSatisfy { $0.minX == 95 && $0.maxX == 203 })
+        #expect(tight.count == 1)
+        #expect(tight.first?.minY == 0 && tight.first?.maxY == 100)
+
+        let through = cup.exclusions(x: 100, y: 0, width: 100, height: 100, left: 5, right: 3, through: true, step: 10)
+        let upper = through.filter { $0.maxY <= 50 }
+        #expect(Set(upper.map(\.minX)) == [95, 170])
+        #expect(Set(upper.map(\.maxX)) == [128, 203])
+        #expect(through.filter { $0.minY >= 50 }.allSatisfy { $0.minX == 95 && $0.maxX == 203 })
+
+        // Each band of a diamond is as wide as the diamond is at that band's widest; the two across its middle are one.
+        let bands = Self.diamond.exclusions(x: 0, y: 0, width: 100, height: 100, left: 0, right: 0, through: false, step: 10)
+        #expect(bands.count == 9)
+        #expect(bands[0] == WrapPolygon.Band(minX: 40, minY: 0, maxX: 60, maxY: 10))
+        #expect(bands[4] == WrapPolygon.Band(minX: 0, minY: 40, maxX: 100, maxY: 60))
+        #expect(bands[8] == WrapPolygon.Band(minX: 40, minY: 90, maxX: 60, maxY: 100))
+    }
+
+    @Test("Text wrapped tight follows the picture's outline line by line")
+    func followsWrapPolygon() throws {
+        let (controller, _) = makeController()
+        controller.textView.selectedRange = NSRange(location: 0, length: 0)
+        controller.insertImage(png(width: 200, height: 100))
+        controller.textView.selectedRange = NSRange(location: 0, length: 1)
+        controller.updateSelectedImage { picture in
+            picture.wrap = .tight
+            picture.alignment = .trailing
+            picture.width = 120
+            picture.height = 120
+            picture.wrapDistances.left = 0
+            picture.wrapPolygon = Self.diamond
+        }
+        let layout = controller.layoutManager
+        let placed = try #require(layout.placedFloats.first)
+        var lines: [CGRect] = []
+        var glyph = 1
+        while glyph < layout.numberOfGlyphs {
+            var range = NSRange()
+            lines.append(layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &range))
+            glyph = max(glyph + 1, NSMaxRange(range))
+        }
+        let beside = lines.filter { $0.minY >= placed.frame.minY - 0.5 && $0.maxY <= placed.frame.maxY + 0.5 }
+        #expect(beside.count >= 4)
+        // The first line runs into the corner the diamond leaves free; the one across its middle stops at its point.
+        let first = try #require(beside.first)
+        let middle = try #require(beside.first { $0.minY <= placed.frame.midY && $0.maxY >= placed.frame.midY })
+        #expect(first.maxX > placed.frame.minX + 20)
+        #expect(middle.maxX <= placed.frame.minX + 0.5)
+        #expect(first.maxX > middle.maxX + 20)
+    }
 }

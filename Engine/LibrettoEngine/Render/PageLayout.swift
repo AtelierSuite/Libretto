@@ -341,7 +341,14 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let top = frame.minY - distance.top
             let height = frame.height + distance.top + distance.bottom
             switch picture.wrap {
-            case .square, .tight:
+            case .tight, .through:
+                // Line by line, clear of where the outline crosses it; Word keeps no distance above and below.
+                let outline = (picture.wrapPolygon ?? .frame).exclusions(
+                    x: frame.minX, y: frame.minY, width: frame.width, height: frame.height,
+                    left: distance.left, right: distance.right, through: picture.wrap == .through
+                )
+                exclusions += outline.map { CGRect(x: $0.minX, y: $0.minY, width: $0.maxX - $0.minX, height: $0.maxY - $0.minY) }
+            case .square:
                 exclusions.append(CGRect(
                     x: frame.minX - distance.left, y: top,
                     width: frame.width + distance.left + distance.right, height: height
