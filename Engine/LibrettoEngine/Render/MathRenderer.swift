@@ -283,8 +283,11 @@ public enum MathRenderer: Sendable {
             let inner = Layout(size: size * 0.9, color: color)
             let numerator = inner.row(element.firstChild(named: "num"))
             let denominator = inner.row(element.firstChild(named: "den"))
-            if type == "lin" || type == "skw" {
+            if type == "lin" {
                 return .row([numerator, text("/"), denominator])
+            }
+            if type == "skw" {
+                return skewed(element)
             }
             let gap = size * 0.18
             let width = max(numerator.width, denominator.width) + size * 0.3
@@ -303,6 +306,28 @@ public enum MathRenderer: Sendable {
         }
 
         /// - Parameter before: whether the scripts come before the base, as in ¹⁴₆C: set flush right against it, as Word does.
+        /// A skewed fraction, as Word draws it: the numerator raised and the denominator lowered, either side of a
+        /// tall slash.
+        private func skewed(_ element: XMLElement) -> Box {
+            let inner = Layout(size: size * 0.8, color: color)
+            let numerator = inner.row(element.firstChild(named: "num"))
+            let denominator = inner.row(element.firstChild(named: "den"))
+            let slash = Layout(size: size * 1.15, color: color).text("/")
+            let raise = axis + size * 0.08 + numerator.descent
+            let lower = max(0, denominator.ascent - axis + size * 0.08)
+            let kern = size * 0.08
+            let width = numerator.width + slash.width + denominator.width - kern * 2
+            let shift = axis - (slash.ascent - slash.descent) / 2
+            return Box(
+                width: width, ascent: max(raise + numerator.ascent, slash.ascent + shift),
+                descent: max(lower + denominator.descent, slash.descent - shift)
+            ) { origin in
+                numerator.draw(CGPoint(x: origin.x, y: origin.y - raise))
+                slash.draw(CGPoint(x: origin.x + numerator.width - kern, y: origin.y - shift))
+                denominator.draw(CGPoint(x: origin.x + numerator.width + slash.width - kern * 2, y: origin.y + lower))
+            }
+        }
+
         private func scripts(base: Box, sub: XMLElement?, sup: XMLElement?, before: Bool = false) -> Box {
             let raised = sup.map { smaller.row($0) }
             let lowered = sub.map { smaller.row($0) }
