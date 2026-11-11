@@ -172,15 +172,20 @@ public enum DrawingObjectReader: Sendable {
 
     // MARK: - Charts
 
+    /// The chart groups Libretto draws, and what each is drawn as.
+    private static let chartKinds: [(String, ChartSpec.Kind)] = [
+        ("barChart", .column), ("bar3DChart", .column), ("lineChart", .line), ("line3DChart", .line),
+        ("areaChart", .area), ("area3DChart", .area), ("pieChart", .pie), ("pie3DChart", .pie),
+        ("doughnutChart", .doughnut), ("scatterChart", .scatter), ("radarChart", .radar),
+        ("bubbleChart", .scatter), ("stockChart", .line), ("ofPieChart", .pie),
+    ]
+
     public static func chart(_ root: XMLElement) -> ChartSpec? {
         guard let plot = descendant("plotArea", in: root) else { return nil }
-        let kinds: [(String, ChartSpec.Kind)] = [
-            ("barChart", .column), ("bar3DChart", .column), ("lineChart", .line), ("line3DChart", .line),
-            ("areaChart", .area), ("pieChart", .pie), ("pie3DChart", .pie), ("doughnutChart", .doughnut),
-            ("scatterChart", .scatter),
-        ]
-        guard let (element, kind) = kinds.lazy.compactMap({ name, kind in plot.firstChild(named: name).map { ($0, kind) } }).first
-        else { return nil }
+        let groups = plot.children.compactMap { element in
+            chartKinds.first { $0.0 == element.name }.map { (element, $0.1) }
+        }
+        guard let (element, kind) = groups.first else { return nil }
         var chart = ChartSpec(kind: kind)
         if kind == .column, element.firstChild(named: "barDir")?.attribute("val") == "bar" { chart.kind = .bar }
         let grouping = element.firstChild(named: "grouping")?.attribute("val") ?? ""
@@ -189,14 +194,41 @@ public enum DrawingObjectReader: Sendable {
             let text = descendants("t", in: title).map(\.text).joined()
             chart.title = text.isEmpty ? nil : text
         }
-        for series in element.children(named: "ser") {
-            let name = series.firstChild(named: "tx").map { descendants("v", in: $0).map(\.text).joined() } ?? ""
-            let values = points(in: series.firstChild(named: "val") ?? series.firstChild(named: "yVal"))
-                .map { Double($0) ?? 0 }
-            let color = series.firstChild(named: "spPr").flatMap { color(in: $0.firstChild(named: "solidFill")) }
-            chart.series.append(ChartSpec.Series(name: name, values: values, colorHex: color))
-            if chart.categories.isEmpty {
-                chart.categories = points(in: series.firstChild(named: "cat") ?? series.firstChild(named: "xVal"))
+        if let legend = descendant("legend", in: root) {
+            let position = legend.firstChild(named: "legendPos")?.attribute("val") ?? "r"
+            chart.legend = ChartSpec.LegendPosition(rawValue: position) ?? .bottom
+        } else {
+            chart.legend = nil
+        }
+        // A combined chart: lines or areas over columns. Groups of round or radar kinds don't combine.
+        let combinable: Set<ChartSpec.Kind> = [.column, .line, .area]
+        for (index, (group, groupKind)) in groups.enumerated() {
+            if index > 0 && (!combinable.contains(chart.kind) || !combinable.contains(groupKind)) {
+                continue
+            }
+            for series in group.children(named: "ser") {
+                let name = series.firstChild(named: "tx").map { descendants("v", in: $0).map(\.text).joined() } ?? ""
+                let values = points(in: series.firstChild(named: "val") ?? series.firstChild(named: "yVal"))
+                    .map { Double($0) ?? 0 }
+                let properties = series.firstChild(named: "spPr")
+                // A line's colour is its line's; a column's or area's, its fill's.
+                let seriesColor = groupKind == .line || groupKind == .radar || groupKind == .scatter
+                    ? properties?.firstChild(named: "ln").flatMap { color(in: $0.firstChild(named: "solidFill")) }
+                        ?? properties.flatMap { color(in: $0.firstChild(named: "solidFill")) }
+                    : properties.flatMap { color(in: $0.firstChild(named: "solidFill")) }
+                var read = ChartSpec.Series(
+                    name: name, values: values, colorHex: seriesColor, kind: index > 0 && groupKind != chart.kind ? groupKind : nil
+                )
+                for point in series.children(named: "dPt") {
+                    guard let index = point.firstChild(named: "idx")?.attribute("val").flatMap({ Int($0) }),
+                          let fill = point.firstChild(named: "spPr").flatMap({ Self.color(in: $0.firstChild(named: "solidFill")) })
+                    else { continue }
+                    read.pointColorsHex[index] = fill
+                }
+                chart.series.append(read)
+                if chart.categories.isEmpty {
+                    chart.categories = points(in: series.firstChild(named: "cat") ?? series.firstChild(named: "xVal"))
+                }
             }
         }
         return chart.series.isEmpty ? nil : chart

@@ -766,19 +766,31 @@ public struct ShapeFrame: Equatable, Hashable, Sendable {
 /// A chart, from the values its chart part caches.
 public struct ChartSpec: Equatable, Hashable, Sendable {
     public enum Kind: String, Sendable {
-        case column, bar, line, area, pie, doughnut, scatter
+        case column, bar, line, area, pie, doughnut, scatter, radar
     }
 
     public struct Series: Equatable, Hashable, Sendable {
         public var name: String
         public var values: [Double]
         public var colorHex: String?
+        /// In a combined chart, how this series is drawn when it differs from the
+        /// chart's own kind: a line or area over columns, say.
+        public var kind: Kind?
+        /// Colours given to points one by one, by index: a pie's slices.
+        public var pointColorsHex: [Int: String] = [:]
 
-        public init(name: String, values: [Double], colorHex: String? = nil) {
+        public init(name: String, values: [Double], colorHex: String? = nil, kind: Kind? = nil, pointColorsHex: [Int: String] = [:]) {
             self.name = name
             self.values = values
             self.colorHex = colorHex
+            self.kind = kind
+            self.pointColorsHex = pointColorsHex
         }
+    }
+
+    /// Where the legend sits: `c:legendPos`'s values.
+    public enum LegendPosition: String, Sendable {
+        case bottom = "b", top = "t", left = "l", right = "r"
     }
 
     public var kind: Kind = .column
@@ -786,19 +798,23 @@ public struct ChartSpec: Equatable, Hashable, Sendable {
     public var categories: [String] = []
     public var series: [Series] = []
     public var isStacked = false
+    /// `nil` for a chart without one.
+    public var legend: LegendPosition? = .bottom
 
     public init(
         kind: Kind = .column,
         title: String? = nil,
         categories: [String] = [],
         series: [Series] = [],
-        isStacked: Bool = false
+        isStacked: Bool = false,
+        legend: LegendPosition? = .bottom
     ) {
         self.kind = kind
         self.title = title
         self.categories = categories
         self.series = series
         self.isStacked = isStacked
+        self.legend = legend
     }
 }
 

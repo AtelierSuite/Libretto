@@ -161,6 +161,11 @@ private struct ChartDrawing {
 
     private let labelFont = PlatformFont.systemFont(ofSize: 8)
 
+    /// How a series is drawn: its own kind in a combined chart, else the chart's.
+    private func kind(of index: Int) -> ChartSpec.Kind {
+        chart.series[index].kind ?? chart.kind
+    }
+
     private func seriesColor(_ index: Int) -> PlatformColor {
         ObjectRenderer.color(chart.series[index].colorHex ?? Self.palette[index % Self.palette.count])
     }
@@ -185,28 +190,108 @@ private struct ChartDrawing {
             area.size.height -= size.height + 6
         }
         let isRound = chart.kind == .pie || chart.kind == .doughnut
-        let legend = isRound ? chart.categories : chart.series.map(\.name)
-        if legend.count > 1 || isRound {
-            drawLegend(legend, in: CGRect(x: area.minX, y: area.maxY - 12, width: area.width, height: 12), round: isRound)
-            area.size.height -= 18
+        let names = isRound ? chart.categories : chart.series.map(\.name)
+        if let position = chart.legend, !names.isEmpty {
+            area = drawLegend(names, at: position, in: area, round: isRound)
         }
-        if isRound {
-            drawPie(in: area)
-        } else {
-            drawAxes(in: area)
+        switch chart.kind {
+        case .pie, .doughnut: drawPie(in: area)
+        case .radar: drawRadar(in: area)
+        default: drawAxes(in: area)
         }
     }
 
-    private func drawLegend(_ names: [String], in rect: CGRect, round: Bool) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: PlatformColor.darkGray]
-        let widths = names.map { ($0 as NSString).size(withAttributes: attributes).width + 16 }
-        var x = rect.midX - widths.reduce(0, +) / 2
-        for (index, name) in names.enumerated() {
-            let color = round ? ObjectRenderer.color(Self.palette[index % Self.palette.count]) : seriesColor(index)
-            color.setFill()
-            PlatformGraphics.fill(CGRect(x: x, y: rect.minY + 2, width: 7, height: 7))
-            (name as NSString).draw(at: CGPoint(x: x + 10, y: rect.minY), withAttributes: attributes)
-            x += widths[index]
+    private var legendAttributes: [NSAttributedString.Key: Any] { [.font: labelFont, .foregroundColor: PlatformColor.darkGray] }
+
+    private func legendColor(_ index: Int, round: Bool) -> PlatformColor {
+        round ? sliceColor(index) : seriesColor(index)
+    }
+
+    /// The legend, in a row above or below the plot or a column beside it; what is left for the plot.
+    private func drawLegend(_ names: [String], at position: ChartSpec.LegendPosition, in area: CGRect, round: Bool) -> CGRect {
+        let widths = names.map { ($0 as NSString).size(withAttributes: legendAttributes).width + 16 }
+        func key(_ index: Int, at point: CGPoint) {
+            legendColor(index, round: round).setFill()
+            PlatformGraphics.fill(CGRect(x: point.x, y: point.y + 2, width: 7, height: 7))
+            (names[index] as NSString).draw(at: CGPoint(x: point.x + 10, y: point.y), withAttributes: legendAttributes)
+        }
+        switch position {
+        case .bottom, .top:
+            let y = position == .bottom ? area.maxY - 12 : area.minY
+            var x = area.midX - widths.reduce(0, +) / 2
+            for index in names.indices {
+                key(index, at: CGPoint(x: x, y: y))
+                x += widths[index]
+            }
+            var rest = area
+            rest.size.height -= 18
+            if position == .top { rest.origin.y += 18 }
+            return rest
+        case .left, .right:
+            let column = min(widths.max() ?? 0, area.width / 3)
+            let x = position == .right ? area.maxX - column : area.minX
+            var y = area.midY - CGFloat(names.count) * 13 / 2
+            for index in names.indices {
+                key(index, at: CGPoint(x: x, y: y))
+                y += 13
+            }
+            var rest = area
+            rest.size.width -= column + 6
+            if position == .left { rest.origin.x += column + 6 }
+            return rest
+        }
+    }
+
+    /// A pie's slice: its own colour, else the palette's.
+    private func sliceColor(_ index: Int) -> PlatformColor {
+        ObjectRenderer.color(chart.series.first?.pointColorsHex[index] ?? Self.palette[index % Self.palette.count])
+    }
+
+    /// A radar chart: a spoke for each category, a ring for each step, and each series a closed line.
+    private func drawRadar(in area: CGRect) {
+        let count = max(chart.categories.count, chart.series.map(\.values.count).max() ?? 0)
+        guard count > 2 else { return }
+        let (top, step) = scale(for: chart.series.flatMap(\.values).max() ?? 0)
+        let center = CGPoint(x: area.midX, y: area.midY + 4)
+        let radius = max(1, min(area.width, area.height) / 2 - 14)
+        func point(_ index: Int, _ fraction: CGFloat) -> CGPoint {
+            let angle = CGFloat(index) / CGFloat(count) * 2 * .pi - .pi / 2
+            return CGPoint(x: center.x + cos(angle) * radius * fraction, y: center.y + sin(angle) * radius * fraction)
+        }
+        PlatformColor(white: 0.85, alpha: 1).setStroke()
+        var value = step
+        while value <= top + step / 2 {
+            let ring = PlatformBezierPath()
+            ring.move(to: point(0, CGFloat(value / top)))
+            (1..<count).forEach { ring.addLine(to: point($0, CGFloat(value / top))) }
+            ring.close()
+            ring.lineWidth = 0.5
+            ring.stroke()
+            value += step
+        }
+        for index in 0..<count {
+            PlatformColor(white: 0.85, alpha: 1).setStroke()
+            let spoke = PlatformBezierPath()
+            spoke.move(to: center)
+            spoke.addLine(to: point(index, 1))
+            spoke.lineWidth = 0.5
+            spoke.stroke()
+            if index < chart.categories.count {
+                let outer = point(index, 1)
+                let below = outer.y >= center.y
+                label(chart.categories[index], at: CGPoint(x: outer.x, y: below ? outer.y + 2 : outer.y - 12))
+            }
+        }
+        for (seriesIndex, series) in chart.series.enumerated() {
+            let path = PlatformBezierPath()
+            for (index, value) in series.values.prefix(count).enumerated() {
+                let location = point(index, CGFloat(max(0, value) / top))
+                if index == 0 { path.move(to: location) } else { path.addLine(to: location) }
+            }
+            path.close()
+            seriesColor(seriesIndex).setStroke()
+            path.lineWidth = 2
+            path.stroke()
         }
     }
 
@@ -223,7 +308,7 @@ private struct ChartDrawing {
             path.move(to: center)
             path.addArc(withCenter: center, radius: radius, startAngle: angle, endAngle: angle + sweep, clockwise: true)
             path.close()
-            ObjectRenderer.color(Self.palette[index % Self.palette.count]).setFill()
+            sliceColor(index).setFill()
             path.fill()
             PlatformColor.white.setStroke()
             path.lineWidth = 1
@@ -289,16 +374,18 @@ private struct ChartDrawing {
             }
         }
         func position(_ value: Double) -> CGFloat { CGFloat(value / top) }
-        switch chart.kind {
-        case .column, .bar:
-            let seriesCount = CGFloat(chart.isStacked ? 1 : chart.series.count)
+        // Columns first, then areas and lines over them, as a combined chart draws them.
+        let columns = chart.series.indices.filter { kind(of: $0) == .column || kind(of: $0) == .bar }
+        if !columns.isEmpty {
+            let seriesCount = CGFloat(chart.isStacked ? 1 : columns.count)
             let barWidth = band * 0.7 / max(1, seriesCount)
             var stacks = Array(repeating: 0.0, count: count)
-            for (seriesIndex, series) in chart.series.enumerated() {
+            for (order, seriesIndex) in columns.enumerated() {
+                let series = chart.series[seriesIndex]
                 seriesColor(seriesIndex).setFill()
                 for (index, value) in series.values.enumerated() where index < count {
                     let base = chart.isStacked ? stacks[index] : 0
-                    let offset = chart.isStacked ? 0 : CGFloat(seriesIndex) * barWidth
+                    let offset = chart.isStacked ? 0 : CGFloat(order) * barWidth
                     let start = band * CGFloat(index) + band * 0.15 + offset
                     let rect = horizontal
                         ? CGRect(x: plot.minX + plot.width * position(base), y: plot.minY + start,
@@ -309,34 +396,34 @@ private struct ChartDrawing {
                     stacks[index] += max(0, value)
                 }
             }
-        case .line, .area, .scatter:
-            for (seriesIndex, series) in chart.series.enumerated() {
-                let points = series.values.enumerated().map { index, value in
-                    CGPoint(x: plot.minX + band * (CGFloat(index) + 0.5), y: plot.maxY - plot.height * position(value))
-                }
-                guard let first = points.first else { continue }
-                let path = PlatformBezierPath()
-                path.move(to: first)
-                points.dropFirst().forEach(path.addLine)
-                let color = seriesColor(seriesIndex)
-                if chart.kind == .area, let last = points.last {
-                    path.addLine(to: CGPoint(x: last.x, y: plot.maxY))
-                    path.addLine(to: CGPoint(x: first.x, y: plot.maxY))
-                    path.close()
-                    color.withAlphaComponent(0.65).setFill()
-                    path.fill()
-                } else if chart.kind == .line {
-                    color.setStroke()
-                    path.lineWidth = 2
-                    path.stroke()
-                }
-                color.setFill()
-                for point in points where chart.kind != .area {
-                    PlatformBezierPath(ovalIn: CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)).fill()
-                }
+        }
+        let others = chart.series.indices.filter { !columns.contains($0) }.sorted { kind(of: $0) == .area && kind(of: $1) != .area }
+        for seriesIndex in others {
+            let series = chart.series[seriesIndex]
+            let kind = kind(of: seriesIndex)
+            let points = series.values.enumerated().map { index, value in
+                CGPoint(x: plot.minX + band * (CGFloat(index) + 0.5), y: plot.maxY - plot.height * position(value))
             }
-        case .pie, .doughnut:
-            break
+            guard let first = points.first else { continue }
+            let path = PlatformBezierPath()
+            path.move(to: first)
+            points.dropFirst().forEach(path.addLine)
+            let color = seriesColor(seriesIndex)
+            if kind == .area, let last = points.last {
+                path.addLine(to: CGPoint(x: last.x, y: plot.maxY))
+                path.addLine(to: CGPoint(x: first.x, y: plot.maxY))
+                path.close()
+                color.withAlphaComponent(0.65).setFill()
+                path.fill()
+            } else if kind == .line {
+                color.setStroke()
+                path.lineWidth = 2
+                path.stroke()
+            }
+            color.setFill()
+            for point in points where kind != .area {
+                PlatformBezierPath(ovalIn: CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)).fill()
+            }
         }
         PlatformColor.gray.setStroke()
         let axis = PlatformBezierPath()
