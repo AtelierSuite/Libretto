@@ -81,15 +81,25 @@ public enum DocumentRenderer: Sendable {
     ) -> [NSAttributedString.Key: Any] {
         var attributes: [NSAttributedString.Key: Any] = [
             .librettoParagraph: ParagraphBox(paragraph),
-            .paragraphStyle: Typography.paragraphStyle(
-                paragraph.properties, context: context, isListItem: label != nil
-            ),
+            .paragraphStyle: paragraphStyle(paragraph, context: context, isListItem: label != nil),
         ]
         if let label { attributes[.librettoListLabel] = label }
         if let dropCap = context.styles.resolvedParagraphProperties(paragraph.properties).dropCap {
             attributes[.librettoDropCap] = DropCapBox(dropCap)
         }
         return attributes
+    }
+
+    /// A paragraph's style; one that holds a display equation (`m:oMathPara`) is set as Word sets it, centred
+    /// unless the equation says otherwise, whatever the paragraph's own alignment.
+    static func paragraphStyle(_ paragraph: Paragraph, context: RenderContext, isListItem: Bool) -> NSParagraphStyle {
+        let style = Typography.paragraphStyle(paragraph.properties, context: context, isListItem: isListItem)
+        guard let alignment = MathRenderer.displayAlignment(of: paragraph.inlines.compactMap {
+            if case .paragraphChild(let xml, _) = $0.content { return xml }
+            return nil
+        }), let adjusted = style.mutableCopy() as? NSMutableParagraphStyle else { return style }
+        adjusted.alignment = alignment
+        return adjusted
     }
 
     /// One paragraph's text. Returns markers that found no character to ride
@@ -337,7 +347,7 @@ public enum DocumentRenderer: Sendable {
         if storage.attribute(.librettoBlock, at: NSMaxRange(range) - 1, effectiveRange: nil) != nil { return }
         let paragraph = paragraphBox(in: storage, paragraphRange: range)?.paragraph ?? finalParagraph
         let label = storage.attribute(.librettoListLabel, at: range.location, effectiveRange: nil) as? ListLabelBox
-        let style = Typography.paragraphStyle(paragraph.properties, context: context, isListItem: label != nil)
+        let style = paragraphStyle(paragraph, context: context, isListItem: label != nil)
         storage.addAttribute(.paragraphStyle, value: style, range: range)
         storage.addAttribute(.librettoParagraph, value: ParagraphBox(paragraph), range: range)
         if let dropCap = context.styles.resolvedParagraphProperties(paragraph.properties).dropCap {
