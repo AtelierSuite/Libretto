@@ -551,6 +551,9 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         case multipleColumns
         /// A floating picture text wraps tightly around or through, drawn as wrapping around its box.
         case tightWrapping
+        /// A shape, chart or SmartArt diagram drawn more simply than Word draws it,
+        /// with no picture of its own to draw instead (see `DrawingObject`).
+        case simplifiedObjects
 
         public var label: String {
             switch self {
@@ -560,6 +563,7 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
             case .embeddedObjects: return String(localized: "Unsupported.EmbeddedObjects", bundle: .engine)
             case .multipleColumns: return String(localized: "Unsupported.MultipleColumns", bundle: .engine)
             case .tightWrapping: return String(localized: "Unsupported.TightWrapping", bundle: .engine)
+            case .simplifiedObjects: return String(localized: "Unsupported.SimplifiedObjects", bundle: .engine)
             }
         }
 
@@ -568,7 +572,7 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         /// here, and the report, once Libretto draws it as they do.
         public var isDrawnDifferently: Bool {
             switch self {
-            case .multipleColumns, .tightWrapping: return true
+            case .multipleColumns, .tightWrapping, .simplifiedObjects: return true
             case .macros, .shapes, .contentControls, .embeddedObjects: return false
             }
         }

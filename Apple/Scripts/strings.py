@@ -16,7 +16,7 @@ ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignmen
           "Error.MissingMainDocument", "Language.Diff", "Language.PlainText", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
           "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
           "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.MultipleColumns", "Unsupported.Shapes",
-          "Unsupported.TightWrapping"]
+          "Unsupported.SimplifiedObjects", "Unsupported.TightWrapping"]
 SHARED = ["Comment.DefaultAuthor"]
 
 S = {
@@ -121,6 +121,7 @@ S = {
  "Unsupported.Macros": ["Macros, which are kept but never run", "マクロ（保持されますが実行されません）", "매크로(유지되지만 실행되지 않음)", "宏（会保留，但绝不运行）", "巨集（會保留，但絕不執行）"],
  "Unsupported.MultipleColumns": ["Text in columns, which is shown in one column", "段組み（1段で表示されます）", "다단 텍스트(한 단으로 표시됨)", "分栏文本（以单栏显示）", "分欄文字（以單欄顯示）"],
  "Unsupported.Shapes": ["Shapes and text boxes", "図形とテキストボックス", "도형 및 텍스트 상자", "形状和文本框", "形狀和文字方塊"],
+ "Unsupported.SimplifiedObjects": ["Shapes, charts or SmartArt with effects, which are drawn more simply, such as gradients, shadows, 3-D or data labels", "グラデーション、影、3-D、データラベルなどの効果を含む図形、グラフ、SmartArt（簡略化して表示されます）", "그라데이션, 그림자, 3차원, 데이터 레이블 등의 효과가 있는 도형, 차트 또는 SmartArt(단순하게 표시됨)", "带有渐变、阴影、三维或数据标签等效果的形状、图表或 SmartArt（以简化方式显示）", "含有漸層、陰影、立體或資料標籤等效果的形狀、圖表或 SmartArt（以簡化方式顯示）"],
  "Unsupported.TightWrapping": ["Tight or through text wrapping, which is shown as square", "「外周」または「内部」の折り返し（「四角」で表示されます）", "빽빽하게 또는 투과 텍스트 줄 바꿈(정사각형으로 표시됨)", "紧密型或穿越型文字环绕（以四周型显示）", "緊密或穿透文字環繞（以矩形顯示）"],
  "ViewMode.Mobile": ["Mobile View", "モバイル表示", "모바일 보기", "移动视图", "行動版顯示"],
  "ViewMode.Page": ["Full Document", "ドキュメント全体", "전체 문서", "完整文稿", "完整文件"],

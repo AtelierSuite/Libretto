@@ -701,6 +701,22 @@ public struct InlineImage: Equatable, Sendable {
     }
 }
 
+/// What Libretto draws of an object, and what it draws as Word does.
+///
+/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
+///   solid fills and lines, and plain text in one size and colour. Gradient,
+///   pattern and picture fills, shadows, glows and other effects, 3-D, dashed
+///   lines and arrowheads, rotation, free-form outlines and text that flows
+///   between linked boxes are drawn more simply.
+/// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
+///   and column, line and area charts combined, from their cached values, with
+///   their title, categories, solid series and slice colours, stacking and a
+///   legend at a side. 3-D, data labels, gradient fills, trend lines, error bars,
+///   secondary axes, legends in a corner or over the plot, and bubble, stock and
+///   bar-of-pie charts (drawn as scatter, line and pie charts) are drawn more simply.
+/// - SmartArt: the shapes Word last laid the diagram out as, as shapes are drawn.
+///
+/// The open notice says when a document has objects drawn more simply (`UnsupportedFeatureReport.Feature.simplifiedObjects`).
 public enum DrawingObject: Equatable, Hashable, Sendable {
     case shape(ShapeSpec)
     case chart(ChartSpec)
@@ -712,6 +728,14 @@ public enum DrawingObject: Equatable, Hashable, Sendable {
 public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// `a:prstGeom`'s `prst`: `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow` and the rest.
     public var geometry = "rect"
+    /// The preset outlines drawn as Word draws them; any other is drawn as a rectangle.
+    public static let drawnGeometries: Set<String> = [
+        "rect", "roundRect", "flowChartAlternateProcess", "wedgeRoundRectCallout", "ellipse", "flowChartConnector",
+        "donut", "cloud", "wedgeEllipseCallout", "triangle", "flowChartExtract", "rtTriangle", "diamond",
+        "flowChartDecision", "parallelogram", "flowChartInputOutput", "trapezoid", "pentagon", "homePlate", "hexagon",
+        "octagon", "chevron", "rightArrow", "leftArrow", "upArrow", "downArrow", "plus", "mathPlus", "star5", "line",
+        "straightConnector1", "bentConnector3", "curvedConnector3", "flowChartProcess",
+    ]
     /// Six-digit RGB, or `nil` for none.
     public var fillHex: String? = "4472C4"
     public var lineHex: String? = "2F528F"

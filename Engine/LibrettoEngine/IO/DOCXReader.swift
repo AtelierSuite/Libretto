@@ -457,6 +457,7 @@ private final class ReadContext {
         )
         image.object = object
         if container.name == "anchor" { placeFloating(&image, from: container) }
+        if DrawingObjectReader.isDrawnSimplified(container, package: drawings) { report.insert(.simplifiedObjects) }
         return image
     }
 

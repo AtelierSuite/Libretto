@@ -112,4 +112,19 @@ struct ChartDrawingTests {
         #expect(chart.series[0].pointColorsHex == [0: "112233", 2: "445566"])
         #expect(document.unsupportedFeatures.drawnDifferentlyFeatures.isEmpty)
     }
+
+    @Test("What a chart has that is drawn more simply is noticed", arguments: [
+        "<c:bar3DChart><c:barDir val=\"col\"/>SERIES</c:bar3DChart>",
+        "<c:barChart><c:barDir val=\"col\"/>SERIES<c:dLbls><c:showVal val=\"1\"/></c:dLbls></c:barChart>",
+        "<c:bubbleChart>SERIES</c:bubbleChart>",
+        "<c:lineChart>SERIES_TREND</c:lineChart>",
+    ])
+    func simplifiedCharts(plot: String) throws {
+        let plot = plot
+            .replacingOccurrences(of: "SERIES_TREND", with: series("A", [1, 2, 3], extra: "<c:trendline><c:trendlineType val=\"linear\"/></c:trendline>"))
+            .replacingOccurrences(of: "SERIES", with: series("A", [1, 2, 3]))
+        let document = try chartDocument(plot)
+        #expect(chart(document) != nil)
+        #expect(document.unsupportedFeatures.drawnDifferentlyFeatures == [.simplifiedObjects])
+    }
 }

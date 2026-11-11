@@ -1226,6 +1226,41 @@
         }
       }
     },
+    "Unsupported.SimplifiedObjects": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shapes, charts or SmartArt with effects, which are drawn more simply, such as gradients, shadows, 3-D or data labels"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グラデーション、影、3-D、データラベルなどの効果を含む図形、グラフ、SmartArt（簡略化して表示されます）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그라데이션, 그림자, 3차원, 데이터 레이블 등의 효과가 있는 도형, 차트 또는 SmartArt(단순하게 표시됨)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "带有渐变、阴影、三维或数据标签等效果的形状、图表或 SmartArt（以简化方式显示）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含有漸層、陰影、立體或資料標籤等效果的形狀、圖表或 SmartArt（以簡化方式顯示）"
+          }
+        }
+      }
+    },
     "Unsupported.TightWrapping": {
       "extractionState": "manual",
       "localizations": {
