@@ -203,6 +203,25 @@ struct ColumnTests {
         #expect(leftIndex == 0)
     }
 
+    @Test("The glyphs in part of a page include every column's lines there, for text views drawing in tiles")
+    func glyphsInPartOfAPage() {
+        let laid = layOut(document(paragraphs(30), columns: 2))
+        let geometry = laid.layout.geometry
+        // A band across the lower half of the first page.
+        let band = CGRect(x: 0, y: geometry.textTop(0) + 400, width: geometry.contentWidth, height: 100)
+        let glyphs = laid.layout.glyphRange(forBoundingRect: band, in: laid.container)
+        var missing = 0
+        laid.layout.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: laid.layout.numberOfGlyphs)) { rect, _, _, range, _ in
+            if rect.intersects(band), NSIntersectionRange(range, glyphs).length < range.length { missing += 1 }
+        }
+        #expect(missing == 0)
+        // Text views ask for everything with a rect of no end.
+        let everything = laid.layout.glyphRange(forBoundingRect: .infinite, in: laid.container)
+        #expect(NSMaxRange(everything) == laid.layout.numberOfGlyphs)
+        let tall = CGRect(x: 0, y: 0, width: 100, height: CGFloat.greatestFiniteMagnitude)
+        #expect(NSMaxRange(laid.layout.glyphRange(forBoundingRect: tall, in: laid.container)) == laid.layout.numberOfGlyphs)
+    }
+
     @Test("A picture in a column fits the column")
     func pictureWidth() throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).pngData { context in

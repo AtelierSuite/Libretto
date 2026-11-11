@@ -941,6 +941,30 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return end - 1
     }
 
+    /// The glyphs in a rect. Lines in columns go back up the page for each
+    /// column, so a rect across part of a page may hold lines far apart in
+    /// the text; pages, though, follow one another, so the rect is widened
+    /// to the whole pages it crosses. Drawing more than the rect is harmless.
+    public override func glyphRange(forBoundingRect bounds: CGRect, in container: NSTextContainer) -> NSRange {
+        super.glyphRange(forBoundingRect: wholePages(bounds), in: container)
+    }
+
+    public override func glyphRange(forBoundingRectWithoutAdditionalLayout bounds: CGRect, in container: NSTextContainer) -> NSRange {
+        super.glyphRange(forBoundingRectWithoutAdditionalLayout: wholePages(bounds), in: container)
+    }
+
+    private func wholePages(_ bounds: CGRect) -> CGRect {
+        // Views ask for everything with rects of no end, which cover whole pages already.
+        let limit = geometry.totalHeight(pages: 100_000)
+        guard hasColumns, !bounds.isNull, !bounds.isEmpty, !bounds.isInfinite,
+              bounds.minY.isFinite, bounds.maxY.isFinite, bounds.minY > -limit, bounds.maxY < limit else { return bounds }
+        let first = geometry.page(containing: bounds.minY)
+        let last = geometry.page(containing: bounds.maxY)
+        let top = min(bounds.minY, geometry.textTop(first))
+        let bottom = max(bounds.maxY, geometry.textBottom(last))
+        return CGRect(x: 0, y: top, width: max(bounds.maxX, geometry.contentWidth), height: bottom - top)
+    }
+
     // MARK: - Comments
 
     public override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
