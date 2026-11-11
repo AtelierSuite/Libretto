@@ -595,6 +595,10 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         func isBreak(_ unit: unichar) -> Bool {
             unit == TextCharacters.pageBreakUnit || unit == TextCharacters.columnBreakUnit
         }
+        let spaced = spaceAsWord(
+            lineFragmentRect, used: lineFragmentUsedRect, baseline: baselineOffset,
+            characters: characters, glyphs: glyphRange, in: textContainer
+        )
         var endsPage = isBreak(string.character(at: last))
             || (last > 0 && string.character(at: last) == TextCharacters.paragraphBreakUnit
                 && isBreak(string.character(at: last - 1)))
@@ -630,14 +634,64 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             default: break
             }
         }
-        guard endsPage else { return false }
+        guard endsPage else { return spaced }
         var rect = lineFragmentRect.pointee
         let page = geometry.page(containing: rect.minY + 0.5)
         let nextPageTop = geometry.textTop(page + (skipsPage ? 2 : 1))
-        guard nextPageTop > rect.maxY else { return false }
+        guard nextPageTop > rect.maxY else { return spaced }
         rect.size.height = nextPageTop - rect.minY
         lineFragmentRect.pointee = rect
         return true
+    }
+
+    // MARK: - Spacing as Word spaces lines
+
+    /// Word's part in how high a line is and where it falls, where TextKit
+    /// would differ; whether it changed anything.
+    ///
+    /// - The space after a paragraph runs off the foot of a page: its last
+    ///   line stays on the page if the line itself fits, where TextKit would
+    ///   move it to the next page for want of room for the space after it.
+    private func spaceAsWord(
+        _ rect: UnsafeMutablePointer<CGRect>, used: UnsafeMutablePointer<CGRect>, baseline: UnsafeMutablePointer<CGFloat>,
+        characters: NSRange, glyphs: NSRange, in container: NSTextContainer
+    ) -> Bool {
+        guard let storage = textStorage, characters.location < storage.length,
+              storage.attribute(.librettoBlock, at: characters.location, effectiveRange: nil) == nil,
+              let style = storage.attribute(.paragraphStyle, at: characters.location, effectiveRange: nil) as? NSParagraphStyle
+        else { return false }
+        let string = storage.string as NSString
+        var changed = false
+        // What TextKit put above the line: the space before, on a paragraph's first.
+        let before = max(0, used.pointee.minY - rect.pointee.minY)
+        let page = geometry.page(containing: rect.pointee.minY + 0.5)
+        let startsPage = page > 0 && abs(rect.pointee.minY - geometry.textTop(page)) < 0.5
+
+        let last = NSMaxRange(characters) - 1
+        if startsPage, style.paragraphSpacing > 0, glyphs.location > 0,
+           string.character(at: last) == TextCharacters.paragraphBreakUnit,
+           let room = roomAtFoot(of: page - 1, beforeGlyph: glyphs.location, in: container) {
+            let needed = before + used.pointee.height
+            var moved = rect.pointee
+            moved.origin.y = room.minY
+            moved.size.height = min(moved.height, room.height)
+            let probe = CGRect(x: moved.minX, y: moved.minY, width: moved.width, height: needed).insetBy(dx: 0.5, dy: 0.5)
+            if needed <= room.height + 0.01, !container.exclusionPaths.contains(where: { $0.bounds.intersects(probe) }) {
+                used.pointee.origin.y -= rect.pointee.minY - moved.minY
+                rect.pointee = moved
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    /// What is left at the foot of page `page`, below the line before glyph
+    /// `glyph`, if that line is on it and ends there without breaking the page.
+    private func roomAtFoot(of page: Int, beforeGlyph glyph: Int, in container: NSTextContainer) -> CGRect? {
+        let previous = lineFragmentRect(forGlyphAt: glyph - 1, effectiveRange: nil)
+        let bottom = geometry.textBottom(page) - (noteHeights[page] ?? 0)
+        guard geometry.page(containing: previous.minY + 0.5) == page, previous.maxY < bottom - 0.5 else { return nil }
+        return CGRect(x: previous.minX, y: previous.maxY, width: previous.width, height: bottom - previous.maxY)
     }
 
     // MARK: - Repeated header rows
