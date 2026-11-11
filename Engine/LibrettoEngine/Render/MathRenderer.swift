@@ -378,11 +378,13 @@ public enum MathRenderer: Sendable {
 
         private func nary(_ element: XMLElement) -> Box {
             let character = property(element, "naryPr", "chr") ?? "\u{222B}"
-            let isIntegral = ["\u{222B}", "\u{222C}", "\u{222D}", "\u{222E}"].contains(character)
+            let isIntegral = ("\u{222B}"..."\u{2233}").contains(character) || character == "\u{2A0C}"
             let underOver = (property(element, "naryPr", "limLoc") ?? (isIntegral ? "subSup" : "undOvr")) == "undOvr"
             let symbol = Layout(size: size * 1.4, color: color).text(character)
-            let lower = element.firstChild(named: "sub").map { smaller.row($0) } ?? .empty
-            let upper = element.firstChild(named: "sup").map { smaller.row($0) } ?? .empty
+            func hidden(_ name: String) -> Bool { MathRenderer.isOn(
+                element.firstChild(named: "naryPr")?.firstChild(named: name).map { $0.attribute("val") ?? "1" }, default: false) }
+            let lower = hidden("subHide") ? .empty : element.firstChild(named: "sub").map { smaller.row($0) } ?? .empty
+            let upper = hidden("supHide") ? .empty : element.firstChild(named: "sup").map { smaller.row($0) } ?? .empty
             let body = row(element.firstChild(named: "e"))
             let operatorBox: Box
             if underOver {
@@ -390,13 +392,15 @@ public enum MathRenderer: Sendable {
             } else {
                 let raise = symbol.ascent * 0.7
                 let drop = symbol.descent + lower.ascent * 0.5
+                // An integral's lower limit tucks in under its slant; any other operator's sits clear of it.
+                let lowerX = isIntegral ? symbol.width * 0.7 : symbol.width + 1
                 operatorBox = Box(
-                    width: symbol.width + max(lower.width, upper.width) + 1,
+                    width: max(symbol.width + 1 + upper.width, lowerX + lower.width),
                     ascent: max(symbol.ascent, raise + upper.ascent), descent: max(symbol.descent, drop + lower.descent)
                 ) { origin in
                     symbol.draw(origin)
                     upper.draw(CGPoint(x: origin.x + symbol.width + 1, y: origin.y - raise))
-                    lower.draw(CGPoint(x: origin.x + symbol.width * 0.7, y: origin.y + drop))
+                    lower.draw(CGPoint(x: origin.x + lowerX, y: origin.y + drop))
                 }
             }
             return .row([operatorBox, .space(size * 0.17), body])
