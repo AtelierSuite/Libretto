@@ -655,6 +655,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// - The space before a paragraph is left out at the top of a page the
     ///   text flowed on to, but kept on the first page, where TextKit would
     ///   leave it out, and after a page or section break.
+    /// - A line of exact height has its baseline four fifths of the way down.
     private func spaceAsWord(
         _ rect: UnsafeMutablePointer<CGRect>, used: UnsafeMutablePointer<CGRect>, baseline: UnsafeMutablePointer<CGFloat>,
         characters: NSRange, glyphs: NSRange, in container: NSTextContainer
@@ -701,6 +702,12 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             rect.pointee.size.height -= before
             used.pointee.origin.y -= before
             baseline.pointee -= before
+            changed = true
+        }
+
+        let exact = style.maximumLineHeight
+        if exact > 0, style.minimumLineHeight == exact, abs(used.pointee.height - exact) < 0.01 {
+            baseline.pointee = used.pointee.minY - rect.pointee.minY + exact * 0.8
             changed = true
         }
         return changed
