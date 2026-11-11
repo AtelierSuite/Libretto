@@ -140,7 +140,19 @@ public enum MathRenderer: Sendable {
                                                          "≡", "→", "←", "⇒", "⇔", "∈", "∉", "⊂", "⊃", "∪", "∩", "·", "∝"]
 
         /// A run's text: letters in italic unless the run says plain, operators spaced out.
-        private func run(_ element: XMLElement, text content: String? = nil) -> Box {
+        private static let signs: Set<Character> = ["+", "−", "-", "±", "∓"]
+        /// What, coming before a sign, makes it a sign of what follows rather than an operator between two things.
+        private static let openings: Set<Character> = ["(", "[", "{", "⟨", ",", ";"]
+
+        /// Whether a sign coming after this text stands for the sign of what follows.
+        private static func leavesSignUnary(_ text: String, before: Bool) -> Bool {
+            guard let last = text.last(where: { !$0.isWhitespace }) else { return before }
+            return operators.contains(last) || openings.contains(last)
+        }
+
+        /// - Parameter unary: whether a sign at its start begins its line or follows an operator, so stands as
+        ///   the sign of what follows (`−b`, `=−1`), set close to it as Word does rather than spaced out.
+        private func run(_ element: XMLElement, text content: String? = nil, unary: Bool = false) -> Box {
             let content = content ?? Self.runText(element)
             let plain = element.firstChild(named: "rPr")?.firstChild(named: "sty")?.attribute("val") == "p"
             var boxes: [Box] = []
@@ -150,13 +162,20 @@ public enum MathRenderer: Sendable {
                 if !pending.isEmpty { boxes.append(text(pending, italic: pendingItalic)) }
                 pending = ""
             }
+            var unary = unary
             for character in content {
                 if Self.operators.contains(character) {
                     flush()
                     let symbol = character == "-" ? "−" : String(character)
-                    boxes += [.space(size * 0.22), text(symbol), .space(size * 0.22)]
+                    if unary && Self.signs.contains(character) {
+                        boxes.append(text(symbol))
+                    } else {
+                        boxes += [.space(size * 0.22), text(symbol), .space(size * 0.22)]
+                    }
+                    unary = true
                     continue
                 }
+                unary = Self.openings.contains(character) || (unary && character.isWhitespace)
                 let italic = !plain && character.isLetter
                 if italic != pendingItalic { flush() }
                 pendingItalic = italic
@@ -171,7 +190,18 @@ public enum MathRenderer: Sendable {
         /// An element's children, side by side, their properties left out.
         public func row(_ element: XMLElement?) -> Box {
             guard let element else { return .empty }
-            return .row(element.children.filter { !$0.name.hasSuffix("Pr") }.map(box))
+            var unary = true
+            var boxes: [Box] = []
+            for child in element.children where !child.name.hasSuffix("Pr") {
+                guard child.name == "r" else {
+                    boxes.append(box(child))
+                    unary = false
+                    continue
+                }
+                boxes.append(run(child, unary: unary))
+                unary = Self.leavesSignUnary(Self.runText(child), before: unary)
+            }
+            return .row(boxes)
         }
 
         private func property(_ element: XMLElement, _ properties: String, _ name: String) -> String? {
@@ -479,7 +509,9 @@ public enum MathRenderer: Sendable {
                 if child.firstChild(named: "rPr")?.firstChild(named: "aln") != nil { pieces.append([]) }
                 for (index, part) in Self.runText(child).split(separator: "&", omittingEmptySubsequences: false).enumerated() {
                     if index > 0 { pieces.append([]) }
-                    if !part.isEmpty { pieces[pieces.count - 1].append(run(child, text: String(part))) }
+                    if !part.isEmpty {
+                        pieces[pieces.count - 1].append(run(child, text: String(part), unary: pieces[pieces.count - 1].isEmpty))
+                    }
                 }
             }
             return pieces.map(Box.row)
