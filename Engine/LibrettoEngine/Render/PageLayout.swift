@@ -631,6 +631,10 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         func isBreak(_ unit: unichar) -> Bool {
             unit == TextCharacters.pageBreakUnit || (unit == TextCharacters.columnBreakUnit && !inColumns)
         }
+        let spaced = spaceAsWord(
+            lineFragmentRect, used: lineFragmentUsedRect, baseline: baselineOffset,
+            characters: characters, glyphs: glyphRange, in: textContainer
+        )
         var endsPage = isBreak(string.character(at: last))
             || (last > 0 && string.character(at: last) == TextCharacters.paragraphBreakUnit
                 && isBreak(string.character(at: last - 1)))
@@ -680,13 +684,108 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             default: break
             }
         }
-        guard endsPage else { return false }
+        guard endsPage else { return spaced }
         var rect = lineFragmentRect.pointee
         let page = geometry.page(containing: rect.minY + 0.5)
         let nextPageTop = geometry.textTop(page + (skipsPage ? 2 : 1))
-        guard nextPageTop > rect.maxY else { return false }
+        guard nextPageTop > rect.maxY else { return spaced }
         rect.size.height = nextPageTop - rect.minY
         lineFragmentRect.pointee = rect
+        return true
+    }
+
+    // MARK: - Spacing as Word spaces lines
+
+    /// Word's part in how high a line is and where it falls, where TextKit
+    /// would differ; whether it changed anything.
+    ///
+    /// - The space after a paragraph runs off the foot of a page: its last
+    ///   line stays on the page if the line itself fits, where TextKit would
+    ///   move it to the next page for want of room for the space after it.
+    /// - The space before a paragraph is left out at the top of a page the
+    ///   text flowed on to, but kept on the first page, where TextKit would
+    ///   leave it out, and after a page or section break.
+    /// - A line of exact height has its baseline four fifths of the way down.
+    private func spaceAsWord(
+        _ rect: UnsafeMutablePointer<CGRect>, used: UnsafeMutablePointer<CGRect>, baseline: UnsafeMutablePointer<CGFloat>,
+        characters: NSRange, glyphs: NSRange, in container: NSTextContainer
+    ) -> Bool {
+        guard let storage = textStorage, characters.location < storage.length,
+              storage.attribute(.librettoBlock, at: characters.location, effectiveRange: nil) == nil,
+              let style = storage.attribute(.paragraphStyle, at: characters.location, effectiveRange: nil) as? NSParagraphStyle
+        else { return false }
+        let string = storage.string as NSString
+        var changed = false
+        if characters.location == 0, style.paragraphSpacingBefore > 0, used.pointee.minY - rect.pointee.minY < 0.01 {
+            // TextKit leaves out the space before the first paragraph; Word keeps it.
+            let before = style.paragraphSpacingBefore
+            rect.pointee.size.height += before
+            used.pointee.origin.y += before
+            baseline.pointee += before
+            changed = true
+        }
+        // What is above the line: the space before, on a paragraph's first.
+        let before = max(0, used.pointee.minY - rect.pointee.minY)
+        let page = geometry.page(containing: rect.pointee.minY + 0.5)
+        var startsPage = page > 0 && abs(rect.pointee.minY - geometry.textTop(page)) < 0.5
+
+        let last = NSMaxRange(characters) - 1
+        if startsPage, style.paragraphSpacing > 0, glyphs.location > 0,
+           string.character(at: last) == TextCharacters.paragraphBreakUnit,
+           let room = roomAtFoot(of: page - 1, beforeGlyph: glyphs.location, in: container) {
+            let needed = before + used.pointee.height
+            var moved = rect.pointee
+            moved.origin.y = room.minY
+            moved.size.height = min(moved.height, room.height)
+            let probe = CGRect(x: moved.minX, y: moved.minY, width: moved.width, height: needed).insetBy(dx: 0.5, dy: 0.5)
+            if needed <= room.height + 0.01, !container.exclusionPaths.contains(where: { $0.bounds.intersects(probe) }) {
+                used.pointee.origin.y -= rect.pointee.minY - moved.minY
+                rect.pointee = moved
+                startsPage = false
+                changed = true
+            }
+        }
+
+        let startsParagraph = characters.location == 0
+            || string.character(at: characters.location - 1) == TextCharacters.paragraphBreakUnit
+        if startsPage, startsParagraph, before > 0, characters.location > 0, flowedOn(to: characters.location) {
+            rect.pointee.size.height -= before
+            used.pointee.origin.y -= before
+            baseline.pointee -= before
+            changed = true
+        }
+
+        let exact = style.maximumLineHeight
+        if exact > 0, style.minimumLineHeight == exact, abs(used.pointee.height - exact) < 0.01 {
+            baseline.pointee = used.pointee.minY - rect.pointee.minY + exact * 0.8
+            changed = true
+        }
+        return changed
+    }
+
+    /// What is left at the foot of page `page`, below the line before glyph
+    /// `glyph`, if that line is on it and ends there without breaking the page.
+    private func roomAtFoot(of page: Int, beforeGlyph glyph: Int, in container: NSTextContainer) -> CGRect? {
+        let previous = lineFragmentRect(forGlyphAt: glyph - 1, effectiveRange: nil)
+        let bottom = geometry.textBottom(page) - (noteHeights[page] ?? 0)
+        guard geometry.page(containing: previous.minY + 0.5) == page, previous.maxY < bottom - 0.5 else { return nil }
+        return CGRect(x: previous.minX, y: previous.maxY, width: previous.width, height: bottom - previous.maxY)
+    }
+
+    /// Whether the paragraph starting at `location` begins its page because
+    /// the text before it ran out of room, rather than at a page or column
+    /// break, a section break that starts a page, or a page break before it.
+    private func flowedOn(to location: Int) -> Bool {
+        guard let storage = textStorage, location > 0 else { return false }
+        let string = storage.string as NSString
+        let mark = location - 1
+        if mark > 0 {
+            let unit = string.character(at: mark - 1)
+            if unit == TextCharacters.pageBreakUnit || unit == TextCharacters.columnBreakUnit { return false }
+        }
+        if let section = sectionStarted(byMarkAt: mark), section.setup.start != .continuous { return false }
+        if let box = storage.attribute(.librettoParagraph, at: location, effectiveRange: nil) as? ParagraphBox,
+           styles.resolvedParagraphProperties(box.paragraph.properties).pageBreakBefore == true { return false }
         return true
     }
 
@@ -755,23 +854,48 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let range = string.paragraphRange(for: NSRange(location: start, length: 0))
         let font = storage.attribute(.font, at: start, effectiveRange: nil) as? PlatformFont ?? .systemFont(ofSize: 11)
         let style = storage.attribute(.paragraphStyle, at: start, effectiveRange: nil) as? NSParagraphStyle
-        let line = font.lineHeight * max(1, style?.lineHeightMultiple ?? 1)
+        let line = Self.lineHeight(font, style)
         let before = style?.paragraphSpacingBefore ?? 0
         // Plenty of room for two lines and then some: nothing more to work out.
         if !keepsWhole, available > before + line * 2.5 { return nil }
+        // The lines alone: the space after the paragraph may run off the page's foot. Its
+        // mark is left out too, as measured it would make an empty line of its own.
         func height(of range: NSRange) -> CGFloat {
-            ceil(storage.attributedSubstring(from: range).boundingRect(
+            var range = range
+            if range.length > 1, string.character(at: NSMaxRange(range) - 1) == TextCharacters.paragraphBreakUnit {
+                range.length -= 1
+            }
+            let text = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
+            text.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                guard let style = value as? NSParagraphStyle, style.paragraphSpacing > 0 || style.paragraphSpacingBefore > 0,
+                      let lines = style.mutableCopy() as? NSMutableParagraphStyle else { return }
+                lines.paragraphSpacing = 0
+                lines.paragraphSpacingBefore = 0
+                text.addAttribute(.paragraphStyle, value: lines, range: range)
+            }
+            return ceil(text.boundingRect(
                 with: CGSize(width: width, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
             ).height)
         }
-        let whole = height(of: range)
+        let whole = before + height(of: range)
         var needed = keepsWhole ? whole : min(whole, before + line * 2)
         if properties.keepNext == true, NSMaxRange(range) < string.length {
-            let following = storage.attribute(.font, at: NSMaxRange(range), effectiveRange: nil) as? PlatformFont ?? font
-            needed += following.lineHeight
+            let next = NSMaxRange(range)
+            let following = storage.attribute(.font, at: next, effectiveRange: nil) as? PlatformFont ?? font
+            let followingStyle = storage.attribute(.paragraphStyle, at: next, effectiveRange: nil) as? NSParagraphStyle
+            needed += (style?.paragraphSpacing ?? 0) + (followingStyle?.paragraphSpacingBefore ?? 0)
+                + Self.lineHeight(following, followingStyle)
         }
         return needed
+    }
+
+    /// How high a line of text in a font is, in a paragraph style.
+    private static func lineHeight(_ font: PlatformFont, _ style: NSParagraphStyle?) -> CGFloat {
+        var line = font.lineHeight * max(1, style?.lineHeightMultiple ?? 1)
+        if let least = style?.minimumLineHeight, least > 0 { line = max(line, least) }
+        if let most = style?.maximumLineHeight, most > 0 { line = min(line, most) }
+        return line
     }
 
     // MARK: - Borders and shading

@@ -13,7 +13,8 @@ mac_path = os.path.join(here, "..", "LibrettoMac", "Support", "Localizable.xcstr
 # iOS app says as well are in both catalogs.
 ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignment.Right",
           "Block.Preserved.Placeholder", "Comment.DefaultAuthor", "Contents.Empty", "Error.MissingBody",
-          "Error.MissingMainDocument", "Language.Diff", "Language.PlainText", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
+          "Error.MissingMainDocument", "Language.Diff", "Language.PlainText", "Notice.MissingFonts.Item",
+          "Notice.MissingFonts.SystemFont", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
           "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
           "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
 SHARED = ["Comment.DefaultAuthor"]
@@ -62,6 +63,9 @@ S = {
  "Mobile.WordCount": ["%lld words", "%lld語", "%lld단어", "%lld 个词", "%lld 個字詞"],
  "Notice.DrawnDifferently.Message": ["Libretto draws some things in this document differently, so it may look different from how it looks in Word or Pages. They’re kept as they are, and saved back with the document.", "この書類の一部はLibrettoでの表示方法が異なるため、WordやPagesでの見た目と異なる場合があります。これらはそのまま保持され、書類と一緒に保存されます。", "이 문서의 일부 요소는 Libretto에서 다르게 표시되므로 Word 또는 Pages에서 보이는 것과 다르게 보일 수 있습니다. 이러한 요소는 그대로 유지되며 문서와 함께 저장됩니다.", "Libretto 对此文稿中的某些内容采用不同的显示方式，因此它看起来可能与在 Word 或 Pages 中不同。这些内容会原样保留，并随文稿一起存储。", "Libretto 對此文件中的某些內容採用不同的顯示方式，因此它看起來可能與在 Word 或 Pages 中不同。這些內容會原樣保留，並隨文件一起儲存。"],
  "Notice.DrawnDifferently.Title": ["It May Look Different", "表示が異なる場合があります", "다르게 보일 수 있음", "可能看起来不同", "可能看起來不同"],
+ "Notice.MissingFonts.Item": ["%1$@, shown in %2$@", "%1$@（%2$@で表示）", "%1$@(%2$@(으)로 표시)", "%1$@（以 %2$@ 显示）", "%1$@（以 %2$@ 顯示）"],
+ "Notice.MissingFonts.Message": ["This document uses fonts that aren’t installed, so Libretto shows its text in other fonts. Lines and pages may break in different places than in Word or Pages. The document keeps its own fonts when it’s saved.", "この書類にはインストールされていないフォントが使われているため、Librettoでは別のフォントで表示しています。行やページの区切り位置がWordやPagesと異なる場合があります。保存しても、書類のフォント指定はそのまま保持されます。", "이 문서에는 설치되지 않은 서체가 사용되어 Libretto에서 다른 서체로 표시합니다. 줄과 페이지가 Word 또는 Pages와 다른 위치에서 나뉠 수 있습니다. 문서를 저장해도 원래 서체 지정은 유지됩니다.", "此文稿使用了未安装的字体，因此 Libretto 以其他字体显示其文本。换行和分页的位置可能与 Word 或 Pages 中不同。存储文稿时会保留其原有字体。", "此文件使用了未安裝的字體，因此 Libretto 以其他字體顯示其文字。換行和分頁的位置可能與 Word 或 Pages 中不同。儲存文件時會保留其原有字體。"],
+ "Notice.MissingFonts.SystemFont": ["the system font", "システムフォント", "시스템 서체", "系统字体", "系統字體"],
  "Notice.UnsupportedFeatures.Message": ["This document uses things Libretto can show but not edit. They’re kept as they are, and saved back with the document. Libretto never runs macros.", "この書類には、Librettoで表示はできても編集できない要素が含まれています。これらはそのまま保持され、書類と一緒に保存されます。Librettoがマクロを実行することはありません。", "이 문서에는 Libretto에서 표시할 수는 있지만 편집할 수 없는 요소가 있습니다. 이러한 요소는 그대로 유지되며 문서와 함께 저장됩니다. Libretto는 매크로를 실행하지 않습니다.", "此文稿包含 Libretto 可以显示但无法编辑的内容。这些内容会原样保留，并随文稿一起存储。Libretto 绝不会运行宏。", "此文件包含 Libretto 可以顯示但無法編輯的內容。這些內容會原樣保留，並隨文件一起儲存。Libretto 絕不會執行巨集。"],
  "Notice.UnsupportedFeatures.Title": ["Some Parts Are Read-Only", "一部は読み取り専用です", "일부는 읽기 전용입니다", "部分内容为只读", "部分內容為唯讀"],
  "PageSetup.Landscape": ["Landscape", "横", "가로", "横向", "橫向"],
@@ -542,7 +546,8 @@ MAC_REUSE = [
    "Highlight.None", "Highlight.blue", "Highlight.cyan", "Highlight.green", "Highlight.lightGray",
    "Highlight.magenta", "Highlight.red", "Highlight.yellow", "Insert.PageBreak", "Insert.Picture", "Insert.Table",
    "InsertTable.Insert", "Link.Address", "Link.Insert", "Link.Remove", "Link.Text", "Link.Update",
-   "Notice.DrawnDifferently.Message", "Notice.DrawnDifferently.Title", "Notice.Imported.Save", "Notice.Pages.Unsaved",
+   "Notice.DrawnDifferently.Message", "Notice.DrawnDifferently.Title", "Notice.Imported.Save", "Notice.MissingFonts.Message",
+   "Notice.Pages.Unsaved",
    "Notice.UnsupportedFeatures.ImportedMessage",
    "Notice.UnsupportedFeatures.Message", "Notice.UnsupportedFeatures.PagesMessage",
    "Notice.UnsupportedFeatures.Title", "PageSetup.Landscape", "PageSetup.Paper.Legal", "PageSetup.Paper.Letter",
