@@ -177,7 +177,9 @@ private final class ReadContext {
                 guard let xml = serialize(element) else { continue }
                 let text = element.children.filter { $0.name != "tblPr" && $0.name != "tblGrid" }
                     .map { HeaderFooterReader.plainText(of: $0) }.filter { !$0.isEmpty }.joined(separator: "\n")
-                blocks.append(.preserved(PreservedBlock(xml: xml, displayText: text, kind: .other, leadingXML: pending)))
+                blocks.append(.preserved(PreservedBlock(
+                    xml: xml, displayText: text, kind: .other, leadingXML: pending, content: [.table(table(from: element))]
+                )))
                 pending = []
             case "sdt":
                 report.insert(.contentControls)
@@ -186,8 +188,9 @@ private final class ReadContext {
                     content.children.map { HeaderFooterReader.plainText(of: $0) }
                         .filter { !$0.isEmpty }.joined(separator: "\n")
                 } ?? ""
+                let content = element.firstChild(named: "sdtContent").map { self.blocks(from: Self.unwrapped($0.children)).blocks }
                 blocks.append(.preserved(PreservedBlock(
-                    xml: xml, displayText: text, kind: .contentControl, leadingXML: pending
+                    xml: xml, displayText: text, kind: .contentControl, leadingXML: pending, content: content ?? []
                 )))
                 pending = []
             case "sectPr":
@@ -486,6 +489,18 @@ private final class ReadContext {
             && rows.allSatisfy { $0.children.allSatisfy { cellLevel.contains($0.name) } }
     }
 
+    /// Elements as they are shown: those inside custom XML and content
+    /// controls in their place, as Word draws them.
+    static func unwrapped(_ elements: [XMLElement]) -> [XMLElement] {
+        elements.flatMap { element -> [XMLElement] in
+            switch element.name {
+            case "customXml": return unwrapped(element.children.filter { $0.name != "customXmlPr" })
+            case "sdt": return unwrapped(element.firstChild(named: "sdtContent")?.children ?? [])
+            default: return [element]
+            }
+        }
+    }
+
     func table(from element: XMLElement) -> Table {
         let tblPr = element.firstChild(named: "tblPr")
         let styleID = tblPr?.firstChild(named: "tblStyle")?.attribute("val")
@@ -493,9 +508,11 @@ private final class ReadContext {
             .map { Int($0.attribute("w") ?? "") ?? 0 } ?? []
         let explicitBorders = tblPr?.firstChild(named: "tblBorders").map(PropertyReader.hasVisibleBorders)
 
-        let rows = element.children(named: "tr").map { row in
+        // An editable table holds only rows of cells; a kept one, read only to be drawn, may hold
+        // them inside content controls.
+        let rows = Self.unwrapped(element.children).filter { $0.name == "tr" }.map { row in
             TableRow(
-                cells: row.children(named: "tc").map(cell),
+                cells: Self.unwrapped(row.children).filter { $0.name == "tc" }.map(cell),
                 exceptionsXML: row.firstChild(named: "tblPrEx").flatMap { serialize($0) },
                 preservedPropertiesXML: row.firstChild(named: "trPr").flatMap { serialize($0) },
                 isHeader: row.firstChild(named: "trPr")?.firstChild(named: "tblHeader") != nil
