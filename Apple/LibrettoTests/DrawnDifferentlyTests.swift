@@ -59,25 +59,25 @@ struct DrawnDifferentlyTests {
         #expect(!document.unsupportedFeatures.features.contains(.multipleColumns))
     }
 
-    @Test("Tight and through wrapping are noticed, square wrapping is not", arguments: [
-        ("<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>", true),
-        ("<wp:wrapThrough wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapThrough>", true),
-        ("<wp:wrapSquare wrapText=\"bothSides\"/>", false),
+    @Test("Tight, through and square wrapping are drawn as Word does, so none is noticed", arguments: [
+        "<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>",
+        "<wp:wrapThrough wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapThrough>",
+        "<wp:wrapSquare wrapText=\"bothSides\"/>",
     ])
-    func wrapping(wrap: String, noticed: Bool) throws {
+    func wrapping(wrap: String) throws {
         let document = try document(body: floatingShape(wrap: wrap))
         let floats = document.allParagraphs.flatMap(\.inlines).contains {
             if case .image(let image) = $0.content { return image.isFloating } else { return false }
         }
         #expect(floats)
-        #expect(document.unsupportedFeatures.features.contains(.tightWrapping) == noticed)
+        #expect(document.unsupportedFeatures.drawnDifferentlyFeatures.isEmpty)
     }
 
     @Test("What is drawn differently is told apart from what is read-only, each in order")
     func split() {
-        let report = UnsupportedFeatureReport(features: [.tightWrapping, .macros, .multipleColumns, .shapes])
+        let report = UnsupportedFeatureReport(features: [.macros, .multipleColumns, .shapes])
         #expect(report.readOnlyFeatures == [.macros, .shapes])
-        #expect(report.drawnDifferentlyFeatures == [.multipleColumns, .tightWrapping])
+        #expect(report.drawnDifferentlyFeatures == [.multipleColumns])
         #expect(!report.isEmpty)
         for feature in UnsupportedFeatureReport.Feature.allCases {
             #expect(!feature.label.hasPrefix("Unsupported."), "\(feature) has no words of its own")

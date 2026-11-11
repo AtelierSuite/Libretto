@@ -439,7 +439,7 @@ private final class ReadContext {
             func fraction(_ name: String) -> Double { (Double(source.attribute(name) ?? "") ?? 0) / 100_000 }
             image.crop = ImageCrop(left: fraction("l"), top: fraction("t"), right: fraction("r"), bottom: fraction("b"))
         }
-        if container.name == "anchor" { placeFloating(&image, from: container) }
+        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
         return image
     }
 
@@ -456,14 +456,8 @@ private final class ReadContext {
             xml: serialize(kept), isFloating: container.name == "anchor"
         )
         image.object = object
-        if container.name == "anchor" { placeFloating(&image, from: container) }
+        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
         return image
-    }
-
-    /// Where a floating drawing sits; tight wrapping is drawn as square, so the report says so.
-    private func placeFloating(_ image: inout InlineImage, from anchor: XMLElement) {
-        DrawingReader.readPlacement(of: anchor, into: &image)
-        if image.wrap.followsOutline { report.insert(.tightWrapping) }
     }
 
     private func firstDescendant(named name: String, in element: XMLElement) -> XMLElement? {
