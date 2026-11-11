@@ -359,9 +359,21 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return (floats, exclusions)
     }
 
+    /// Whether drawing the text draws the floating pictures on its pages too;
+    /// off where they are drawn by `drawFloats(onPage:behindText:at:)`, clear of
+    /// what the text is clipped to.
+    public var drawsFloatsWithText = true
+
+    /// Draws the floating pictures on a page, behind the text or in front of it.
+    public func drawFloats(onPage page: Int, behindText: Bool, at origin: CGPoint) {
+        for placed in placedFloats where placed.behindText == behindText && placed.page == page {
+            placed.image.drawUpright(in: placed.frame.offsetBy(dx: origin.x, dy: origin.y))
+        }
+    }
+
     /// Draws the floating pictures on the pages the glyphs being drawn are on, behind the text or in front of it.
     private func drawFloats(behindText: Bool, forGlyphRange glyphs: NSRange, at origin: CGPoint) {
-        guard !placedFloats.isEmpty, glyphs.length > 0, NSMaxRange(glyphs) <= numberOfGlyphs else { return }
+        guard drawsFloatsWithText, !placedFloats.isEmpty, glyphs.length > 0, NSMaxRange(glyphs) <= numberOfGlyphs else { return }
         let first = geometry.page(containing: lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).midY)
         let last = geometry.page(containing: lineFragmentRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil).midY)
         for placed in placedFloats where placed.behindText == behindText && (first...last).contains(placed.page) {
