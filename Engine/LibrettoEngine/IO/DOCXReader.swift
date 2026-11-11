@@ -927,6 +927,17 @@ public enum PageSetupReader: Sendable {
         if let columns = sectPr.firstChild(named: "cols") {
             setup.columns = max(1, value(columns, "num") ?? 1)
             setup.columnSpacing = value(columns, "space") ?? setup.columnSpacing
+            // Columns of their own widths, each with the space after it.
+            if let equal = columns.attribute("equalWidth"), ["0", "false", "off"].contains(equal) {
+                let sizes = columns.children(named: "col").compactMap { column -> PageSetup.ColumnSize? in
+                    guard let width = value(column, "w") else { return nil }
+                    return PageSetup.ColumnSize(width: width, space: value(column, "space") ?? 0)
+                }
+                if sizes.count > 1 {
+                    setup.columnSizes = sizes
+                    setup.columns = sizes.count
+                }
+            }
         }
         setup.pageNumberFormat = sectPr.firstChild(named: "pgNumType")?.attribute("fmt").flatMap { $0 == "decimal" ? nil : $0 }
         setup.originalHeaderFooters = setup.headerFooters
