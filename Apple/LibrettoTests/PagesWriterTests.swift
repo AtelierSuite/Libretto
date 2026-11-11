@@ -240,6 +240,27 @@ struct PagesSavingTests {
         #expect(PagesWriter.hasUnsavableChanges(picture))
     }
 
+    @Test("Objects placed on the pages stay in the Pages document as they are, and taking one away is told apart")
+    func floatingObjects() throws {
+        let document = try PagesReader.document(from: PagesWriterTests.data("FloatingObjects.pages"))
+        func objects(_ document: WordDocument) -> [InlineImage] {
+            document.allParagraphs.flatMap(\.inlines).compactMap { if case .image(let image) = $0.content { image } else { nil } }
+        }
+        #expect(objects(document).count == 4)
+        #expect(!PagesWriter.hasUnsavableChanges(document))
+        let typed = Self.editing(document, startingWith: "Floating") { $0.inlines.append(Inline(.text(" More."))) }
+        #expect(!PagesWriter.hasUnsavableChanges(typed))
+        let saved = try Self.saved(typed, as: "floating-typed.pages")
+        #expect(objects(saved).map(\.page) == objects(document).map(\.page))
+        #expect(objects(saved).map(\.horizontalOffset) == objects(document).map(\.horizontalOffset))
+        #expect(Self.paragraphs(saved)[0].plainText.hasSuffix(" More."))
+
+        let removed = Self.editing(document, startingWith: "Floating") { paragraph in
+            paragraph.inlines.removeFirst()
+        }
+        #expect(PagesWriter.hasUnsavableChanges(removed))
+    }
+
     @Test("Text aligns with the text it was edited from")
     func alignment() {
         let old = Array("one\ntwo\nthree".utf16).map(Int.init)

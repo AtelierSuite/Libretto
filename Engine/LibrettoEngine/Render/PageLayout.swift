@@ -268,7 +268,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let placed = footnotes.isEmpty && noteHeights.isEmpty ? (byPage: [:], heights: [:]) : placeNotes()
             let caps = placeDropCaps()
             let paged = placeSections(pages: pages)
-            let floating = placeFloats()
+            let floating = placeFloats(pages: pages)
             let balance = balanceColumns()
             notesByPage = placed.byPage
             dropCaps = caps
@@ -317,7 +317,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     private var floatExclusions: [CGRect] = []
 
     /// Each floating picture beside its paragraph, or where on the page it says, and what text keeps clear of.
-    private func placeFloats() -> (floats: [PlacedFloat], exclusions: [CGRect]) {
+    private func placeFloats(pages: Int) -> (floats: [PlacedFloat], exclusions: [CGRect]) {
         guard let storage = textStorage else { return ([], []) }
         let string = storage.string as NSString
         var floats: [PlacedFloat] = []
@@ -329,9 +329,13 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let glyph = glyphIndexForCharacter(at: paragraph.location)
             guard glyph < numberOfGlyphs else { return }
             let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            let page = geometry.page(containing: line.midY)
+            // One fixed to a page is on that page, or the last there is, wherever its paragraph is.
+            let page = picture.page.map { min(max(0, $0), max(0, pages - 1)) } ?? geometry.page(containing: line.midY)
             let shape = geometry.shape(page)
-            let scale = min(1, shape.contentWidth / max(picture.width, 1), shape.contentHeight * 0.9 / max(picture.height, 1))
+            // One placed on the page may be as large as the page; one beside its paragraph, as the text.
+            let isOnPage = picture.isHorizontalFromPage && picture.verticalAnchor == .page
+            let room = isOnPage ? shape.size : CGSize(width: shape.contentWidth, height: shape.contentHeight * 0.9)
+            let scale = min(1, room.width / max(picture.width, 1), room.height / max(picture.height, 1))
             let size = CGSize(width: picture.width * scale, height: picture.height * scale)
             // Across: from the margin, or the page's edge; the container starts at the text's leftmost edge.
             let origin = picture.isHorizontalFromPage ? 0 : shape.margins.left
@@ -358,25 +362,41 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let top = frame.minY - distance.top
             let height = frame.height + distance.top + distance.bottom
             switch picture.wrap {
-            case .tight, .through:
-                // Line by line, clear of where the outline crosses it; Word keeps no distance above and below.
-                let outline = (picture.wrapPolygon ?? .frame).exclusions(
-                    x: frame.minX, y: frame.minY, width: frame.width, height: frame.height,
-                    left: distance.left, right: distance.right, through: picture.wrap == .through
-                )
-                // A sliver too narrow for words is left empty, as Word does, rather than breaking words into it.
-                let textLeft = shape.margins.left - geometry.textLeft
-                let textRight = textLeft + shape.contentWidth
-                exclusions += outline.map { band in
-                    let minX = band.minX - textLeft < Self.narrowestWrap ? -1 : band.minX
-                    let maxX = textRight - band.maxX < Self.narrowestWrap ? geometry.contentWidth + 1 : band.maxX
-                    return CGRect(x: minX, y: band.minY, width: maxX - minX, height: band.maxY - band.minY)
+            case .square, .tight, .through:
+                var bands: [CGRect]
+                if picture.wrap.followsOutline {
+                    // Line by line, clear of where the outline crosses it; Word keeps no distance above and below.
+                    let outline = (picture.wrapPolygon ?? .frame).exclusions(
+                        x: frame.minX, y: frame.minY, width: frame.width, height: frame.height,
+                        left: distance.left, right: distance.right, through: picture.wrap == .through
+                    )
+                    // A sliver too narrow for words is left empty, as Word does, rather than breaking words into it.
+                    let textLeft = shape.margins.left - geometry.textLeft
+                    let textRight = textLeft + shape.contentWidth
+                    bands = outline.map { band in
+                        let minX = band.minX - textLeft < Self.narrowestWrap ? -1 : band.minX
+                        let maxX = textRight - band.maxX < Self.narrowestWrap ? geometry.contentWidth + 1 : band.maxX
+                        return CGRect(x: minX, y: band.minY, width: maxX - minX, height: band.maxY - band.minY)
+                    }
+                } else {
+                    bands = [CGRect(
+                        x: frame.minX - distance.left, y: top,
+                        width: frame.width + distance.left + distance.right, height: height
+                    )]
                 }
-            case .square:
-                exclusions.append(CGRect(
-                    x: frame.minX - distance.left, y: top,
-                    width: frame.width + distance.left + distance.right, height: height
-                ))
+                // Text kept to one side leaves the other side bare, out to the edge of the text.
+                if picture.wrapSide != .both {
+                    let left = frame.minX - distance.left
+                    let right = frame.maxX + distance.right
+                    let keepsLeft = picture.wrapSide == .left
+                        || (picture.wrapSide == .largest && left >= geometry.contentWidth - right)
+                    bands = bands.map { band in
+                        let minX = keepsLeft ? band.minX : min(band.minX, -1)
+                        let maxX = keepsLeft ? max(band.maxX, geometry.contentWidth + 1) : band.maxX
+                        return CGRect(x: minX, y: band.minY, width: maxX - minX, height: band.height)
+                    }
+                }
+                exclusions += bands
             case .topAndBottom:
                 exclusions.append(CGRect(x: -1, y: top, width: geometry.contentWidth + 2, height: height))
             default: break
@@ -385,9 +405,32 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return (floats, exclusions)
     }
 
+    /// Whether drawing the text draws the floating pictures on its pages too;
+    /// off where the pages draw them, from `floatsByPage` or with
+    /// `drawFloats(onPage:behindText:at:)`, clear of what the text is clipped to.
+    public var drawsFloatsWithText = true
+
+    /// The floating pictures on each page, each framed where it is on its page, from the page's top left corner.
+    public var floatsByPage: [Int: [PlacedFloat]] {
+        Dictionary(grouping: placedFloats.map { placed in
+            var onPage = placed
+            onPage.frame = placed.frame.offsetBy(
+                dx: geometry.textLeft, dy: geometry.shape(placed.page).margins.top - geometry.textTop(placed.page)
+            )
+            return onPage
+        }, by: \.page)
+    }
+
+    /// Draws the floating pictures on a page, behind the text or in front of it.
+    public func drawFloats(onPage page: Int, behindText: Bool, at origin: CGPoint) {
+        for placed in placedFloats where placed.behindText == behindText && placed.page == page {
+            placed.image.drawUpright(in: placed.frame.offsetBy(dx: origin.x, dy: origin.y))
+        }
+    }
+
     /// Draws the floating pictures on the pages the glyphs being drawn are on, behind the text or in front of it.
     private func drawFloats(behindText: Bool, forGlyphRange glyphs: NSRange, at origin: CGPoint) {
-        guard !placedFloats.isEmpty, glyphs.length > 0, NSMaxRange(glyphs) <= numberOfGlyphs else { return }
+        guard drawsFloatsWithText, !placedFloats.isEmpty, glyphs.length > 0, NSMaxRange(glyphs) <= numberOfGlyphs else { return }
         let first = geometry.page(containing: lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).midY)
         let last = geometry.page(containing: lineFragmentRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil).midY)
         for placed in placedFloats where placed.behindText == behindText && (first...last).contains(placed.page) {

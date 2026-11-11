@@ -202,6 +202,20 @@ extension NSBezierPath {
 
     public func addLine(to point: CGPoint) { line(to: point) }
 
+    public func addCurve(to point: CGPoint, controlPoint1: CGPoint, controlPoint2: CGPoint) {
+        curve(to: point, controlPoint1: controlPoint1, controlPoint2: controlPoint2)
+    }
+
+    /// A quadratic curve, as the cubic one it is.
+    public func addQuadCurve(to point: CGPoint, controlPoint: CGPoint) {
+        let start = currentPoint
+        curve(
+            to: point,
+            controlPoint1: CGPoint(x: start.x + (controlPoint.x - start.x) * 2 / 3, y: start.y + (controlPoint.y - start.y) * 2 / 3),
+            controlPoint2: CGPoint(x: point.x + (controlPoint.x - point.x) * 2 / 3, y: point.y + (controlPoint.y - point.y) * 2 / 3)
+        )
+    }
+
     /// An arc as UIKit draws one: angles in radians, clockwise as it looks top down.
     public func addArc(withCenter center: CGPoint, radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat, clockwise: Bool) {
         appendArc(

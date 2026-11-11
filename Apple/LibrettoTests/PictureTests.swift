@@ -182,6 +182,93 @@ struct PictureTests {
         #expect(try #require(below).minY >= placed.frame.maxY + 24 - 0.5)
     }
 
+    @Test("Text kept to the larger side of a picture leaves the narrower side bare")
+    func wrapsLargestSide() throws {
+        for side in [WrapSide.both, .largest] {
+            let (controller, latest) = makeController()
+            controller.textView.selectedRange = NSRange(location: 0, length: 0)
+            controller.insertImage(png(width: 200, height: 100))
+            controller.textView.selectedRange = NSRange(location: 0, length: 1)
+            controller.updateSelectedImage { picture in
+                picture.wrap = .square
+                picture.wrapSide = side
+                picture.horizontalOffset = 60
+                picture.width = 100
+                picture.height = 50
+            }
+            let layout = controller.layoutManager
+            let placed = try #require(layout.placedFloats.first)
+            let firstLine = layout.lineFragmentRect(forGlyphAt: 1, effectiveRange: nil)
+            if side == .largest {
+                #expect(firstLine.minX >= placed.frame.maxX)
+                let xml = Fixtures.text(try Fixtures.written(try #require(latest())), "word/document.xml")
+                #expect(xml.contains("<wp:wrapSquare wrapText=\"largest\"/>"))
+            } else {
+                #expect(firstLine.maxX <= placed.frame.minX)
+            }
+        }
+    }
+
+    @Test("Word's wrapText says which side text keeps to")
+    func readsWrapSide() throws {
+        var image = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"largest\"/>"), into: &image)
+        #expect(image.wrapSide == .largest)
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapTight wrapText=\"left\"/>"), into: &image)
+        #expect(image.wrapSide == .left)
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"), into: &image)
+        #expect(image.wrapSide == .both)
+    }
+
+    @Test("A shape draws its own outline and its text in the text's formatting, until the text is edited")
+    func shapeOutlineAndText() throws {
+        let outline = ShapeOutline(width: 10, height: 10, elements: [
+            .move(ShapePoint(x: 5, y: 0)), .line(ShapePoint(x: 10, y: 10)), .line(ShapePoint(x: 0, y: 10)), .close,
+        ])
+        var bold = RunStyle()
+        bold.isBold = true
+        bold.fontSize = 40
+        bold.colorHex = "FF0000"
+        var shape = ShapeSpec(fillHex: "00FF00", lineHex: nil, lineWidth: 0, text: "Big\nsmall", isTextBox: true,
+                              paragraphs: [ShapeParagraph(runs: [ShapeRun(text: "Big", style: bold)], alignment: .center),
+                                           ShapeParagraph(runs: [ShapeRun(text: "small")])], outline: outline)
+        let path = ObjectRenderer.path(outline, in: CGRect(x: 0, y: 0, width: 100, height: 50))
+        #expect(path.contains(CGPoint(x: 50, y: 40)))
+        #expect(!path.contains(CGPoint(x: 5, y: 5)))
+
+        let text = ObjectRenderer.formattedText(try #require(shape.formattedParagraphs), color: .black, centred: false)
+        #expect(text.string == "Big\nsmall")
+        #expect((text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize == 20)
+        #expect((text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.alignment == .center)
+
+        let xml = DrawingWriter.shapeGraphic(shape)
+        #expect(xml.contains("<a:custGeom>"))
+        #expect(xml.contains("<a:moveTo><a:pt x=\"63500\" y=\"0\"/></a:moveTo>"))
+        #expect(xml.contains("<w:jc w:val=\"center\"/>"))
+        #expect(xml.contains("<w:b/>"))
+        #expect(xml.contains("<w:color w:val=\"FF0000\"/>"))
+
+        shape.text = "Edited"
+        #expect(shape.formattedParagraphs == nil)
+    }
+
+    @Test("Objects placed on the pages of a Pages document sit on their own pages, as large as placed")
+    func pagesObjectsOnTheirPages() throws {
+        let document = try PagesReader.document(from: PagesWriterTests.data("FloatingObjects.pages"))
+        let controller = DocumentTextController(document: document, scheme: .light)
+        let layout = controller.layoutManager
+        let geometry = controller.geometry
+        let placed = layout.placedFloats.sorted { ($0.page, $0.frame.minY) < ($1.page, $1.frame.minY) }
+        #expect(placed.map(\.page) == [0, 0, 0, 1])
+        // Where Pages put them on the page, measured from its corner.
+        for (float, (x, y)) in zip(placed, [(380.0, 120.0), (72, 330), (360, 420), (300, 100)]) {
+            let pageTop = geometry.textTop(float.page) - geometry.shape(float.page).margins.top
+            #expect(abs(float.frame.minX + geometry.textLeft - x) < 0.5)
+            #expect(abs(float.frame.minY - pageTop - y) < 0.5)
+        }
+        #expect(placed.first?.frame.size == CGSize(width: 140, height: 100))
+    }
+
     private static let diamond = WrapPolygon(points: [
         .init(x: 0.5, y: 0), .init(x: 1, y: 0.5), .init(x: 0.5, y: 1), .init(x: 0, y: 0.5), .init(x: 0.5, y: 0),
     ])

@@ -86,6 +86,24 @@ public struct WordDocument: Equatable, Sendable {
         body.flatMap(\.paragraphs)
     }
 
+    /// Whether the document is laid out on its pages rather than flowing: no
+    /// text of its own, only objects fixed to its pages, as a Pages page
+    /// layout document is.
+    public var isLaidOutOnPages: Bool {
+        var placed = false
+        for block in body {
+            guard case .paragraph(let paragraph) = block else { continue }
+            for inline in paragraph.inlines {
+                switch inline.content {
+                case .image(let image) where image.page != nil: placed = true
+                case .pageBreak: continue
+                default: return false
+                }
+            }
+        }
+        return placed
+    }
+
     /// The document's words, for the word count.
     public var wordCount: Int {
         allParagraphs.reduce(0) { total, paragraph in
@@ -666,6 +684,11 @@ public struct InlineImage: Equatable, Sendable {
     public var verticalAnchor: VerticalAnchor = .paragraph
     /// How far text keeps from a floating picture that it wraps around.
     public var wrapDistances = WrapDistances()
+    /// Which sides of a picture wrapped square or tight text runs down.
+    public var wrapSide: WrapSide = .both
+    /// The page a floating picture is fixed to, counted from 0, whichever
+    /// paragraph holds it: where Pages keeps an object that stays on its page.
+    public var page: Int?
     /// The outline text keeps to when it wraps tight or through; `nil` for the picture's frame.
     public var wrapPolygon: WrapPolygon?
 
@@ -697,7 +720,8 @@ public struct InlineImage: Equatable, Sendable {
         wrapPolygon: WrapPolygon? = nil,
         crop: ImageCrop = ImageCrop(),
         isEdited: Bool = false,
-        object: DrawingObject? = nil
+        object: DrawingObject? = nil,
+        page: Int? = nil
     ) {
         self.relationshipID = relationshipID
         self.width = width
@@ -715,6 +739,7 @@ public struct InlineImage: Equatable, Sendable {
         self.crop = crop
         self.isEdited = isEdited
         self.object = object
+        self.page = page
     }
 }
 
@@ -743,6 +768,17 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var frame: ShapeFrame?
     /// The text as read, to tell whether it has been edited.
     public var originalText: String?
+    /// The text's paragraphs in their own formatting, as read, drawn while
+    /// the text is as it was.
+    public var paragraphs: [ShapeParagraph]?
+    /// An outline of its own, drawn in place of the preset geometry's.
+    public var outline: ShapeOutline?
+
+    /// The formatted paragraphs, while they still say what the text does.
+    public var formattedParagraphs: [ShapeParagraph]? {
+        guard let paragraphs, paragraphs.map(\.text).joined(separator: "\n") == text else { return nil }
+        return paragraphs
+    }
 
     public init(
         geometry: String = "rect",
@@ -754,7 +790,9 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
         fontSize: Double? = nil,
         isTextBox: Bool = false,
         frame: ShapeFrame? = nil,
-        originalText: String? = nil
+        originalText: String? = nil,
+        paragraphs: [ShapeParagraph]? = nil,
+        outline: ShapeOutline? = nil
     ) {
         self.geometry = geometry
         self.fillHex = fillHex
@@ -766,6 +804,72 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
         self.isTextBox = isTextBox
         self.frame = frame
         self.originalText = originalText
+        self.paragraphs = paragraphs
+        self.outline = outline
+    }
+}
+
+/// A paragraph of a shape's text, in its own formatting.
+public struct ShapeParagraph: Equatable, Hashable, Sendable {
+    public var runs: [ShapeRun]
+    public var alignment: ParagraphAlignment?
+    /// Points.
+    public var spaceBefore: Double
+    public var spaceAfter: Double
+    /// How many lines each line takes, if not one.
+    public var lineHeightMultiple: Double?
+
+    public var text: String { runs.map(\.text).joined() }
+
+    public init(
+        runs: [ShapeRun], alignment: ParagraphAlignment? = nil, spaceBefore: Double = 0, spaceAfter: Double = 0,
+        lineHeightMultiple: Double? = nil
+    ) {
+        self.runs = runs
+        self.alignment = alignment
+        self.spaceBefore = spaceBefore
+        self.spaceAfter = spaceAfter
+        self.lineHeightMultiple = lineHeightMultiple
+    }
+}
+
+public struct ShapeRun: Equatable, Hashable, Sendable {
+    public var text: String
+    public var style: RunStyle
+
+    public init(text: String, style: RunStyle = RunStyle()) {
+        self.text = text
+        self.style = style
+    }
+}
+
+/// A shape's outline as a path, drawn scaled from the size it was drawn at to the shape's.
+public struct ShapeOutline: Equatable, Hashable, Sendable {
+    public enum Element: Equatable, Hashable, Sendable {
+        case move(ShapePoint)
+        case line(ShapePoint)
+        case quadCurve(ShapePoint, control: ShapePoint)
+        case curve(ShapePoint, control1: ShapePoint, control2: ShapePoint)
+        case close
+    }
+
+    public var width: Double
+    public var height: Double
+    public var elements: [Element]
+
+    public init(width: Double, height: Double, elements: [Element]) {
+        self.width = width
+        self.height = height
+        self.elements = elements
+    }
+}
+
+public struct ShapePoint: Equatable, Hashable, Sendable {
+    public var x, y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
     }
 }
 
@@ -828,6 +932,13 @@ public enum ImageWrap: String, CaseIterable, Sendable {
     /// Whether text keeps to the picture's wrap polygon rather than its frame:
     /// tight wrapping goes around its outline, through wrapping into its open parts too.
     public var followsOutline: Bool { self == .tight || self == .through }
+}
+
+/// Which sides of a floating picture text runs down: `wrapText`.
+public enum WrapSide: String, Sendable {
+    case both = "bothSides", left, right
+    /// Only the side with more room.
+    case largest
 }
 
 /// How far text keeps from each side of a floating picture, in points:

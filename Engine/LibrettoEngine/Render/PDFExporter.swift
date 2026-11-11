@@ -35,6 +35,8 @@ public final class PrintedPages {
             SyntaxHighlighter.apply(language, to: storage, scheme: .light, plainColor: context.defaultTextColor)
         }
         layoutManager = PageLayoutManager(geometry: PageGeometry(setup: document.pageSetup, gap: 0))
+        // A page's floating pictures may sit in its margins, or cover it, past what its text is clipped to.
+        layoutManager.drawsFloatsWithText = false
         layoutManager.styles = document.styles
         layoutManager.footnotes = NoteLayout.notes(in: storage, document: document, context: context)
         layoutManager.sections = SectionLayout.spans(in: storage, final: document.pageSetup)
@@ -60,6 +62,7 @@ public final class PrintedPages {
         let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: container)
         let origin = CGPoint(x: geometry.textLeft, y: shape.margins.top - top)
 
+        layoutManager.drawFloats(onPage: page, behindText: true, at: origin)
         graphics.saveGState()
         graphics.clip(to: CGRect(
             x: shape.margins.left - 40, y: shape.margins.top - 2,
@@ -68,6 +71,7 @@ public final class PrintedPages {
         layoutManager.drawBackground(forGlyphRange: glyphs, at: origin)
         layoutManager.drawGlyphs(forGlyphRange: glyphs, at: origin)
         graphics.restoreGState()
+        layoutManager.drawFloats(onPage: page, behindText: false, at: origin)
 
         HeaderFooterDrawing.draw(texts, page: page, of: count, shape: shape, color: .darkGray)
         if let notes = layoutManager.notesByPage[page], let height = layoutManager.noteHeights[page] {

@@ -56,6 +56,8 @@ final class PageEditor: NSObject, NSTextViewDelegate {
         baseGeometry = PageGeometry(setup: document.pageSetup, gap: PageCanvasView.pageGap)
         context = RenderContext(document: document, scheme: scheme, images: images)
         layoutManager = PageLayoutManager(geometry: baseGeometry)
+        // The pages draw the floating pictures, all of each, wherever the text view redraws.
+        layoutManager.drawsFloatsWithText = false
         layoutManager.outlinesKeptBlocks = true
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
@@ -110,7 +112,8 @@ final class PageEditor: NSObject, NSTextViewDelegate {
             texts: WordDocumentHeaderFooter(
                 document: document, sections: layoutManager.sections.map(\.setup), pageSections: layoutManager.pageSections
             ),
-            notes: PageNotes(byPage: layoutManager.notesByPage, heights: layoutManager.noteHeights)
+            notes: PageNotes(byPage: layoutManager.notesByPage, heights: layoutManager.noteHeights),
+            floats: layoutManager.floatsByPage
         )
     }
 

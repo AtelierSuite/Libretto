@@ -330,10 +330,10 @@ public enum DrawingWriter: Sendable {
         let polygon = Self.polygon(image.wrapPolygon ?? .frame)
         let wrap: String
         switch image.wrap {
-        case .square: wrap = "<wp:wrapSquare wrapText=\"bothSides\"/>"
+        case .square: wrap = "<wp:wrapSquare wrapText=\"\(image.wrapSide.rawValue)\"/>"
         case .tight, .through:
             let element = image.wrap == .tight ? "wp:wrapTight" : "wp:wrapThrough"
-            wrap = "<\(element) wrapText=\"bothSides\">\(polygon)</\(element)>"
+            wrap = "<\(element) wrapText=\"\(image.wrapSide.rawValue)\">\(polygon)</\(element)>"
         case .topAndBottom: wrap = "<wp:wrapTopAndBottom/>"
         default: wrap = "<wp:wrapNone/>"
         }
@@ -369,14 +369,60 @@ public enum DrawingWriter: Sendable {
         return """
             <a:graphic><a:graphicData uri="\(DrawingObjectReader.shapeURI)"><wps:wsp>\
             <wps:cNvSpPr\(shape.isTextBox ? " txBox=\"1\"" : "")/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm>\
-            <a:prstGeom prst="\(XMLLite.escape(shape.geometry))"><a:avLst/></a:prstGeom>\(fill)\(line)</wps:spPr>\(text)\
+            \(geometry(shape))\(fill)\(line)</wps:spPr>\(text)\
             <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" \
             anchor="\(shape.isTextBox ? "t" : "ctr")"><a:noAutofit/></wps:bodyPr></wps:wsp></a:graphicData></a:graphic>
             """
     }
 
+    /// A shape's outline: its own path, or a preset's.
+    private static func geometry(_ shape: ShapeSpec) -> String {
+        guard let outline = shape.outline else {
+            return "<a:prstGeom prst=\"\(XMLLite.escape(shape.geometry))\"><a:avLst/></a:prstGeom>"
+        }
+        func emu(_ value: Double) -> Int { Int((value * 12_700).rounded()) }
+        func point(_ point: ShapePoint) -> String { "<a:pt x=\"\(emu(point.x))\" y=\"\(emu(point.y))\"/>" }
+        let path = outline.elements.map { element in
+            switch element {
+            case .move(let to): "<a:moveTo>\(point(to))</a:moveTo>"
+            case .line(let to): "<a:lnTo>\(point(to))</a:lnTo>"
+            case .quadCurve(let to, let control): "<a:quadBezTo>\(point(control))\(point(to))</a:quadBezTo>"
+            case .curve(let to, let control1, let control2): "<a:cubicBezTo>\(point(control1))\(point(control2))\(point(to))</a:cubicBezTo>"
+            case .close: "<a:close/>"
+            }
+        }.joined()
+        return "<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l=\"0\" t=\"0\" r=\"r\" b=\"b\"/><a:pathLst>"
+            + "<a:path w=\"\(emu(outline.width))\" h=\"\(emu(outline.height))\">\(path)</a:path></a:pathLst></a:custGeom>"
+    }
+
     /// A shape's text as the paragraphs of its text box.
     private static func textParagraphs(_ shape: ShapeSpec, pPr: String?, rPr: String?) -> String {
+        if pPr == nil, rPr == nil, let paragraphs = shape.formattedParagraphs {
+            // Text read with its own formatting keeps it.
+            return paragraphs.map { paragraph in
+                var properties = ""
+                if paragraph.spaceBefore != 0 || paragraph.spaceAfter != 0 || paragraph.lineHeightMultiple != nil {
+                    properties += "<w:spacing w:before=\"\(Int((paragraph.spaceBefore * 20).rounded()))\" "
+                        + "w:after=\"\(Int((paragraph.spaceAfter * 20).rounded()))\""
+                    if let multiple = paragraph.lineHeightMultiple {
+                        properties += " w:line=\"\(Int((multiple * 240).rounded()))\" w:lineRule=\"auto\""
+                    }
+                    properties += "/>"
+                }
+                if let alignment = paragraph.alignment ?? (shape.isTextBox ? nil : .center) {
+                    properties += "<w:jc w:val=\"\(alignment.rawValue)\"/>"
+                }
+                let runs = paragraph.runs.map { run in
+                    let pieces = run.text.replacingOccurrences(of: "\u{2028}", with: "\n").components(separatedBy: "\n").map { line in
+                        line.components(separatedBy: "\t").map { "<w:t xml:space=\"preserve\">\(XMLLite.escape($0))</w:t>" }
+                            .joined(separator: "<w:tab/>")
+                    }
+                    let format = DOCXPatcher.runPropertiesXML(for: RunFormat(style: run.style)) ?? ""
+                    return "<w:r>\(format)\(pieces.joined(separator: "<w:br/>"))</w:r>"
+                }.joined()
+                return "<w:p>\(properties.isEmpty ? "" : "<w:pPr>\(properties)</w:pPr>")\(runs)</w:p>"
+            }.joined()
+        }
         let color = shape.textColorHex ?? (shape.isTextBox || shape.fillHex == nil ? nil : "FFFFFF")
         let runProperties = rPr ?? color.map { "<w:rPr><w:color w:val=\"\($0)\"/></w:rPr>" } ?? ""
         let paragraphProperties = pPr ?? (shape.isTextBox ? "" : "<w:pPr><w:jc w:val=\"center\"/></w:pPr>")

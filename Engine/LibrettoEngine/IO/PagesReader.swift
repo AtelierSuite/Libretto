@@ -12,10 +12,10 @@ import UniformTypeIdentifiers
 /// to save edits back into it.
 ///
 /// The body text comes across with its paragraph and character formatting,
-/// lists, links, inline pictures, tables, footnotes, and the page's size,
-/// margins, headers and footers. A page layout document's text boxes and
-/// pictures are read in page order; objects placed on the pages of a
-/// word-processing document are left out.
+/// lists, links, inline pictures, shapes and tables, footnotes, and the
+/// page's size, margins, headers and footers. Pictures, shapes and text boxes
+/// placed on a page float where they sit on it, in a page layout document
+/// and a word-processing one alike.
 ///
 /// Documents from Pages '09 and before, which are XML, are read by `Pages09Reader`.
 public enum PagesReader: Sendable {
@@ -512,10 +512,24 @@ public struct PagesConverter {
                 // next: its pages are what is placed on them.
                 sectionBreaks = []
                 isPageLayout = true
-                blocks = floatingBlocks(floating)
+                blocks = pageLayoutBlocks(floating)
             } else {
-                // Objects placed on a page of a word-processing document have no place in its text.
-                document.unsupportedFeatures.insert(.shapes)
+                // Objects placed on a page of a word-processing document stay on their page, so the
+                // body's first paragraph holds them, each fixed to its page.
+                let objects = floating.flatMap { page in
+                    page.messages(4).flatMap { floatingObjects($0.reference(1), page: Int(clamping: page.uint(1))) }
+                }
+                if !objects.isEmpty {
+                    let first = blocks.firstIndex { if case .paragraph = $0 { true } else { false } }
+                    if let first, case .paragraph(var paragraph) = blocks[first] {
+                        paragraph.inlines.insert(contentsOf: objects.map { Inline(.image($0)) }, at: 0)
+                        blocks[first] = .paragraph(paragraph)
+                    } else {
+                        let paragraph = Paragraph(inlines: objects.map { Inline(.image($0)) })
+                        body.additions.insert(paragraph.id)
+                        blocks.insert(.paragraph(paragraph), at: 0)
+                    }
+                }
             }
         }
         // A table cannot end the document; Word wants a paragraph after it.
@@ -530,11 +544,14 @@ public struct PagesConverter {
         return document
     }
 
-    /// What is placed on the pages, page by page, read down each page and
-    /// across: text boxes' and shapes' text as paragraphs, pictures and
-    /// tables as they are, and a page break between pages.
-    private mutating func floatingBlocks(_ pages: [ProtoMessage]) -> [Block] {
+    /// What is placed on the pages, page by page: a paragraph for each page
+    /// holding its objects, each where Pages places it on that page, with
+    /// the page's background behind them, its tables after it, and a page
+    /// break between pages.
+    private mutating func pageLayoutBlocks(_ pages: [ProtoMessage]) -> [Block] {
         var blocks: [Block] = []
+        let background = archive.objects(ofType: PagesReader.Types.section).first?.object.message.message(30)
+            .flatMap { Self.fillHex($0) }
         for (index, page) in pages.sorted(by: { $0.uint(1) < $1.uint(1) }).enumerated() {
             if index > 0 {
                 if case .paragraph(var last) = blocks.last {
@@ -544,49 +561,302 @@ public struct PagesConverter {
                     blocks.append(.paragraph(Paragraph(inlines: [Inline(.pageBreak)])))
                 }
             }
-            let objects = page.messages(4).compactMap { entry -> (object: IWorkArchive.Object, x: Double, y: Double)? in
-                guard let object = archive[entry.reference(1)] else { return nil }
-                let position = Self.geometry(of: object)?.message(1)
-                return (object, position?.float(1) ?? 0, position?.float(2) ?? 0)
+            var objects: [InlineImage] = []
+            if let background {
+                let size = pageSize
+                objects.append(InlineImage(
+                    relationshipID: "", width: size.width, height: size.height, isFloating: true, wrap: .behindText,
+                    isHorizontalFromPage: true, verticalAnchor: .page, wrapDistances: WrapDistances(left: 0, right: 0),
+                    object: .shape(ShapeSpec(geometry: "rect", fillHex: background, lineHex: nil, lineWidth: 0)), page: index
+                ))
             }
-            for item in objects.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
-                switch item.object.type {
-                case PagesReader.Types.shapeInfo:
-                    guard let text = archive[item.object.message.reference(2)], text.type == PagesReader.Types.storage
-                    else { continue }
-                    let content = self.blocks(from: text.message)
-                    if content.allSatisfy(Self.isBlank) {
-                        // A shape with no text is a drawing Libretto cannot bring across.
-                        document.unsupportedFeatures.insert(.shapes)
-                    } else {
-                        blocks += content
-                    }
-                case PagesReader.Types.image:
-                    if let image = image(item.object.message) {
-                        blocks.append(.paragraph(Paragraph(inlines: [Inline(.image(image))])))
-                    }
-                case PagesReader.Types.tableInfo:
-                    if let table = table(item.object.message) { blocks.append(.table(table)) }
-                default:
-                    document.unsupportedFeatures.insert(.shapes)
+            var tables: [Table] = []
+            // Read in the order Pages stacks them, back to front.
+            for entry in page.messages(4) {
+                if let object = archive[entry.reference(1)], object.type == PagesReader.Types.tableInfo {
+                    if let table = table(object.message) { tables.append(table) }
+                    continue
+                }
+                // Nothing on the page has text around it to wrap.
+                objects += floatingObjects(entry.reference(1), page: index).map {
+                    var object = $0
+                    object.wrap = .inFrontOfText
+                    return object
                 }
             }
+            blocks.append(.paragraph(Paragraph(inlines: objects.map { Inline(.image($0)) })))
+            blocks += tables.map { .table($0) }
         }
         return blocks
+    }
+
+    /// The page's size, in points.
+    private var pageSize: (width: Double, height: Double) {
+        (Double(document.pageSetup.width) / 20, Double(document.pageSetup.height) / 20)
+    }
+
+    // MARK: Drawables
+
+    /// A drawable placed on a page, as floating objects fixed to the page,
+    /// where it sits on it and wrapped as Pages wraps it: a picture, or a
+    /// shape or text box drawn with its text. What Libretto cannot draw,
+    /// such as tables, charts and groups, is noted as left out.
+    private mutating func floatingObjects(_ identifier: UInt64?, page: Int) -> [InlineImage] {
+        guard let object = archive[identifier] else { return [] }
+        var placed: InlineImage
+        switch object.type {
+        case PagesReader.Types.shapeInfo:
+            guard let shape = shape(object.message) else { return [] }
+            placed = shape
+        case PagesReader.Types.image:
+            guard let image = image(object.message) else {
+                document.unsupportedFeatures.insert(.shapes)
+                return []
+            }
+            placed = image
+        default:
+            document.unsupportedFeatures.insert(.shapes)
+            return []
+        }
+        let drawable = Self.drawable(of: object)
+        let geometry = drawable?.message(1)
+        placed.isFloating = true
+        placed.isHorizontalFromPage = true
+        placed.verticalAnchor = .page
+        placed.horizontalOffset = geometry?.message(1)?.float(1) ?? 0
+        placed.verticalOffset = geometry?.message(1)?.float(2) ?? 0
+        placed.page = page
+        (placed.wrap, placed.wrapSide, placed.wrapDistances) = Self.wrap(drawable?.message(3))
+        if object.type == PagesReader.Types.image { mask(&placed, by: object.message) }
+        return [placed]
+    }
+
+    /// How text goes around a drawable, from its `TSD.ExteriorTextWrapArchive`:
+    /// above and below it, or not at all; Automatic, down the side with more
+    /// room; any other wrap, Around, down both. Text keeps the wrap's margin
+    /// from it on every side.
+    private static func wrap(_ wrap: ProtoMessage?) -> (ImageWrap, WrapSide, WrapDistances) {
+        self.wrap(type: wrap?.uint(1) ?? 4, margin: wrap?.float(4) ?? 12)
+    }
+
+    /// A wrap by its type, as Pages and Pages '09 number them, and its margin.
+    static func wrap(type: UInt64, margin: Double) -> (ImageWrap, WrapSide, WrapDistances) {
+        let margin = max(0, margin)
+        let distances = WrapDistances(top: margin, bottom: margin, left: margin, right: margin)
+        switch type {
+        case 3: return (.topAndBottom, .both, distances)
+        case 4: return (.square, .largest, distances)
+        case 5: return (.inFrontOfText, .both, distances)
+        default: return (.square, .both, distances)
+        }
+    }
+
+    /// A picture shown through a mask, cut to where the mask and the picture meet.
+    private func mask(_ image: inout InlineImage, by message: ProtoMessage) {
+        guard let mask = archive[message.reference(5)]?.message.message(1)?.message(1),
+              let origin = mask.message(1), let size = mask.message(2),
+              image.width > 0, image.height > 0 else { return }
+        let x = origin.float(1) ?? 0
+        let y = origin.float(2) ?? 0
+        let left = max(0, x), top = max(0, y)
+        let right = min(image.width, x + (size.float(1) ?? image.width))
+        let bottom = min(image.height, y + (size.float(2) ?? image.height))
+        guard right > left, bottom > top, left > 0 || top > 0 || right < image.width || bottom < image.height else { return }
+        image.crop = ImageCrop(
+            left: left / image.width, top: top / image.height,
+            right: (image.width - right) / image.width, bottom: (image.height - bottom) / image.height
+        )
+        image.horizontalOffset += left
+        image.verticalOffset += top
+        image.width = right - left
+        image.height = bottom - top
+    }
+
+    /// A `TSWP.ShapeInfoArchive`, a shape or text box, at its size: its
+    /// outline, fill and line, and its text in its own formatting. `nil`
+    /// for one that shows nothing.
+    private mutating func shape(_ message: ProtoMessage) -> InlineImage? {
+        let shapeArchive = message.message(1)
+        let size = shapeArchive?.message(1)?.message(1)?.message(2)
+        let width = size?.float(1) ?? 0
+        let height = size?.float(2) ?? 0
+        guard width > 0 || height > 0 else { return nil }
+        var spec = ShapeSpec(fillHex: nil, lineHex: nil, lineWidth: 0, isTextBox: message.bool(6) == true)
+        (spec.fillHex, spec.lineHex, spec.lineWidth) = shapeLook(shapeArchive?.reference(2))
+        // Text of no colour of its own is black, as Pages draws it, on a fill; on the page, the page's ink.
+        if spec.fillHex != nil { spec.textColorHex = "000000" }
+        (spec.geometry, spec.outline) = Self.outline(shapeArchive?.message(3))
+        if let storage = archive[message.reference(2)], storage.type == PagesReader.Types.storage {
+            // Text set in a shape is not the body's, nor are its styles.
+            storageDepth += 1
+            let content = blocks(from: storage.message)
+            storageDepth -= 1
+            let paragraphs = Self.shapeParagraphs(content)
+            if !paragraphs.allSatisfy({ $0.text.isEmpty }) {
+                spec.paragraphs = paragraphs
+                spec.text = paragraphs.map(\.text).joined(separator: "\n")
+                spec.originalText = spec.text
+            }
+        }
+        guard spec.fillHex != nil || spec.lineHex != nil || !spec.text.isEmpty else { return nil }
+        return InlineImage(relationshipID: "", width: max(width, 1), height: max(height, 1), object: .shape(spec))
+    }
+
+    /// Paragraphs as a shape draws them: their text, in their runs' formatting.
+    static func shapeParagraphs(_ blocks: [Block]) -> [ShapeParagraph] {
+        blocks.flatMap(\.paragraphs).map { paragraph in
+            var runs: [ShapeRun] = []
+            for inline in paragraph.inlines {
+                let text: String
+                switch inline.content {
+                case .text(let string): text = string
+                case .tab: text = "\t"
+                case .lineBreak: text = "\u{2028}"
+                case .runChild(_, let display?), .paragraphChild(_, let display?): text = display
+                default: continue
+                }
+                if let last = runs.last, last.style == inline.format.style {
+                    runs[runs.count - 1].text += text
+                } else {
+                    runs.append(ShapeRun(text: text, style: inline.format.style))
+                }
+            }
+            let properties = paragraph.properties
+            var multiple: Double?
+            if let spacing = properties.lineSpacing, spacing.rule == .auto, spacing.line != 240 {
+                multiple = Double(spacing.line) / 240
+            }
+            return ShapeParagraph(
+                runs: runs, alignment: properties.alignment, spaceBefore: Double(properties.spacingBefore ?? 0) / 20,
+                spaceAfter: Double(properties.spacingAfter ?? 0) / 20, lineHeightMultiple: multiple
+            )
+        }
+    }
+
+    /// A shape style's fill and line, and how wide the line is, from the
+    /// style or the first it inherits from that says.
+    private func shapeLook(_ styleID: UInt64?) -> (fill: String?, line: String?, lineWidth: Double) {
+        var chain: [ProtoMessage] = []
+        var next = styleID
+        while let current = next, let style = archive[current]?.message, chain.count < 32 {
+            if let properties = style.message(1)?.message(11) { chain.append(properties) }
+            next = style.message(1)?.message(1)?.reference(3)
+        }
+        let fill = chain.first { $0.has(1) }?.message(1).flatMap { Self.fillHex($0) }
+        guard let stroke = chain.first(where: { $0.has(2) })?.message(2),
+              stroke.message(6)?.uint(1) != 2, let color = stroke.message(1), color.float(6) != 0,
+              let line = Self.hex(color) else { return (fill, nil, 0) }
+        return (fill, line, stroke.float(2) ?? 1)
+    }
+
+    /// A `TSD.FillArchive`'s colour: its own, or a gradient's first; `nil` for none or a picture.
+    static func fillHex(_ fill: ProtoMessage) -> String? {
+        let color = fill.message(1) ?? fill.message(2)?.messages(2).first?.message(1)
+        guard let color, color.float(6) != 0 else { return nil }
+        return hex(color)
+    }
+
+    /// A `TSD.PathSourceArchive`'s outline: a preset Word has, or a path of its own.
+    private static func outline(_ source: ProtoMessage?) -> (String, ShapeOutline?) {
+        guard let source else { return ("rect", nil) }
+        let flipsAcross = source.bool(1) == true
+        let flipsDown = source.bool(2) == true
+        func point(_ message: ProtoMessage?) -> ShapePoint {
+            ShapePoint(x: message?.float(1) ?? 0, y: message?.float(2) ?? 0)
+        }
+        if let bezier = source.message(5), let path = bezier.message(3) {
+            let size = bezier.message(2)
+            var width = size?.float(1) ?? 0
+            var height = size?.float(2) ?? 0
+            var elements: [ShapeOutline.Element] = []
+            var points: [ShapePoint] = []
+            for element in path.messages(1) {
+                let at = element.messages(2).map { point($0) }
+                points += at
+                switch (element.uint(1), at.count) {
+                case (1, 1...): elements.append(.move(at[0]))
+                case (2, 1...): elements.append(.line(at[0]))
+                case (3, 2...): elements.append(.quadCurve(at[1], control: at[0]))
+                case (4, 3...): elements.append(.curve(at[2], control1: at[0], control2: at[1]))
+                case (5, _): elements.append(.close)
+                default: break
+                }
+            }
+            if width <= 0 { width = points.map(\.x).max() ?? 0 }
+            if height <= 0 { height = points.map(\.y).max() ?? 0 }
+            guard width > 0 || height > 0 else { return ("rect", nil) }
+            func flipped(_ point: ShapePoint) -> ShapePoint {
+                ShapePoint(x: flipsAcross ? width - point.x : point.x, y: flipsDown ? height - point.y : point.y)
+            }
+            if flipsAcross || flipsDown {
+                elements = elements.map { element in
+                    switch element {
+                    case .move(let to): .move(flipped(to))
+                    case .line(let to): .line(flipped(to))
+                    case .quadCurve(let to, let control): .quadCurve(flipped(to), control: flipped(control))
+                    case .curve(let to, let c1, let c2): .curve(flipped(to), control1: flipped(c1), control2: flipped(c2))
+                    case .close: .close
+                    }
+                }
+            }
+            return ("rect", ShapeOutline(width: max(width, 1), height: max(height, 1), elements: elements))
+        }
+        if let scalar = source.message(4) {
+            let size = scalar.message(3)
+            return scalarOutline(
+                type: scalar.uint(1), amount: scalar.float(2) ?? 0,
+                width: max(size?.float(1) ?? 100, 1), height: max(size?.float(2) ?? 100, 1)
+            )
+        }
+        if let pointSource = source.message(3) {
+            switch pointSource.uint(1) {
+            case 0: return (flipsAcross ? "rightArrow" : "leftArrow", nil)
+            case 1, 10: return (flipsAcross ? "leftArrow" : "rightArrow", nil)
+            case 100: return ("star5", nil)
+            case 200: return ("plus", nil)
+            default: return ("rect", nil)
+            }
+        }
+        return ("rect", nil)
+    }
+
+    /// The outline a scalar path draws: a rectangle with its corners
+    /// rounded by the scalar, or a regular polygon with that many sides.
+    static func scalarOutline(type: UInt64, amount: Double, width: Double, height: Double) -> (String, ShapeOutline?) {
+        switch type {
+        case 0:
+            let r = min(max(0, amount), width / 2, height / 2)
+            guard r > 0 else { return ("rect", nil) }
+            let p = { (x: Double, y: Double) in ShapePoint(x: x, y: y) }
+            return ("roundRect", ShapeOutline(width: width, height: height, elements: [
+                .move(p(r, 0)), .line(p(width - r, 0)), .quadCurve(p(width, r), control: p(width, 0)),
+                .line(p(width, height - r)), .quadCurve(p(width - r, height), control: p(width, height)),
+                .line(p(r, height)), .quadCurve(p(0, height - r), control: p(0, height)),
+                .line(p(0, r)), .quadCurve(p(r, 0), control: p(0, 0)), .close,
+            ]))
+        case 1:
+            let sides = Int(min(max(3, amount.rounded()), 64))
+            let points = (0..<sides).map { index -> ShapePoint in
+                let angle = Double(index) * 2 * .pi / Double(sides) - .pi / 2
+                return ShapePoint(x: width / 2 + cos(angle) * width / 2, y: height / 2 + sin(angle) * height / 2)
+            }
+            return ("rect", ShapeOutline(
+                width: width, height: height, elements: [.move(points[0])] + points.dropFirst().map { .line($0) } + [.close]
+            ))
+        default:
+            return ("rect", nil)
+        }
+    }
+
+    /// A drawable's `TSD.DrawableArchive`, from a picture, or from the shape that one is the super of.
+    private static func drawable(of object: IWorkArchive.Object) -> ProtoMessage? {
+        object.type == PagesReader.Types.shapeInfo ? object.message.message(1)?.message(1) : object.message.message(1)
     }
 
     /// Whether a block shows nothing: a paragraph with no text, or only breaks.
     private static func isBlank(_ block: Block) -> Bool {
         guard case .paragraph(let paragraph) = block else { return false }
         return paragraph.inlines.allSatisfy { $0.content == .pageBreak }
-    }
-
-    /// A drawable's `TSD.GeometryArchive`, from its `TSD.DrawableArchive`
-    /// or from the shape that one is the super of.
-    private static func geometry(of object: IWorkArchive.Object) -> ProtoMessage? {
-        let drawable = object.type == PagesReader.Types.shapeInfo
-            ? object.message.message(1)?.message(1) : object.message.message(1)
-        return drawable?.message(1)
     }
 
     private mutating func readPageSetup(_ root: ProtoMessage) {
@@ -737,7 +1007,8 @@ public struct PagesConverter {
                     let attachmentID = attachments.object(at: index)
                     switch attachment(attachmentID) {
                     case .image(let image):
-                        if recording, let attachmentID { body.images[image.relationshipID] = attachmentID }
+                        // A shape is kept where it is in the Pages text, as it is not written back.
+                        if recording, let attachmentID, image.object == nil { body.images[image.relationshipID] = attachmentID }
                         paragraph.inlines.append(Inline(.image(image), format: format, revision: revision))
                     case .table(let table):
                         if recording, let attachmentID { body.tables[table.id] = attachmentID }
@@ -1023,6 +1294,10 @@ public struct PagesConverter {
             if let image = image(drawable.message) { return .image(image) }
         case PagesReader.Types.tableInfo:
             if let table = table(drawable.message) { return .table(table) }
+        case PagesReader.Types.shapeInfo:
+            // A shape or text box set in the text, drawn in its line.
+            if let shape = shape(drawable.message) { return .image(shape) }
+            return nil
         default:
             break
         }
@@ -1032,7 +1307,10 @@ public struct PagesConverter {
 
     /// A `TSD.ImageArchive`, at the size it is shown.
     private mutating func image(_ message: ProtoMessage) -> InlineImage? {
-        guard let identifier = message.reference(11), let file = archive.dataFile(identifier),
+        // The picture, or failing that, as a template may leave only that, its smaller copy.
+        guard let identifier = [message.reference(11), message.reference(12)].lazy.compactMap({ $0 })
+                .first(where: { archive.dataFile($0) != nil }),
+              let file = archive.dataFile(identifier),
               let (data, fileExtension, contentType) = Self.wordImage(file.data) else { return nil }
         let size = message.message(1)?.message(1)?.message(2)
         let natural = message.message(4) ?? message.message(9)
