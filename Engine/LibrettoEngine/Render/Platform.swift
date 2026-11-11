@@ -202,6 +202,20 @@ extension NSBezierPath {
 
     public func addLine(to point: CGPoint) { line(to: point) }
 
+    public func addCurve(to point: CGPoint, controlPoint1: CGPoint, controlPoint2: CGPoint) {
+        curve(to: point, controlPoint1: controlPoint1, controlPoint2: controlPoint2)
+    }
+
+    /// A quadratic curve, as the cubic one it is.
+    public func addQuadCurve(to point: CGPoint, controlPoint: CGPoint) {
+        let start = currentPoint
+        curve(
+            to: point,
+            controlPoint1: CGPoint(x: start.x + (controlPoint.x - start.x) * 2 / 3, y: start.y + (controlPoint.y - start.y) * 2 / 3),
+            controlPoint2: CGPoint(x: point.x + (controlPoint.x - point.x) * 2 / 3, y: point.y + (controlPoint.y - point.y) * 2 / 3)
+        )
+    }
+
     /// An arc as UIKit draws one: angles in radians, clockwise as it looks top down.
     public func addArc(withCenter center: CGPoint, radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat, clockwise: Bool) {
         appendArc(
@@ -221,6 +235,39 @@ public enum PlatformGraphics: Sendable {
         #else
         rect.fill(using: .sourceOver)
         #endif
+    }
+
+    /// The context being drawn in now, if any.
+    public static var currentContext: CGContext? {
+        #if canImport(UIKit)
+        UIGraphicsGetCurrentContext()
+        #else
+        NSGraphicsContext.current?.cgContext
+        #endif
+    }
+
+    /// An opaque bitmap, `scale` pixels to the point, drawn top down: the same
+    /// pixels on any device, unlike `PlatformImage.drawn`, which follows the screen.
+    public static func bitmap(size: CGSize, scale: CGFloat, draw: (CGContext) -> Void) -> CGImage? {
+        let pixelsWide = max(1, Int((size.width * scale).rounded(.up)))
+        let pixelsHigh = max(1, Int((size.height * scale).rounded(.up)))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
+            data: nil, width: pixelsWide, height: pixelsHigh, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(pixelsHigh))
+        context.scaleBy(x: scale, y: -scale)
+        #if canImport(UIKit)
+        UIGraphicsPushContext(context)
+        draw(context)
+        UIGraphicsPopContext()
+        #else
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        draw(context)
+        NSGraphicsContext.restoreGraphicsState()
+        #endif
+        return context.makeImage()
     }
 
     /// A PDF of pages, each its own size, drawn top down.

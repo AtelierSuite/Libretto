@@ -79,11 +79,16 @@ public enum PagesWriter: Sendable {
         if document.comments.contains(where: { !original.comments.contains($0) }) { return true }
         var originalBlocks: [UUID: Block] = [:]
         var images: [String: InlineImage] = [:]
+        // Shapes, and objects placed on the pages, stay in the Pages document as they are, not written back.
+        var kept: [InlineImage] = []
+        var keptNow: [InlineImage] = []
         var revisions = Set<Revision>()
         for block in original.body {
             originalBlocks[block.id] = block
             for inline in block.paragraphs.flatMap(\.inlines) {
-                if case .image(let image) = inline.content { images[image.relationshipID] = image }
+                if case .image(let image) = inline.content {
+                    if body.images[image.relationshipID] == nil { kept.append(image) } else { images[image.relationshipID] = image }
+                }
                 if let revision = inline.revision { revisions.insert(revision) }
             }
             if let revision = block.paragraphs.first?.markRevision { revisions.insert(revision) }
@@ -118,8 +123,10 @@ public enum PagesWriter: Sendable {
                         return true
                     }
                     switch inline.content {
+                    case .image(let image) where body.images[image.relationshipID] == nil:
+                        keptNow.append(image)
                     case .image(let image):
-                        if body.images[image.relationshipID] == nil || images[image.relationshipID] != image { return true }
+                        if images[image.relationshipID] != image { return true }
                     case .note(let reference):
                         if body.notes[reference.id] == nil { return true }
                     default:
@@ -128,7 +135,7 @@ public enum PagesWriter: Sendable {
                 }
             }
         }
-        return false
+        return keptNow != kept
     }
 
     /// Whether a file is one of the package's previews, which show the document as it was.

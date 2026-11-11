@@ -15,6 +15,9 @@ final class PageCanvasView: NSView {
     private var pages = 0
     private var texts = WordDocumentHeaderFooter()
     private var notes = PageNotes()
+    private var floats: [Int: [PageLayoutManager.PlacedFloat]] = [:]
+    /// What floats in front of the text, over the text view.
+    private let front = FrontFloatsView()
     /// Where the column of pages starts across, to keep it in the middle of a wider window.
     private var columnLeft: CGFloat = 0
 
@@ -22,6 +25,7 @@ final class PageCanvasView: NSView {
         self.textView = textView
         super.init(frame: .zero)
         addSubview(textView)
+        addSubview(front)
         setAccessibilityIdentifier("pages")
     }
 
@@ -31,14 +35,20 @@ final class PageCanvasView: NSView {
 
     override var isFlipped: Bool { true }
 
-    func update(geometry: PageGeometry, pages: Int, texts: WordDocumentHeaderFooter, notes: PageNotes) {
-        guard geometry != self.geometry || pages != self.pages || texts != self.texts || notes != self.notes else { return }
+    func update(
+        geometry: PageGeometry, pages: Int, texts: WordDocumentHeaderFooter, notes: PageNotes,
+        floats: [Int: [PageLayoutManager.PlacedFloat]] = [:]
+    ) {
+        guard geometry != self.geometry || pages != self.pages || texts != self.texts || notes != self.notes
+            || floats != self.floats else { return }
         self.geometry = geometry
         self.pages = pages
         self.texts = texts
         self.notes = notes
+        self.floats = floats
         layoutPages()
         needsDisplay = true
+        front.needsDisplay = true
     }
 
     /// Sizes the canvas to the pages, at least as wide as what the scroll view shows, and puts the text on them.
@@ -55,6 +65,15 @@ final class PageCanvasView: NSView {
             width: geometry.contentWidth, height: max(1, geometry.totalHeight(pages: pages) - geometry.margins.top)
         )
         if textView.frame != textFrame { textView.frame = textFrame }
+        if front.frame != bounds { front.frame = bounds }
+        front.floats = (0..<pages).flatMap { index in
+            let page = pageFrame(index)
+            return (floats[index] ?? []).filter { !$0.behindText }.map { placed in
+                var onCanvas = placed
+                onCanvas.frame = placed.frame.offsetBy(dx: page.minX, dy: page.minY)
+                return onCanvas
+            }
+        }
     }
 
     private func pageFrame(_ index: Int) -> CGRect {
@@ -79,6 +98,9 @@ final class PageCanvasView: NSView {
             let shape = geometry.shape(index)
             context.saveGState()
             context.translateBy(x: frame.minX, y: frame.minY)
+            for placed in floats[index] ?? [] where placed.behindText {
+                placed.image.drawUpright(in: placed.frame)
+            }
             HeaderFooterDrawing.draw(texts, page: index, of: pages, shape: shape, color: ink)
             if let pageNotes = notes.byPage[index], let height = notes.heights[index] {
                 PageLayoutManager.drawNotes(pageNotes, in: CGRect(
@@ -99,5 +121,22 @@ final class PageCanvasView: NSView {
         let index = textView.characterIndexForInsertion(at: clamped)
         textView.setSelectedRange(NSRange(location: index, length: 0))
         window?.makeFirstResponder(textView)
+    }
+}
+
+/// The pages' floating pictures that sit in front of the text, drawn over it; clicks go through to the text.
+private final class FrontFloatsView: NSView {
+    var floats: [PageLayoutManager.PlacedFloat] = [] {
+        didSet { if floats != oldValue { needsDisplay = true } }
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        for placed in floats where placed.frame.intersects(dirtyRect) {
+            placed.image.drawUpright(in: placed.frame)
+        }
     }
 }
