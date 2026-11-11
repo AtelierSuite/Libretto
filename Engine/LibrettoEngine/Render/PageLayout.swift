@@ -297,6 +297,8 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     }
 
     public private(set) var placedFloats: [PlacedFloat] = []
+    /// The narrowest space beside a picture that text wrapped tight or through goes into, in points.
+    public static let narrowestWrap: CGFloat = 72
     private var floatExclusions: [CGRect] = []
 
     /// Each floating picture beside its paragraph, or where on the page it says, and what text keeps clear of.
@@ -347,7 +349,14 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                     x: frame.minX, y: frame.minY, width: frame.width, height: frame.height,
                     left: distance.left, right: distance.right, through: picture.wrap == .through
                 )
-                exclusions += outline.map { CGRect(x: $0.minX, y: $0.minY, width: $0.maxX - $0.minX, height: $0.maxY - $0.minY) }
+                // A sliver too narrow for words is left empty, as Word does, rather than breaking words into it.
+                let textLeft = shape.margins.left - geometry.textLeft
+                let textRight = textLeft + shape.contentWidth
+                exclusions += outline.map { band in
+                    let minX = band.minX - textLeft < Self.narrowestWrap ? -1 : band.minX
+                    let maxX = textRight - band.maxX < Self.narrowestWrap ? geometry.contentWidth + 1 : band.maxX
+                    return CGRect(x: minX, y: band.minY, width: maxX - minX, height: band.maxY - band.minY)
+                }
             case .square:
                 exclusions.append(CGRect(
                     x: frame.minX - distance.left, y: top,

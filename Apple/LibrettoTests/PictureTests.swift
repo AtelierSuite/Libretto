@@ -261,4 +261,32 @@ struct PictureTests {
         #expect(middle.maxX <= placed.frame.minX + 0.5)
         #expect(first.maxX > middle.maxX + 20)
     }
+
+    @Test("Text wrapped tight leaves a sliver beside the outline too narrow for words empty")
+    func leavesNarrowSliversEmpty() throws {
+        let (controller, _) = makeController()
+        controller.textView.selectedRange = NSRange(location: 0, length: 0)
+        controller.insertImage(png(width: 200, height: 100))
+        controller.textView.selectedRange = NSRange(location: 0, length: 1)
+        controller.updateSelectedImage { picture in
+            picture.wrap = .tight
+            picture.alignment = .trailing
+            picture.width = 240
+            picture.height = 120
+            picture.wrapPolygon = WrapPolygon(points: [.init(x: 0.5, y: 0), .init(x: 1, y: 1), .init(x: 0, y: 1), .init(x: 0.5, y: 0)])
+        }
+        let layout = controller.layoutManager
+        let placed = try #require(layout.placedFloats.first)
+        var right: [CGRect] = []
+        var glyph = 1
+        while glyph < layout.numberOfGlyphs {
+            var range = NSRange()
+            let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &range)
+            if line.minX > placed.frame.minX { right.append(line) }
+            glyph = max(glyph + 1, NSMaxRange(range))
+        }
+        // Beside the apex there is room, lower down there is not.
+        #expect(!right.isEmpty)
+        #expect(right.allSatisfy { $0.width >= PageLayoutManager.narrowestWrap - 0.5 }, "\(right)")
+    }
 }
