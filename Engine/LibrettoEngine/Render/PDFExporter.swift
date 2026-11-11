@@ -9,51 +9,81 @@ import AppKit
 /// Prints a document to PDF, laid out in pages exactly as the page view shows it.
 public enum PDFExporter: Sendable {
     public static func data(from document: WordDocument) -> Data {
+        let pages = PrintedPages(document: document)
+        return PlatformGraphics.pdf(pages: pages.sizes) { page, _ in pages.draw(page) }
+    }
+}
+
+/// A document laid out in pages for printing, each page drawn on its own:
+/// what the PDF holds, and what rendering tests compare page by page.
+public final class PrintedPages {
+    /// The size of each page, in points.
+    public let sizes: [CGSize]
+    public var count: Int { sizes.count }
+
+    private let storage: NSTextStorage
+    private let layoutManager: PageLayoutManager
+    private let container: NSTextContainer
+    private let texts: WordDocumentHeaderFooter
+
+    public init(document: WordDocument) {
         let context = RenderContext(document: document, scheme: .light, images: ImageStore())
         let rendered = DocumentRenderer.render(document.body, context: context, finalSection: document.pageSetup)
 
-        let storage = NSTextStorage(attributedString: rendered.string)
+        storage = NSTextStorage(attributedString: rendered.string)
         if let language = document.sourceLanguage {
             SyntaxHighlighter.apply(language, to: storage, scheme: .light, plainColor: context.defaultTextColor)
         }
-        let layoutManager = PageLayoutManager(geometry: PageGeometry(setup: document.pageSetup, gap: 0))
+        layoutManager = PageLayoutManager(geometry: PageGeometry(setup: document.pageSetup, gap: 0))
         layoutManager.styles = document.styles
         layoutManager.footnotes = NoteLayout.notes(in: storage, document: document, context: context)
         layoutManager.sections = SectionLayout.spans(in: storage, final: document.pageSetup)
-        let container = PageTextContainer()
+        container = PageTextContainer()
         layoutManager.addTextContainer(container)
         storage.addLayoutManager(layoutManager)
         let pages = layoutManager.layOutPages(in: container, startingWith: 4)
         // The pages as they settled, each section's at its own size.
         let geometry = layoutManager.geometry
-        let texts = WordDocumentHeaderFooter(
+        texts = WordDocumentHeaderFooter(
             document: document, sections: layoutManager.sections.map(\.setup), pageSections: layoutManager.pageSections
         )
+        sizes = (0..<pages).map { geometry.shape($0).size }
+    }
 
-        let sizes = (0..<pages).map { geometry.shape($0).size }
-        return PlatformGraphics.pdf(pages: sizes) { page, graphics in
-            let shape = geometry.shape(page)
-            let top = geometry.textTop(page)
-            let visible = CGRect(x: 0, y: top, width: geometry.contentWidth, height: shape.contentHeight)
-            let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: container)
-            let origin = CGPoint(x: geometry.textLeft, y: shape.margins.top - top)
+    /// Draws one page, top down, in the current context, from its top left corner.
+    public func draw(_ page: Int) {
+        guard let graphics = PlatformGraphics.currentContext else { return }
+        let geometry = layoutManager.geometry
+        let shape = geometry.shape(page)
+        let top = geometry.textTop(page)
+        let visible = CGRect(x: 0, y: top, width: geometry.contentWidth, height: shape.contentHeight)
+        let glyphs = layoutManager.glyphRange(forBoundingRect: visible, in: container)
+        let origin = CGPoint(x: geometry.textLeft, y: shape.margins.top - top)
 
-            graphics.saveGState()
-            graphics.clip(to: CGRect(
-                x: shape.margins.left - 40, y: shape.margins.top - 2,
-                width: shape.contentWidth + 80, height: shape.contentHeight + 4
-            ))
-            layoutManager.drawBackground(forGlyphRange: glyphs, at: origin)
-            layoutManager.drawGlyphs(forGlyphRange: glyphs, at: origin)
-            graphics.restoreGState()
+        graphics.saveGState()
+        graphics.clip(to: CGRect(
+            x: shape.margins.left - 40, y: shape.margins.top - 2,
+            width: shape.contentWidth + 80, height: shape.contentHeight + 4
+        ))
+        layoutManager.drawBackground(forGlyphRange: glyphs, at: origin)
+        layoutManager.drawGlyphs(forGlyphRange: glyphs, at: origin)
+        graphics.restoreGState()
 
-            HeaderFooterDrawing.draw(texts, page: page, of: pages, shape: shape, color: .darkGray)
-            if let notes = layoutManager.notesByPage[page], let height = layoutManager.noteHeights[page] {
-                PageLayoutManager.drawNotes(notes, in: CGRect(
-                    x: shape.margins.left, y: shape.margins.top + shape.contentHeight - height,
-                    width: shape.contentWidth, height: height
-                ), color: .black)
-            }
+        HeaderFooterDrawing.draw(texts, page: page, of: count, shape: shape, color: .darkGray)
+        if let notes = layoutManager.notesByPage[page], let height = layoutManager.noteHeights[page] {
+            PageLayoutManager.drawNotes(notes, in: CGRect(
+                x: shape.margins.left, y: shape.margins.top + shape.contentHeight - height,
+                width: shape.contentWidth, height: height
+            ), color: .black)
+        }
+    }
+
+    /// One page as a picture on white paper, `scale` pixels to the point.
+    public func image(_ page: Int, scale: CGFloat = 1) -> CGImage? {
+        PlatformGraphics.bitmap(size: sizes[page], scale: scale) { [self] context in
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(origin: .zero, size: sizes[page]))
+            draw(page)
         }
     }
 }
