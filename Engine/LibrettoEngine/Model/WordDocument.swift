@@ -86,6 +86,24 @@ public struct WordDocument: Equatable, Sendable {
         body.flatMap(\.paragraphs)
     }
 
+    /// Whether the document is laid out on its pages rather than flowing: no
+    /// text of its own, only objects fixed to its pages, as a Pages page
+    /// layout document is.
+    public var isLaidOutOnPages: Bool {
+        var placed = false
+        for block in body {
+            guard case .paragraph(let paragraph) = block else { continue }
+            for inline in paragraph.inlines {
+                switch inline.content {
+                case .image(let image) where image.page != nil: placed = true
+                case .pageBreak: continue
+                default: return false
+                }
+            }
+        }
+        return placed
+    }
+
     /// The document's words, for the word count.
     public var wordCount: Int {
         allParagraphs.reduce(0) { total, paragraph in

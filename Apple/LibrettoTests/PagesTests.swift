@@ -434,6 +434,9 @@ struct PagesTests {
         #expect(filled.formattedParagraphs?.first?.runs.first?.style.colorHex == "FFFFFF")
         #expect(try #require(Self.shape(objects[0])).isTextBox)
         #expect(document.unsupportedFeatures.isEmpty)
+        // With no text of its own to reflow, it is shown as its pages.
+        #expect(document.isLaidOutOnPages)
+        #expect(!Self.document.isLaidOutOnPages)
     }
 
     @Test("A page layout document's pages follow one another, a page break between them")

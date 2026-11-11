@@ -69,8 +69,9 @@ struct DocumentView: View {
                 if let storedMode, let mode = ViewMode(rawValue: storedMode) {
                     state.viewMode = mode
                 } else {
-                    // A phone opens documents to read; anything wider, to work on.
-                    state.viewMode = horizontalSizeClass == .compact ? .mobile : .page
+                    // A phone opens documents to read; anything wider, to work on. One laid out on its
+                    // pages, such as a poster, has no text to reflow, so it is shown as its pages.
+                    state.viewMode = horizontalSizeClass == .compact && !document.document.isLaidOutOnPages ? .mobile : .page
                 }
                 attachHistory()
                 if keptDocument == nil, !savesInPlace { keptDocument = document.document }
