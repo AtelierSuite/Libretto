@@ -59,6 +59,7 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
         let geometry = baseGeometry
         context = RenderContext(document: document, scheme: scheme, images: images)
         layoutManager = PageLayoutManager(geometry: geometry)
+        layoutManager.outlinesKeptBlocks = true
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
         container.widthTracksTextView = false

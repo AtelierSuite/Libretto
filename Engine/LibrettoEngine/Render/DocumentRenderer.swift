@@ -26,7 +26,7 @@ public struct RenderedText {
 ///
 /// Paragraphs become their text, each ended by a paragraph mark except the
 /// last. Tables become one picture per row, so a long table breaks across
-/// pages between rows, and kept blocks one picture per line.
+/// pages between rows, and kept blocks one picture per line of what they hold.
 public enum DocumentRenderer: Sendable {
     /// `finalSection`, the document's last section, narrows tables and
     /// pictures in sections set in columns to their columns.
@@ -245,9 +245,10 @@ public enum DocumentRenderer: Sendable {
     // MARK: - Blocks
 
     /// How the line of a block's pictures is set: tight, so rows sit flush.
-    public static func blockParagraphStyle() -> NSParagraphStyle {
+    /// A kept block's pictures hold its own spacing, so it has none of its own after it.
+    public static func blockParagraphStyle(for block: Block? = nil) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.paragraphSpacing = 6
+        if case .preserved = block { style.paragraphSpacing = 0 } else { style.paragraphSpacing = 6 }
         style.lineSpacing = 0
         return style
     }
@@ -257,14 +258,14 @@ public enum DocumentRenderer: Sendable {
     public static func renderBlock(_ block: Block, context: RenderContext) -> NSAttributedString {
         let output = NSMutableAttributedString()
         let lineAttributes: [NSAttributedString.Key: Any] = [
-            .font: blockFont, .paragraphStyle: blockParagraphStyle(),
+            .font: blockFont, .paragraphStyle: blockParagraphStyle(for: block),
         ]
         let pictures: [(image: PlatformImage, rowID: TableRow.ID?)]
         switch block {
         case .table(let table):
             pictures = TableRenderer.rowImages(table, context: context).map { ($0.image, $0.rowID) }
         case .preserved(let preserved):
-            pictures = TableRenderer.preservedImages(preserved, context: context).map { ($0, nil) }
+            pictures = PreservedRenderer.images(preserved, context: context).map { ($0, nil) }
         case .paragraph:
             pictures = []
         }

@@ -207,18 +207,31 @@ public struct PreservedBlock: Equatable, Sendable, Identifiable {
     public var displayText: String
     public var kind: Kind
     public var leadingXML: [String] = []
+    /// What it holds, read as paragraphs and tables, only to be drawn as
+    /// they look: `xml` is what is written back, untouched.
+    public var content: [Block] = []
 
     public enum Kind: String, Sendable {
         case contentControl
         case other
     }
 
-    public init(id: UUID = UUID(), xml: String, displayText: String, kind: Kind, leadingXML: [String] = []) {
+    public init(
+        id: UUID = UUID(), xml: String, displayText: String, kind: Kind, leadingXML: [String] = [],
+        content: [Block] = []
+    ) {
         self.id = id
         self.xml = xml
         self.displayText = displayText
         self.kind = kind
         self.leadingXML = leadingXML
+        self.content = content
+    }
+
+    /// The same block: what it holds is read from `xml`, so is not compared.
+    public static func == (lhs: PreservedBlock, rhs: PreservedBlock) -> Bool {
+        lhs.id == rhs.id && lhs.xml == rhs.xml && lhs.displayText == rhs.displayText && lhs.kind == rhs.kind
+            && lhs.leadingXML == rhs.leadingXML
     }
 }
 
