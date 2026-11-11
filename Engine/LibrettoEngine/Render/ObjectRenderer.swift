@@ -272,6 +272,8 @@ private struct ChartDrawing {
                 path.addLine(to: CGPoint(x: plot.maxX, y: y))
                 label(Self.format(value), at: CGPoint(x: plot.minX - 3, y: y - 5), alignment: .right, width: 26)
             }
+            // Drawing a label leaves its own colour set, so the line's is set each time.
+            PlatformColor(white: 0.85, alpha: 1).setStroke()
             path.lineWidth = 0.5
             path.stroke()
             value += step
