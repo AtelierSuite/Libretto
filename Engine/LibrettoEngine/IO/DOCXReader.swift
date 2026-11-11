@@ -831,6 +831,8 @@ public enum DrawingReader: Sendable {
             top: distance("distT", defaults.top), bottom: distance("distB", defaults.bottom),
             left: distance("distL", defaults.left), right: distance("distR", defaults.right)
         )
+        image.wrapPolygon = (wrapping?.name == "wrapTight" || wrapping?.name == "wrapThrough")
+            ? wrapping?.firstChild(named: "wrapPolygon").flatMap(polygon(from:)) : nil
         if let horizontal = anchor.firstChild(named: "positionH") {
             image.isHorizontalFromPage = horizontal.attribute("relativeFrom") == "page"
             if let align = horizontal.firstChild(named: "align")?.text {
@@ -847,6 +849,17 @@ public enum DrawingReader: Sendable {
             }
             image.verticalOffset = (Double(vertical.firstChild(named: "posOffset")?.text ?? "") ?? 0) / 12_700
         }
+    }
+
+    /// `wp:wrapPolygon`'s start and the lines from it, as fractions of the picture.
+    public static func polygon(from element: XMLElement) -> WrapPolygon? {
+        let points = element.children.compactMap { point -> WrapPolygon.Point? in
+            guard point.name == "start" || point.name == "lineTo",
+                  let x = Double(point.attribute("x") ?? ""), let y = Double(point.attribute("y") ?? "") else { return nil }
+            return WrapPolygon.Point(x: x / WrapPolygon.unitsPerPicture, y: y / WrapPolygon.unitsPerPicture)
+        }
+        guard points.count >= 3 else { return nil }
+        return WrapPolygon(points: points, isEdited: ["1", "true", "on"].contains(element.attribute("edited") ?? ""))
     }
 }
 

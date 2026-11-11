@@ -653,6 +653,8 @@ public struct InlineImage: Equatable, Sendable {
     public var verticalAnchor: VerticalAnchor = .paragraph
     /// How far text keeps from a floating picture that it wraps around.
     public var wrapDistances = WrapDistances()
+    /// The outline text keeps to when it wraps tight or through; `nil` for the picture's frame.
+    public var wrapPolygon: WrapPolygon?
 
     /// What a floating picture's place down the page is measured from.
     public enum VerticalAnchor: String, Sendable {
@@ -679,6 +681,7 @@ public struct InlineImage: Equatable, Sendable {
         verticalOffset: Double = 0,
         verticalAnchor: VerticalAnchor = .paragraph,
         wrapDistances: WrapDistances = WrapDistances(),
+        wrapPolygon: WrapPolygon? = nil,
         crop: ImageCrop = ImageCrop(),
         isEdited: Bool = false,
         object: DrawingObject? = nil
@@ -695,6 +698,7 @@ public struct InlineImage: Equatable, Sendable {
         self.verticalOffset = verticalOffset
         self.verticalAnchor = verticalAnchor
         self.wrapDistances = wrapDistances
+        self.wrapPolygon = wrapPolygon
         self.crop = crop
         self.isEdited = isEdited
         self.object = object

@@ -181,4 +181,25 @@ struct PictureTests {
             .first { $0.minY >= placed.frame.minY }
         #expect(try #require(below).minY >= placed.frame.maxY + 24 - 0.5)
     }
+
+    private static let diamond = WrapPolygon(points: [
+        .init(x: 0.5, y: 0), .init(x: 1, y: 0.5), .init(x: 0.5, y: 1), .init(x: 0, y: 0.5), .init(x: 0.5, y: 0),
+    ])
+
+    @Test("The wrap polygon is read in fractions of the picture and written back in Word's units")
+    func readsAndWritesWrapPolygon() throws {
+        var image = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(of: try anchor("", wrap: """
+            <wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="1"><wp:start x="10800" y="0"/>\
+            <wp:lineTo x="21600" y="10800"/><wp:lineTo x="10800" y="21600"/><wp:lineTo x="0" y="10800"/>\
+            <wp:lineTo x="10800" y="0"/></wp:wrapPolygon></wp:wrapTight>
+            """), into: &image)
+        #expect(image.wrapPolygon == WrapPolygon(points: Self.diamond.points, isEdited: true))
+
+        let xml = DrawingWriter.xml(for: image, id: 1)
+        #expect(xml.contains(#"<wp:wrapPolygon edited="1"><wp:start x="10800" y="0"/><wp:lineTo x="21600" y="10800"/>"#))
+
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"), into: &image)
+        #expect(image.wrapPolygon == nil)
+    }
 }
