@@ -728,6 +728,17 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var frame: ShapeFrame?
     /// The text as read, to tell whether it has been edited.
     public var originalText: String?
+    /// The text's paragraphs in their own formatting, as read, drawn while
+    /// the text is as it was.
+    public var paragraphs: [ShapeParagraph]?
+    /// An outline of its own, drawn in place of the preset geometry's.
+    public var outline: ShapeOutline?
+
+    /// The formatted paragraphs, while they still say what the text does.
+    public var formattedParagraphs: [ShapeParagraph]? {
+        guard let paragraphs, paragraphs.map(\.text).joined(separator: "\n") == text else { return nil }
+        return paragraphs
+    }
 
     public init(
         geometry: String = "rect",
@@ -739,7 +750,9 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
         fontSize: Double? = nil,
         isTextBox: Bool = false,
         frame: ShapeFrame? = nil,
-        originalText: String? = nil
+        originalText: String? = nil,
+        paragraphs: [ShapeParagraph]? = nil,
+        outline: ShapeOutline? = nil
     ) {
         self.geometry = geometry
         self.fillHex = fillHex
@@ -751,6 +764,72 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
         self.isTextBox = isTextBox
         self.frame = frame
         self.originalText = originalText
+        self.paragraphs = paragraphs
+        self.outline = outline
+    }
+}
+
+/// A paragraph of a shape's text, in its own formatting.
+public struct ShapeParagraph: Equatable, Hashable, Sendable {
+    public var runs: [ShapeRun]
+    public var alignment: ParagraphAlignment?
+    /// Points.
+    public var spaceBefore: Double
+    public var spaceAfter: Double
+    /// How many lines each line takes, if not one.
+    public var lineHeightMultiple: Double?
+
+    public var text: String { runs.map(\.text).joined() }
+
+    public init(
+        runs: [ShapeRun], alignment: ParagraphAlignment? = nil, spaceBefore: Double = 0, spaceAfter: Double = 0,
+        lineHeightMultiple: Double? = nil
+    ) {
+        self.runs = runs
+        self.alignment = alignment
+        self.spaceBefore = spaceBefore
+        self.spaceAfter = spaceAfter
+        self.lineHeightMultiple = lineHeightMultiple
+    }
+}
+
+public struct ShapeRun: Equatable, Hashable, Sendable {
+    public var text: String
+    public var style: RunStyle
+
+    public init(text: String, style: RunStyle = RunStyle()) {
+        self.text = text
+        self.style = style
+    }
+}
+
+/// A shape's outline as a path, drawn scaled from the size it was drawn at to the shape's.
+public struct ShapeOutline: Equatable, Hashable, Sendable {
+    public enum Element: Equatable, Hashable, Sendable {
+        case move(ShapePoint)
+        case line(ShapePoint)
+        case quadCurve(ShapePoint, control: ShapePoint)
+        case curve(ShapePoint, control1: ShapePoint, control2: ShapePoint)
+        case close
+    }
+
+    public var width: Double
+    public var height: Double
+    public var elements: [Element]
+
+    public init(width: Double, height: Double, elements: [Element]) {
+        self.width = width
+        self.height = height
+        self.elements = elements
+    }
+}
+
+public struct ShapePoint: Equatable, Hashable, Sendable {
+    public var x, y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
     }
 }
 

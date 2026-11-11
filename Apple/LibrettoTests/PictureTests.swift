@@ -205,4 +205,36 @@ struct PictureTests {
         DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"), into: &image)
         #expect(image.wrapSide == .both)
     }
+
+    @Test("A shape draws its own outline and its text in the text's formatting, until the text is edited")
+    func shapeOutlineAndText() throws {
+        let outline = ShapeOutline(width: 10, height: 10, elements: [
+            .move(ShapePoint(x: 5, y: 0)), .line(ShapePoint(x: 10, y: 10)), .line(ShapePoint(x: 0, y: 10)), .close,
+        ])
+        var bold = RunStyle()
+        bold.isBold = true
+        bold.fontSize = 40
+        bold.colorHex = "FF0000"
+        var shape = ShapeSpec(fillHex: "00FF00", lineHex: nil, lineWidth: 0, text: "Big\nsmall", isTextBox: true,
+                              paragraphs: [ShapeParagraph(runs: [ShapeRun(text: "Big", style: bold)], alignment: .center),
+                                           ShapeParagraph(runs: [ShapeRun(text: "small")])], outline: outline)
+        let path = ObjectRenderer.path(outline, in: CGRect(x: 0, y: 0, width: 100, height: 50))
+        #expect(path.contains(CGPoint(x: 50, y: 40)))
+        #expect(!path.contains(CGPoint(x: 5, y: 5)))
+
+        let text = ObjectRenderer.formattedText(try #require(shape.formattedParagraphs), color: .black, centred: false)
+        #expect(text.string == "Big\nsmall")
+        #expect((text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize == 20)
+        #expect((text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.alignment == .center)
+
+        let xml = DrawingWriter.shapeGraphic(shape)
+        #expect(xml.contains("<a:custGeom>"))
+        #expect(xml.contains("<a:moveTo><a:pt x=\"63500\" y=\"0\"/></a:moveTo>"))
+        #expect(xml.contains("<w:jc w:val=\"center\"/>"))
+        #expect(xml.contains("<w:b/>"))
+        #expect(xml.contains("<w:color w:val=\"FF0000\"/>"))
+
+        shape.text = "Edited"
+        #expect(shape.formattedParagraphs == nil)
+    }
 }

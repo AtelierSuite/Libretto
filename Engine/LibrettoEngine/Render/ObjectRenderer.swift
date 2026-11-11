@@ -43,7 +43,7 @@ public enum ObjectRenderer: Sendable {
 
     public static func draw(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
         let inset = outlineRect(for: shape, in: rect)
-        let path = self.path(shape.geometry, in: inset)
+        let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
         if let fill = shape.fillHex {
             color(fill).setFill()
             path.fill()
@@ -54,14 +54,18 @@ public enum ObjectRenderer: Sendable {
             path.stroke()
         }
         guard !shape.text.isEmpty else { return }
-        let style = NSMutableParagraphStyle()
-        style.alignment = shape.isTextBox ? .natural : .center
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: PlatformFont.systemFont(ofSize: shape.fontSize ?? 11),
-            .foregroundColor: color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? .black : .white),
-            .paragraphStyle: style,
-        ]
-        let text = NSAttributedString(string: shape.text, attributes: attributes)
+        let fallbackColor = color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? .black : .white)
+        let text: NSAttributedString
+        if let paragraphs = shape.formattedParagraphs {
+            text = formattedText(paragraphs, color: fallbackColor, centred: !shape.isTextBox)
+        } else {
+            let style = NSMutableParagraphStyle()
+            style.alignment = shape.isTextBox ? .natural : .center
+            text = NSAttributedString(string: shape.text, attributes: [
+                .font: PlatformFont.systemFont(ofSize: shape.fontSize ?? 11), .foregroundColor: fallbackColor,
+                .paragraphStyle: style,
+            ])
+        }
         let area = inset.insetBy(dx: 7, dy: 4)
         let height = ceil(text.boundingRect(with: CGSize(width: area.width, height: .greatestFiniteMagnitude),
                                             options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
@@ -69,6 +73,68 @@ public enum ObjectRenderer: Sendable {
         let top = shape.isTextBox ? area.minY : area.midY - min(height, area.height) / 2
         text.draw(with: CGRect(x: area.minX, y: top, width: area.width, height: min(height, area.height)),
                   options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine], context: nil)
+    }
+
+    /// A shape's text in the formatting each of its paragraphs and runs has.
+    public static func formattedText(_ paragraphs: [ShapeParagraph], color fallback: PlatformColor, centred: Bool) -> NSAttributedString {
+        let text = NSMutableAttributedString()
+        for (index, paragraph) in paragraphs.enumerated() {
+            let style = NSMutableParagraphStyle()
+            switch paragraph.alignment {
+            case .center?: style.alignment = .center
+            case .trailing?: style.alignment = .right
+            case .justified?: style.alignment = .justified
+            case .leading?: style.alignment = .left
+            default: style.alignment = centred ? .center : .natural
+            }
+            style.paragraphSpacingBefore = paragraph.spaceBefore
+            style.paragraphSpacing = paragraph.spaceAfter
+            if let multiple = paragraph.lineHeightMultiple { style.lineHeightMultiple = multiple }
+            let runs = paragraph.runs.isEmpty ? [ShapeRun(text: "")] : paragraph.runs
+            for (runIndex, run) in runs.enumerated() {
+                var string = run.text
+                if runIndex == runs.count - 1, index < paragraphs.count - 1 { string += "\n" }
+                guard !string.isEmpty else { continue }
+                var attributes: [NSAttributedString.Key: Any] = [
+                    .font: Typography.font(for: run.style, styles: StyleSheet()),
+                    .foregroundColor: run.style.colorHex.map { color($0) } ?? fallback,
+                    .paragraphStyle: style,
+                ]
+                if run.style.underline == true { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                if run.style.isStruckThrough == true { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                text.append(NSAttributedString(string: run.style.allCaps == true ? string.uppercased() : string, attributes: attributes))
+            }
+        }
+        return text
+    }
+
+    /// An outline of a shape's own, scaled from the size it was drawn at to fill a rectangle.
+    public static func path(_ outline: ShapeOutline, in rect: CGRect) -> PlatformBezierPath {
+        let scaleX = outline.width > 0 ? rect.width / outline.width : 1
+        let scaleY = outline.height > 0 ? rect.height / outline.height : 1
+        func point(_ point: ShapePoint) -> CGPoint {
+            CGPoint(x: rect.minX + point.x * scaleX, y: rect.minY + point.y * scaleY)
+        }
+        let path = PlatformBezierPath()
+        var isOpen = false
+        for element in outline.elements {
+            switch element {
+            case .move(let to):
+                path.move(to: point(to))
+                isOpen = true
+            case .line(let to) where isOpen:
+                path.addLine(to: point(to))
+            case .quadCurve(let to, let control) where isOpen:
+                path.addQuadCurve(to: point(to), controlPoint: point(control))
+            case .curve(let to, let control1, let control2) where isOpen:
+                path.addCurve(to: point(to), controlPoint1: point(control1), controlPoint2: point(control2))
+            case .close where isOpen:
+                path.close()
+            default:
+                break
+            }
+        }
+        return path
     }
 
     /// A preset geometry's outline, as near as these come to Word's.
