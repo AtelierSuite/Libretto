@@ -547,6 +547,9 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         case shapes
         case contentControls
         case embeddedObjects
+        /// A shape, chart or SmartArt diagram drawn more simply than Word draws it,
+        /// with no picture of its own to draw instead (see `DrawingObject`).
+        case simplifiedObjects
 
         public var label: String {
             switch self {
@@ -554,6 +557,7 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
             case .shapes: return String(localized: "Unsupported.Shapes", bundle: .engine)
             case .contentControls: return String(localized: "Unsupported.ContentControls", bundle: .engine)
             case .embeddedObjects: return String(localized: "Unsupported.EmbeddedObjects", bundle: .engine)
+            case .simplifiedObjects: return String(localized: "Unsupported.SimplifiedObjects", bundle: .engine)
             }
         }
 
@@ -562,6 +566,7 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         /// here, and the report, once Libretto draws it as they do.
         public var isDrawnDifferently: Bool {
             switch self {
+            case .simplifiedObjects: return true
             case .macros, .shapes, .contentControls, .embeddedObjects: return false
             }
         }

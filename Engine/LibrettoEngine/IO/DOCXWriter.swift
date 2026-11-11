@@ -222,7 +222,8 @@ public struct BodyWriter: Sendable {
         case .note(let reference):
             return reference.xml
         case .image(let image):
-            if let xml = image.xml, !image.isEdited { return xml }
+            // A picture standing in for an object is the object, written back as it was.
+            if let xml = image.xml, !image.isEdited || image.isStandIn { return xml }
             pictureID += 1
             return DrawingWriter.xml(for: image, id: pictureID)
         case .runChild(let xml, _), .paragraphChild(let xml, _):

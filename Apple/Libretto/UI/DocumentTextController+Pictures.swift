@@ -17,7 +17,8 @@ extension DocumentTextController {
 
     /// Changes the picture the selection is on: its size, crop, wrap or place.
     func updateSelectedImage(_ change: (inout InlineImage) -> Void) {
-        guard let (range, image) = selectedImage,
+        // A picture standing in for an object Libretto can't draw is kept as that object is.
+        guard let (range, image) = selectedImage, !image.isStandIn,
               let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? ImageAttachment
         else { return }
         var picture = image

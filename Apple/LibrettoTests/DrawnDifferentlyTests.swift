@@ -63,12 +63,27 @@ struct DrawnDifferentlyTests {
 
     @Test("What is drawn differently is told apart from what is read-only, each in order")
     func split() {
-        let report = UnsupportedFeatureReport(features: [.macros, .shapes])
+        let report = UnsupportedFeatureReport(features: [.simplifiedObjects, .macros, .shapes])
         #expect(report.readOnlyFeatures == [.macros, .shapes])
-        #expect(report.drawnDifferentlyFeatures.isEmpty)
+        #expect(report.drawnDifferentlyFeatures == [.simplifiedObjects])
         #expect(!report.isEmpty)
         for feature in UnsupportedFeatureReport.Feature.allCases {
             #expect(!feature.label.hasPrefix("Unsupported."), "\(feature) has no words of its own")
         }
+    }
+
+    @Test("Shape properties drawn more simply are told apart from those drawn as Word does", arguments: [
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:effectLst/></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"heart\"/></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", true),
+    ])
+    func simplifiedShapes(content: String, simplified: Bool) throws {
+        let shape = try XMLLite.parse(Data("<wps:wsp xmlns:wps=\"\(Self.wps)\" xmlns:a=\"\(OOXML.drawingMainNamespace)\">\(content)</wps:wsp>".utf8))
+        #expect(DrawingObjectReader.isSimplified(shape: shape) == simplified)
     }
 }

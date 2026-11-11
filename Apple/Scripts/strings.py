@@ -16,7 +16,8 @@ ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignmen
           "Error.MissingMainDocument", "Language.Diff", "Language.PlainText", "Notice.MissingFonts.Item",
           "Notice.MissingFonts.SystemFont", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
           "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
-          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
+          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes",
+          "Unsupported.SimplifiedObjects"]
 SHARED = ["Comment.DefaultAuthor"]
 
 S = {
@@ -123,6 +124,7 @@ S = {
  "Unsupported.EmbeddedObjects": ["Embedded objects", "埋め込みオブジェクト", "포함된 개체", "嵌入的对象", "內嵌物件"],
  "Unsupported.Macros": ["Macros, which are kept but never run", "マクロ（保持されますが実行されません）", "매크로(유지되지만 실행되지 않음)", "宏（会保留，但绝不运行）", "巨集（會保留，但絕不執行）"],
  "Unsupported.Shapes": ["Shapes and text boxes", "図形とテキストボックス", "도형 및 텍스트 상자", "形状和文本框", "形狀和文字方塊"],
+ "Unsupported.SimplifiedObjects": ["Shapes, charts or SmartArt with effects, which are drawn more simply, such as gradients, shadows, 3-D or data labels", "グラデーション、影、3-D、データラベルなどの効果を含む図形、グラフ、SmartArt（簡略化して表示されます）", "그라데이션, 그림자, 3차원, 데이터 레이블 등의 효과가 있는 도형, 차트 또는 SmartArt(단순하게 표시됨)", "带有渐变、阴影、三维或数据标签等效果的形状、图表或 SmartArt（以简化方式显示）", "含有漸層、陰影、立體或資料標籤等效果的形狀、圖表或 SmartArt（以簡化方式顯示）"],
  "ViewMode.Mobile": ["Mobile View", "モバイル表示", "모바일 보기", "移动视图", "行動版顯示"],
  "ViewMode.Page": ["Full Document", "ドキュメント全体", "전체 문서", "完整文稿", "完整文件"],
  "Toolbar.SourceCode": ["Source Code", "ソースコード", "소스 코드", "源代码", "原始碼"],

@@ -703,6 +703,11 @@ public struct InlineImage: Equatable, Sendable {
     /// What the drawing is, when it is not a picture from an image part: a
     /// shape or text box, a chart, or a SmartArt diagram, drawn from its description.
     public var object: DrawingObject?
+    /// The picture the document keeps of an object Libretto cannot draw as Word
+    /// does (an `mc:Fallback` picture, or an embedded object's cached preview),
+    /// drawn in its place. It is written back as the object it stands in for,
+    /// so it is not resized or cropped.
+    public var isStandIn = false
 
     public init(
         relationshipID: String,
@@ -743,6 +748,24 @@ public struct InlineImage: Equatable, Sendable {
     }
 }
 
+/// What Libretto draws of an object, and what it draws as Word does.
+///
+/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
+///   solid fills and lines, and plain text in one size and colour. Gradient,
+///   pattern and picture fills, shadows, glows and other effects, 3-D, dashed
+///   lines and arrowheads, rotation, free-form outlines and text that flows
+///   between linked boxes are drawn more simply.
+/// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
+///   and column, line and area charts combined, from their cached values, with
+///   their title, categories, solid series and slice colours, stacking and a
+///   legend at a side. 3-D, data labels, gradient fills, trend lines, error bars,
+///   secondary axes, legends in a corner or over the plot, and bubble, stock and
+///   bar-of-pie charts (drawn as scatter, line and pie charts) are drawn more simply.
+/// - SmartArt: the shapes Word last laid the diagram out as, as shapes are drawn.
+///
+/// Where the document keeps a picture of such an object, that picture is
+/// drawn instead (`InlineImage.isStandIn`). Otherwise the open notice says
+/// that objects are drawn more simply (`UnsupportedFeatureReport.Feature.simplifiedObjects`).
 public enum DrawingObject: Equatable, Hashable, Sendable {
     case shape(ShapeSpec)
     case chart(ChartSpec)
@@ -754,6 +777,14 @@ public enum DrawingObject: Equatable, Hashable, Sendable {
 public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// `a:prstGeom`'s `prst`: `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow` and the rest.
     public var geometry = "rect"
+    /// The preset outlines drawn as Word draws them; any other is drawn as a rectangle.
+    public static let drawnGeometries: Set<String> = [
+        "rect", "roundRect", "flowChartAlternateProcess", "wedgeRoundRectCallout", "ellipse", "flowChartConnector",
+        "donut", "cloud", "wedgeEllipseCallout", "triangle", "flowChartExtract", "rtTriangle", "diamond",
+        "flowChartDecision", "parallelogram", "flowChartInputOutput", "trapezoid", "pentagon", "homePlate", "hexagon",
+        "octagon", "chevron", "rightArrow", "leftArrow", "upArrow", "downArrow", "plus", "mathPlus", "star5", "line",
+        "straightConnector1", "bentConnector3", "curvedConnector3", "flowChartProcess",
+    ]
     /// Six-digit RGB, or `nil` for none.
     public var fillHex: String? = "4472C4"
     public var lineHex: String? = "2F528F"
@@ -887,19 +918,31 @@ public struct ShapeFrame: Equatable, Hashable, Sendable {
 /// A chart, from the values its chart part caches.
 public struct ChartSpec: Equatable, Hashable, Sendable {
     public enum Kind: String, Sendable {
-        case column, bar, line, area, pie, doughnut, scatter
+        case column, bar, line, area, pie, doughnut, scatter, radar
     }
 
     public struct Series: Equatable, Hashable, Sendable {
         public var name: String
         public var values: [Double]
         public var colorHex: String?
+        /// In a combined chart, how this series is drawn when it differs from the
+        /// chart's own kind: a line or area over columns, say.
+        public var kind: Kind?
+        /// Colours given to points one by one, by index: a pie's slices.
+        public var pointColorsHex: [Int: String] = [:]
 
-        public init(name: String, values: [Double], colorHex: String? = nil) {
+        public init(name: String, values: [Double], colorHex: String? = nil, kind: Kind? = nil, pointColorsHex: [Int: String] = [:]) {
             self.name = name
             self.values = values
             self.colorHex = colorHex
+            self.kind = kind
+            self.pointColorsHex = pointColorsHex
         }
+    }
+
+    /// Where the legend sits: `c:legendPos`'s values.
+    public enum LegendPosition: String, Sendable {
+        case bottom = "b", top = "t", left = "l", right = "r"
     }
 
     public var kind: Kind = .column
@@ -907,19 +950,23 @@ public struct ChartSpec: Equatable, Hashable, Sendable {
     public var categories: [String] = []
     public var series: [Series] = []
     public var isStacked = false
+    /// `nil` for a chart without one.
+    public var legend: LegendPosition? = .bottom
 
     public init(
         kind: Kind = .column,
         title: String? = nil,
         categories: [String] = [],
         series: [Series] = [],
-        isStacked: Bool = false
+        isStacked: Bool = false,
+        legend: LegendPosition? = .bottom
     ) {
         self.kind = kind
         self.title = title
         self.categories = categories
         self.series = series
         self.isStacked = isStacked
+        self.legend = legend
     }
 }
 

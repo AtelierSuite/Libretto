@@ -15,9 +15,12 @@ public enum DrawingObjectReader: Sendable {
         public var documentPath: String
 
         public func part(_ id: String) -> XMLElement? {
-            guard let relationship = relationships[id], !relationship.isExternal,
-                  let data = parts[DOCXPaths.resolve(relationship.target, relativeTo: documentPath)] else { return nil }
-            return try? XMLLite.parse(data)
+            part(data: id).flatMap { try? XMLLite.parse($0) }
+        }
+
+        public func part(data id: String) -> Data? {
+            guard let relationship = relationships[id], !relationship.isExternal else { return nil }
+            return parts[DOCXPaths.resolve(relationship.target, relativeTo: documentPath)]
         }
 
         public init(parts: [String: Data], relationships: [String: DocumentPackage.Relationship], documentPath: String) {
@@ -172,15 +175,26 @@ public enum DrawingObjectReader: Sendable {
 
     // MARK: - Charts
 
+    /// The chart groups Libretto draws, and what each is drawn as.
+    private static let chartKinds: [(String, ChartSpec.Kind)] = [
+        ("barChart", .column), ("bar3DChart", .column), ("lineChart", .line), ("line3DChart", .line),
+        ("areaChart", .area), ("area3DChart", .area), ("pieChart", .pie), ("pie3DChart", .pie),
+        ("doughnutChart", .doughnut), ("scatterChart", .scatter), ("radarChart", .radar),
+        ("bubbleChart", .scatter), ("stockChart", .line), ("ofPieChart", .pie),
+    ]
+
+    /// The groups drawn only roughly: in 3-D, or as the nearest kind Libretto draws.
+    private static let roughChartGroups: Set<String> = [
+        "bar3DChart", "line3DChart", "area3DChart", "pie3DChart", "bubbleChart", "stockChart", "ofPieChart",
+        "surfaceChart", "surface3DChart",
+    ]
+
     public static func chart(_ root: XMLElement) -> ChartSpec? {
         guard let plot = descendant("plotArea", in: root) else { return nil }
-        let kinds: [(String, ChartSpec.Kind)] = [
-            ("barChart", .column), ("bar3DChart", .column), ("lineChart", .line), ("line3DChart", .line),
-            ("areaChart", .area), ("pieChart", .pie), ("pie3DChart", .pie), ("doughnutChart", .doughnut),
-            ("scatterChart", .scatter),
-        ]
-        guard let (element, kind) = kinds.lazy.compactMap({ name, kind in plot.firstChild(named: name).map { ($0, kind) } }).first
-        else { return nil }
+        let groups = plot.children.compactMap { element in
+            chartKinds.first { $0.0 == element.name }.map { (element, $0.1) }
+        }
+        guard let (element, kind) = groups.first else { return nil }
         var chart = ChartSpec(kind: kind)
         if kind == .column, element.firstChild(named: "barDir")?.attribute("val") == "bar" { chart.kind = .bar }
         let grouping = element.firstChild(named: "grouping")?.attribute("val") ?? ""
@@ -189,17 +203,150 @@ public enum DrawingObjectReader: Sendable {
             let text = descendants("t", in: title).map(\.text).joined()
             chart.title = text.isEmpty ? nil : text
         }
-        for series in element.children(named: "ser") {
-            let name = series.firstChild(named: "tx").map { descendants("v", in: $0).map(\.text).joined() } ?? ""
-            let values = points(in: series.firstChild(named: "val") ?? series.firstChild(named: "yVal"))
-                .map { Double($0) ?? 0 }
-            let color = series.firstChild(named: "spPr").flatMap { color(in: $0.firstChild(named: "solidFill")) }
-            chart.series.append(ChartSpec.Series(name: name, values: values, colorHex: color))
-            if chart.categories.isEmpty {
-                chart.categories = points(in: series.firstChild(named: "cat") ?? series.firstChild(named: "xVal"))
+        if let legend = descendant("legend", in: root) {
+            let position = legend.firstChild(named: "legendPos")?.attribute("val") ?? "r"
+            chart.legend = ChartSpec.LegendPosition(rawValue: position) ?? .bottom
+        } else {
+            chart.legend = nil
+        }
+        // A combined chart: lines or areas over columns. Groups of round or radar kinds don't combine.
+        let combinable: Set<ChartSpec.Kind> = [.column, .line, .area]
+        for (index, (group, groupKind)) in groups.enumerated() {
+            if index > 0 && (!combinable.contains(chart.kind) || !combinable.contains(groupKind)) {
+                continue
+            }
+            for series in group.children(named: "ser") {
+                let name = series.firstChild(named: "tx").map { descendants("v", in: $0).map(\.text).joined() } ?? ""
+                let values = points(in: series.firstChild(named: "val") ?? series.firstChild(named: "yVal"))
+                    .map { Double($0) ?? 0 }
+                let properties = series.firstChild(named: "spPr")
+                // A line's colour is its line's; a column's or area's, its fill's.
+                let seriesColor = groupKind == .line || groupKind == .radar || groupKind == .scatter
+                    ? properties?.firstChild(named: "ln").flatMap { color(in: $0.firstChild(named: "solidFill")) }
+                        ?? properties.flatMap { color(in: $0.firstChild(named: "solidFill")) }
+                    : properties.flatMap { color(in: $0.firstChild(named: "solidFill")) }
+                var read = ChartSpec.Series(
+                    name: name, values: values, colorHex: seriesColor, kind: index > 0 && groupKind != chart.kind ? groupKind : nil
+                )
+                for point in series.children(named: "dPt") {
+                    guard let index = point.firstChild(named: "idx")?.attribute("val").flatMap({ Int($0) }),
+                          let fill = point.firstChild(named: "spPr").flatMap({ Self.color(in: $0.firstChild(named: "solidFill")) })
+                    else { continue }
+                    read.pointColorsHex[index] = fill
+                }
+                chart.series.append(read)
+                if chart.categories.isEmpty {
+                    chart.categories = points(in: series.firstChild(named: "cat") ?? series.firstChild(named: "xVal"))
+                }
             }
         }
         return chart.series.isEmpty ? nil : chart
+    }
+
+    // MARK: - What is drawn more simply
+
+    /// Whether the object a `wp:inline` or `wp:anchor` holds uses anything
+    /// Libretto draws more simply than Word does (see `DrawingObject`).
+    public static func isDrawnSimplified(_ container: XMLElement, package: Package) -> Bool {
+        guard let data = descendant("graphicData", in: container) else { return false }
+        switch data.attribute("uri") {
+        case shapeURI?:
+            return data.firstChild(named: "wsp").map(isSimplified(shape:)) ?? false
+        case chartURI?:
+            guard let id = data.firstChild(named: "chart")?.attribute("id"), let chart = package.part(id) else { return false }
+            return isSimplified(chart: chart)
+        case diagramURI?:
+            guard let model = data.firstChild(named: "relIds")?.attribute("dm"), let dataPart = package.part(model),
+                  let drawingID = descendant("dataModelExt", in: dataPart)?.attribute("relId"),
+                  let drawing = package.part(drawingID) else { return false }
+            return descendants("sp", in: drawing).contains(where: isSimplified(shape:))
+        default:
+            return false
+        }
+    }
+
+    /// A shape's fills, effects, outline and text that Libretto draws more simply.
+    static func isSimplified(shape: XMLElement) -> Bool {
+        if let properties = shape.firstChild(named: "spPr") {
+            let effects: Set<String> = ["gradFill", "pattFill", "blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
+            if properties.children.contains(where: { effects.contains($0.name) }) { return true }
+            if let list = properties.firstChild(named: "effectLst"), !list.children.isEmpty { return true }
+            if properties.firstChild(named: "effectDag") != nil { return true }
+            if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
+               !ShapeSpec.drawnGeometries.contains(geometry) { return true }
+            if let transform = properties.firstChild(named: "xfrm"),
+               (Int(transform.attribute("rot") ?? "") ?? 0) != 0
+                || ["1", "true"].contains(transform.attribute("flipH") ?? "")
+                || ["1", "true"].contains(transform.attribute("flipV") ?? "") { return true }
+            if let line = properties.firstChild(named: "ln") {
+                if line.firstChild(named: "gradFill") != nil || line.firstChild(named: "pattFill") != nil { return true }
+                if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid" { return true }
+                if line.firstChild(named: "custDash") != nil { return true }
+                for end in ["headEnd", "tailEnd"] {
+                    if let type = line.firstChild(named: end)?.attribute("type"), type != "none" { return true }
+                }
+            }
+        }
+        // Text set sideways or turned, and text flowing from one linked box into the next.
+        if let body = shape.firstChild(named: "bodyPr") {
+            if (Int(body.attribute("rot") ?? "") ?? 0) != 0 { return true }
+            if let vertical = body.attribute("vert"), vertical != "horz" { return true }
+        }
+        if shape.firstChild(named: "linkedTxbx") != nil { return true }
+        if shape.firstChild(named: "txbx")?.attribute("id") != nil { return true }
+        return false
+    }
+
+    /// A chart's kinds, 3-D, labels, fills, lines and legend that Libretto draws more simply.
+    static func isSimplified(chart root: XMLElement) -> Bool {
+        guard let plot = descendant("plotArea", in: root) else { return false }
+        let groups = plot.children.filter { element in
+            chartKinds.contains { $0.0 == element.name } || roughChartGroups.contains(element.name)
+        }
+        if groups.contains(where: { roughChartGroups.contains($0.name) }) { return true }
+        // More than one group is drawn only as columns with lines or areas over them.
+        if groups.count > 1 {
+            let combinable: Set<String> = ["barChart", "lineChart", "areaChart"]
+            if !groups.allSatisfy({ combinable.contains($0.name) }) { return true }
+            if groups.first?.firstChild(named: "barDir")?.attribute("val") == "bar" { return true }
+            // On a second value axis.
+            let axes = Set(groups.flatMap { $0.children(named: "axId").compactMap { $0.attribute("val") } })
+            if axes.count > 2 { return true }
+        }
+        for group in groups {
+            if group.firstChild(named: "varyColors")?.attribute("val") == "1", !["pieChart", "doughnutChart"].contains(group.name) {
+                return true
+            }
+            for series in group.children(named: "ser") {
+                if series.firstChild(named: "trendline") != nil || series.firstChild(named: "errBars") != nil { return true }
+                // Points coloured one by one are drawn so only in a pie or doughnut.
+                if series.firstChild(named: "dPt") != nil, !["pieChart", "doughnutChart"].contains(group.name) { return true }
+                if let properties = series.firstChild(named: "spPr"),
+                   properties.children.contains(where: { ["gradFill", "pattFill", "blipFill", "effectLst"].contains($0.name) && !$0.children.isEmpty }) {
+                    return true
+                }
+            }
+            for labels in descendants("dLbls", in: group) where labels.firstChild(named: "delete")?.attribute("val") != "1" {
+                let shown = ["showVal", "showPercent", "showCatName", "showSerName", "showBubbleSize"]
+                if shown.contains(where: { labels.firstChild(named: $0).map { ["1", "true"].contains($0.attribute("val") ?? "1") } ?? false }) {
+                    return true
+                }
+            }
+        }
+        // A legend in a corner, or laid over the plot.
+        if let legend = descendant("legend", in: root) {
+            if legend.firstChild(named: "legendPos")?.attribute("val") == "tr" { return true }
+            if legend.firstChild(named: "overlay")?.attribute("val") == "1" { return true }
+        }
+        return false
+    }
+
+    /// Whether data is a picture every platform decodes: PNG, JPEG, GIF, BMP or TIFF, but not EMF or WMF.
+    public static func isRasterPicture(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(4))
+        guard bytes.count == 4 else { return false }
+        return bytes == [0x89, 0x50, 0x4E, 0x47] || bytes.starts(with: [0xFF, 0xD8]) || bytes.starts(with: [0x47, 0x49, 0x46])
+            || bytes.starts(with: [0x42, 0x4D]) || bytes == [0x49, 0x49, 0x2A, 0x00] || bytes == [0x4D, 0x4D, 0x00, 0x2A]
     }
 
     /// A cache's points, in their order, gaps left empty.
