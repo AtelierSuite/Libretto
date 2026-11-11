@@ -16,8 +16,7 @@ ENGINE = ["Alignment.Center", "Alignment.Justified", "Alignment.Left", "Alignmen
           "Error.MissingMainDocument", "Language.Diff", "Language.PlainText", "Notice.MissingFonts.Item",
           "Notice.MissingFonts.SystemFont", "Style.Body", "Style.Heading1", "Style.Heading2", "Style.Heading3",
           "Style.Quote", "Style.Subtitle", "Style.Title", "Unsupported.ContentControls",
-          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.MultipleColumns", "Unsupported.Shapes",
-          "Unsupported.TightWrapping"]
+          "Unsupported.EmbeddedObjects", "Unsupported.Macros", "Unsupported.Shapes"]
 SHARED = ["Comment.DefaultAuthor"]
 
 S = {
@@ -123,9 +122,7 @@ S = {
  "Unsupported.ContentControls": ["Content controls, such as a table of contents", "目次などのコンテンツコントロール", "목차 등의 콘텐츠 컨트롤", "内容控件，例如目录", "內容控制項，例如目錄"],
  "Unsupported.EmbeddedObjects": ["Embedded objects", "埋め込みオブジェクト", "포함된 개체", "嵌入的对象", "內嵌物件"],
  "Unsupported.Macros": ["Macros, which are kept but never run", "マクロ（保持されますが実行されません）", "매크로(유지되지만 실행되지 않음)", "宏（会保留，但绝不运行）", "巨集（會保留，但絕不執行）"],
- "Unsupported.MultipleColumns": ["Text in columns, which is shown in one column", "段組み（1段で表示されます）", "다단 텍스트(한 단으로 표시됨)", "分栏文本（以单栏显示）", "分欄文字（以單欄顯示）"],
  "Unsupported.Shapes": ["Shapes and text boxes", "図形とテキストボックス", "도형 및 텍스트 상자", "形状和文本框", "形狀和文字方塊"],
- "Unsupported.TightWrapping": ["Tight or through text wrapping, which is shown as square", "「外周」または「内部」の折り返し（「四角」で表示されます）", "빽빽하게 또는 투과 텍스트 줄 바꿈(정사각형으로 표시됨)", "紧密型或穿越型文字环绕（以四周型显示）", "緊密或穿透文字環繞（以矩形顯示）"],
  "ViewMode.Mobile": ["Mobile View", "モバイル表示", "모바일 보기", "移动视图", "行動版顯示"],
  "ViewMode.Page": ["Full Document", "ドキュメント全体", "전체 문서", "完整文稿", "完整文件"],
  "Toolbar.SourceCode": ["Source Code", "ソースコード", "소스 코드", "源代码", "原始碼"],

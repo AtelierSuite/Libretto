@@ -1226,41 +1226,6 @@
         }
       }
     },
-    "Unsupported.MultipleColumns": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Text in columns, which is shown in one column"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "段組み（1段で表示されます）"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다단 텍스트(한 단으로 표시됨)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分栏文本（以单栏显示）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分欄文字（以單欄顯示）"
-          }
-        }
-      }
-    },
     "Unsupported.Shapes": {
       "extractionState": "manual",
       "localizations": {
@@ -1292,41 +1257,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "形狀和文字方塊"
-          }
-        }
-      }
-    },
-    "Unsupported.TightWrapping": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tight or through text wrapping, which is shown as square"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「外周」または「内部」の折り返し（「四角」で表示されます）"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "빽빽하게 또는 투과 텍스트 줄 바꿈(정사각형으로 표시됨)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "紧密型或穿越型文字环绕（以四周型显示）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "緊密或穿透文字環繞（以矩形顯示）"
           }
         }
       }
