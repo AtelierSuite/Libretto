@@ -223,8 +223,8 @@ public enum MathRenderer: Sendable {
                 return scripts(base: row(element.firstChild(named: "e")), sub: element.firstChild(named: "sub"),
                                sup: element.firstChild(named: "sup"))
             case "sPre":
-                let scripts = self.scripts(base: .empty, sub: element.firstChild(named: "sub"), sup: element.firstChild(named: "sup"))
-                return .row([scripts, row(element.firstChild(named: "e"))])
+                return scripts(base: row(element.firstChild(named: "e")), sub: element.firstChild(named: "sub"),
+                               sup: element.firstChild(named: "sup"), before: true)
             case "rad":
                 return radical(element)
             case "nary":
@@ -295,7 +295,8 @@ public enum MathRenderer: Sendable {
             }
         }
 
-        private func scripts(base: Box, sub: XMLElement?, sup: XMLElement?) -> Box {
+        /// - Parameter before: whether the scripts come before the base, as in ¹⁴₆C: set flush right against it, as Word does.
+        private func scripts(base: Box, sub: XMLElement?, sup: XMLElement?, before: Bool = false) -> Box {
             let raised = sup.map { smaller.row($0) }
             let lowered = sub.map { smaller.row($0) }
             let raise = max(size * 0.42, base.ascent - (raised?.ascent ?? 0) * 0.5)
@@ -306,6 +307,12 @@ public enum MathRenderer: Sendable {
                 ascent: max(base.ascent, raise + (raised?.ascent ?? 0)),
                 descent: max(base.descent, lower + (lowered?.descent ?? 0))
             ) { origin in
+                if before {
+                    raised.map { $0.draw(CGPoint(x: origin.x + scriptsWidth - $0.width, y: origin.y - raise)) }
+                    lowered.map { $0.draw(CGPoint(x: origin.x + scriptsWidth - $0.width, y: origin.y + lower)) }
+                    base.draw(CGPoint(x: origin.x + scriptsWidth + 1, y: origin.y))
+                    return
+                }
                 base.draw(origin)
                 raised?.draw(CGPoint(x: origin.x + base.width + 1, y: origin.y - raise))
                 lowered?.draw(CGPoint(x: origin.x + base.width + 1, y: origin.y + lower))
