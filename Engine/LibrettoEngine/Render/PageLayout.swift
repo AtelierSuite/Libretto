@@ -705,23 +705,48 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let range = string.paragraphRange(for: NSRange(location: start, length: 0))
         let font = storage.attribute(.font, at: start, effectiveRange: nil) as? PlatformFont ?? .systemFont(ofSize: 11)
         let style = storage.attribute(.paragraphStyle, at: start, effectiveRange: nil) as? NSParagraphStyle
-        let line = font.lineHeight * max(1, style?.lineHeightMultiple ?? 1)
+        let line = Self.lineHeight(font, style)
         let before = style?.paragraphSpacingBefore ?? 0
         // Plenty of room for two lines and then some: nothing more to work out.
         if !keepsWhole, available > before + line * 2.5 { return nil }
+        // The lines alone: the space after the paragraph may run off the page's foot. Its
+        // mark is left out too, as measured it would make an empty line of its own.
         func height(of range: NSRange) -> CGFloat {
-            ceil(storage.attributedSubstring(from: range).boundingRect(
+            var range = range
+            if range.length > 1, string.character(at: NSMaxRange(range) - 1) == TextCharacters.paragraphBreakUnit {
+                range.length -= 1
+            }
+            let text = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
+            text.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                guard let style = value as? NSParagraphStyle, style.paragraphSpacing > 0 || style.paragraphSpacingBefore > 0,
+                      let lines = style.mutableCopy() as? NSMutableParagraphStyle else { return }
+                lines.paragraphSpacing = 0
+                lines.paragraphSpacingBefore = 0
+                text.addAttribute(.paragraphStyle, value: lines, range: range)
+            }
+            return ceil(text.boundingRect(
                 with: CGSize(width: geometry.contentWidth, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
             ).height)
         }
-        let whole = height(of: range)
+        let whole = before + height(of: range)
         var needed = keepsWhole ? whole : min(whole, before + line * 2)
         if properties.keepNext == true, NSMaxRange(range) < string.length {
-            let following = storage.attribute(.font, at: NSMaxRange(range), effectiveRange: nil) as? PlatformFont ?? font
-            needed += following.lineHeight
+            let next = NSMaxRange(range)
+            let following = storage.attribute(.font, at: next, effectiveRange: nil) as? PlatformFont ?? font
+            let followingStyle = storage.attribute(.paragraphStyle, at: next, effectiveRange: nil) as? NSParagraphStyle
+            needed += (style?.paragraphSpacing ?? 0) + (followingStyle?.paragraphSpacingBefore ?? 0)
+                + Self.lineHeight(following, followingStyle)
         }
         return needed
+    }
+
+    /// How high a line of text in a font is, in a paragraph style.
+    private static func lineHeight(_ font: PlatformFont, _ style: NSParagraphStyle?) -> CGFloat {
+        var line = font.lineHeight * max(1, style?.lineHeightMultiple ?? 1)
+        if let least = style?.minimumLineHeight, least > 0 { line = max(line, least) }
+        if let most = style?.maximumLineHeight, most > 0 { line = min(line, most) }
+        return line
     }
 
     // MARK: - Borders and shading
