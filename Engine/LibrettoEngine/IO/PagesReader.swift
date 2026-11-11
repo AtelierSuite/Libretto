@@ -681,8 +681,10 @@ public struct PagesConverter {
         let width = size?.float(1) ?? 0
         let height = size?.float(2) ?? 0
         guard width > 0 || height > 0 else { return nil }
-        var spec = ShapeSpec(fillHex: nil, lineHex: nil, lineWidth: 0, textColorHex: "000000", isTextBox: message.bool(6) == true)
+        var spec = ShapeSpec(fillHex: nil, lineHex: nil, lineWidth: 0, isTextBox: message.bool(6) == true)
         (spec.fillHex, spec.lineHex, spec.lineWidth) = shapeLook(shapeArchive?.reference(2))
+        // Text of no colour of its own is black, as Pages draws it, on a fill; on the page, the page's ink.
+        if spec.fillHex != nil { spec.textColorHex = "000000" }
         (spec.geometry, spec.outline) = Self.outline(shapeArchive?.message(3))
         if let storage = archive[message.reference(2)], storage.type == PagesReader.Types.storage {
             // Text set in a shape is not the body's, nor are its styles.

@@ -70,17 +70,17 @@ public final class ImageStore: @unchecked Sendable {
         return drawn
     }
 
-    /// A picture with what its crop cuts off taken away, or a shape, chart or diagram, drawn.
-    public func image(for picture: InlineImage, in package: DocumentPackage) -> PlatformImage? {
+    /// A picture with what its crop cuts off taken away, or a shape, chart or diagram, drawn in a colour scheme.
+    public func image(for picture: InlineImage, in package: DocumentPackage, scheme: ColorScheme = .light) -> PlatformImage? {
         if let object = picture.object {
-            let key = "object:\(object.hashValue):\(Int(picture.width))x\(Int(picture.height))"
+            let key = "object:\(object.hashValue):\(Int(picture.width))x\(Int(picture.height)):\(scheme)"
             lock.lock()
             if let cached = images[key] {
                 lock.unlock()
                 return cached
             }
             lock.unlock()
-            let drawn = ObjectRenderer.image(for: object, size: CGSize(width: picture.width, height: picture.height))
+            let drawn = ObjectRenderer.image(for: object, size: CGSize(width: picture.width, height: picture.height), scheme: scheme)
             lock.lock()
             images[key] = drawn
             lock.unlock()

@@ -195,7 +195,7 @@ public enum DocumentRenderer: Sendable {
     ) -> ImageAttachment {
         let attachment = ImageAttachment()
         attachment.inline = inline
-        attachment.image = context.images.image(for: image, in: context.package) ?? PlatformImage.symbol("photo")
+        attachment.image = context.images.image(for: image, in: context.package, scheme: context.scheme) ?? PlatformImage.symbol("photo")
         // A floating picture takes no room in its line: the page layout sets it where it sits.
         guard image.wrap == .inline else {
             attachment.bounds = CGRect(x: 0, y: 0, width: 0.01, height: 0.01)

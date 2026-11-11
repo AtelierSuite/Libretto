@@ -359,7 +359,7 @@ private struct Pages09Converter {
         let height = size?["h"].flatMap(Self.measure) ?? 0
         guard width > 0 || height > 0 else { return nil }
         let storage = node.first("text")?.first("text-storage")
-        var spec = ShapeSpec(fillHex: nil, lineHex: nil, lineWidth: 0, textColorHex: "000000", isTextBox: storage?.attributes["kind"] == "textbox")
+        var spec = ShapeSpec(fillHex: nil, lineHex: nil, lineWidth: 0, isTextBox: storage?.attributes["kind"] == "textbox")
         if let style = resolved(node.first("style")?.elements.first) {
             switch inheritedValue("fill", from: style) {
             case .color(let hex)?: spec.fillHex = hex
@@ -373,6 +373,8 @@ private struct Pages09Converter {
                 spec.lineWidth = stroke.attributes["width"].flatMap(Self.measure) ?? 1
             }
         }
+        // Text of no colour of its own is black, as Pages draws it, on a fill; on the page, the page's ink.
+        if spec.fillHex != nil { spec.textColorHex = "000000" }
         let natural = geometry?.first("naturalSize")?.attributes
         let naturalWidth = natural?["w"].flatMap(Self.measure) ?? width
         let naturalHeight = natural?["h"].flatMap(Self.measure) ?? height

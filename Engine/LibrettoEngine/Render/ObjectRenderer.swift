@@ -1,4 +1,5 @@
 #if canImport(UIKit) || canImport(AppKit)
+import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #else
@@ -8,13 +9,14 @@ import AppKit
 /// Draws shapes, text boxes, charts and SmartArt diagrams as pictures, for
 /// the pages, the reader and the PDF to show.
 public enum ObjectRenderer: Sendable {
-    public static func image(for object: DrawingObject, size: CGSize) -> PlatformImage {
+    /// An object drawn at a size; in the dark scheme, text of no colour of its own set straight on the page is light, as the body's is.
+    public static func image(for object: DrawingObject, size: CGSize, scheme: ColorScheme = .light) -> PlatformImage {
         let canvas = CGSize(width: max(1, size.width), height: max(1, size.height))
         return PlatformImage.drawn(size: canvas) { context in
             let bounds = CGRect(origin: .zero, size: canvas)
             switch object {
             case .shape(let shape):
-                draw(shape, in: bounds, context: context)
+                draw(shape, in: bounds, context: context, scheme: scheme)
             case .diagram(let shapes):
                 drawDiagram(shapes, in: bounds, context: context)
             case .chart(let chart):
@@ -41,7 +43,7 @@ public enum ObjectRenderer: Sendable {
         return rect.insetBy(dx: min(margin, rect.width / 2), dy: min(margin, rect.height / 2))
     }
 
-    public static func draw(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
+    public static func draw(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme = .light) {
         let inset = outlineRect(for: shape, in: rect)
         let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
         if let fill = shape.fillHex {
@@ -54,7 +56,8 @@ public enum ObjectRenderer: Sendable {
             path.stroke()
         }
         guard !shape.text.isEmpty else { return }
-        let fallbackColor = color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? .black : .white)
+        let ink: PlatformColor = shape.fillHex == nil && scheme == .dark ? .white : .black
+        let fallbackColor = color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? ink : .white)
         let text: NSAttributedString
         if let paragraphs = shape.formattedParagraphs {
             text = formattedText(paragraphs, color: fallbackColor, centred: !shape.isTextBox)
