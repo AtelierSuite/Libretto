@@ -17,6 +17,47 @@ public enum MathRenderer: Sendable {
     /// Whether a kept element is an equation.
     public static func isEquation(_ xml: String) -> Bool { xml.firstMatch(of: equationPattern) != nil }
 
+    /// Whether an OMML on-off property is on: present without a value means on.
+    static func isOn(_ value: String?, default fallback: Bool) -> Bool {
+        guard let value else { return fallback }
+        return !["0", "off", "false"].contains(value)
+    }
+
+    /// A string's glyph outlines, from its baseline's left end with y going up.
+    static func glyphPath(_ string: String, font: PlatformFont) -> CGPath {
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font]))
+        let path = CGMutablePath()
+        for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            guard let value = attributes[kCTFontAttributeName], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { continue }
+            let runFont = value as! CTFont
+            let count = CTRunGetGlyphCount(run)
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+            CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
+            for index in 0..<count {
+                guard let glyph = CTFontCreatePathForGlyph(runFont, glyphs[index], nil) else { continue }
+                path.addPath(glyph, transform: CGAffineTransform(translationX: positions[index].x, y: positions[index].y))
+            }
+        }
+        return path
+    }
+
+    /// Fills a path in the current context.
+    static func fill(_ path: CGPath, color: PlatformColor) {
+        #if canImport(UIKit)
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        #else
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        #endif
+        context.saveGState()
+        context.addPath(path)
+        context.setFillColor(color.cgColor)
+        context.fillPath()
+        context.restoreGState()
+    }
+
     /// An equation drawn: the picture, and how far it reaches below the baseline.
     public static func image(forXML xml: String, fontSize: CGFloat, color: PlatformColor) -> (image: PlatformImage, descent: CGFloat)? {
         var namespaces = DOCXPatcher.namespaceBindings(for: xml)
@@ -294,24 +335,75 @@ public enum MathRenderer: Sendable {
             let open = property(element, "dPr", "begChr") ?? "("
             let close = property(element, "dPr", "endChr") ?? ")"
             let separator = property(element, "dPr", "sepChr") ?? "|"
-            var parts: [Box] = []
-            for (index, item) in element.children(named: "e").enumerated() {
-                if index > 0 { parts.append(text(separator)) }
-                parts.append(row(item))
+            let grows = MathRenderer.isOn(property(element, "dPr", "grow"), default: true)
+            let items = element.children(named: "e").map(row)
+            let content = Box.row(items)
+            // As Word does: centred on the math axis, reaching as far above it as below, to cover what they hold.
+            let reach = max(content.ascent - axis, content.descent + axis) + size * 0.08
+            func fence(_ character: String) -> Box {
+                guard !character.isEmpty else { return .empty }
+                return grows ? stretched(character, height: reach * 2) : text(character)
             }
-            let inner = Box.row(parts)
-            // Delimiters as tall as what they hold.
-            let height = max(size, inner.ascent + inner.descent)
-            let fence = Layout(size: min(size * 3, height * 1.05), color: color)
-            let left = open.isEmpty ? .empty : fence.text(open)
-            let right = close.isEmpty ? .empty : fence.text(close)
-            let shift = (left.ascent - left.descent) / 2 - (inner.ascent - inner.descent) / 2
-            func centred(_ box: Box) -> Box {
-                Box(width: box.width, ascent: box.ascent - shift, descent: box.descent + shift) { origin in
-                    box.draw(CGPoint(x: origin.x, y: origin.y + shift))
-                }
+            var parts: [Box] = [fence(open)]
+            for (index, item) in items.enumerated() {
+                if index > 0 { parts.append(fence(separator)) }
+                parts.append(item)
             }
-            return .row([centred(left), inner, centred(right)])
+            parts.append(fence(close))
+            return .row(parts)
+        }
+
+        /// A delimiter drawn at least a height tall, centred on the axis: taller ones are drawn stretched
+        /// upright, so their strokes stay as thin as the text's, as Word's grown delimiters are.
+        private func stretched(_ character: String, height: CGFloat) -> Box {
+            let natural = text(character)
+            let font = self.font(italic: false)
+            let glyph = MathRenderer.glyphPath(character, font: font).boundingBoxOfPath
+            guard !glyph.isNull, glyph.height > 0, height > glyph.height * 1.05 else { return natural }
+            // Brackets and bars built from strokes, so their ends stay as thin as their stems.
+            let path = bracketPath(character, height: height) ?? MathRenderer.glyphPath(character, font: font)
+            let bounds = path.boundingBoxOfPath
+            let scaleY = height / bounds.height
+            let scaleX = min(1.6, 1 + (scaleY - 1) * 0.12)
+            let side = size * 0.06
+            let axis = self.axis
+            let color = self.color
+            let inkWidth = bounds.width * scaleX
+            return Box(width: inkWidth + side * 2, ascent: axis + height / 2, descent: height / 2 - axis) { origin in
+                // From glyph space (y up from the baseline) to the page (y down).
+                var transform = CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY)
+                    .concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
+                    .concatenating(CGAffineTransform(translationX: side, y: axis - height / 2))
+                    .concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                    .concatenating(CGAffineTransform(translationX: origin.x, y: origin.y))
+                guard let placed = path.copy(using: &transform) else { return }
+                MathRenderer.fill(placed, color: color)
+            }
+        }
+
+        /// Square brackets and bars as rectangles, in glyph space, a height tall.
+        private func bracketPath(_ character: String, height: CGFloat) -> CGPath? {
+            let stem = max(0.6, size * 0.07)
+            let arm = size * 0.22
+            let path = CGMutablePath()
+            switch character {
+            case "[", "⌈", "⌊":
+                path.addRect(CGRect(x: 0, y: 0, width: stem, height: height))
+                if character != "⌊" { path.addRect(CGRect(x: 0, y: height - stem, width: arm, height: stem)) }
+                if character != "⌈" { path.addRect(CGRect(x: 0, y: 0, width: arm, height: stem)) }
+            case "]", "⌉", "⌋":
+                path.addRect(CGRect(x: arm - stem, y: 0, width: stem, height: height))
+                if character != "⌋" { path.addRect(CGRect(x: 0, y: height - stem, width: arm, height: stem)) }
+                if character != "⌉" { path.addRect(CGRect(x: 0, y: 0, width: arm, height: stem)) }
+            case "|":
+                path.addRect(CGRect(x: 0, y: 0, width: stem, height: height))
+            case "‖":
+                path.addRect(CGRect(x: 0, y: 0, width: stem, height: height))
+                path.addRect(CGRect(x: stem * 3, y: 0, width: stem, height: height))
+            default:
+                return nil
+            }
+            return path
         }
 
         private func accent(_ element: XMLElement) -> Box {
