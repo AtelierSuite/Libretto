@@ -18,7 +18,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
     var scheme: ColorScheme
     let storage = NSTextStorage()
     let layoutManager: PageLayoutManager
-    let container = NSTextContainer()
+    let container = PageTextContainer()
     let textView: DocumentTextView
     let canvas: PageCanvasView
     let state: EditorState
@@ -88,7 +88,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
     func render() {
         refreshContext()
         let previous = selection
-        let rendered = DocumentRenderer.render(document.body, context: context)
+        let rendered = DocumentRenderer.render(document.body, context: context, finalSection: document.pageSetup)
         storage.setAttributedString(rendered.string)
         finalParagraph = rendered.finalParagraph
         trailingMarkers = rendered.trailingMarkers

@@ -28,7 +28,7 @@ public final class PrintedPages {
 
     public init(document: WordDocument) {
         let context = RenderContext(document: document, scheme: .light, images: ImageStore())
-        let rendered = DocumentRenderer.render(document.body, context: context)
+        let rendered = DocumentRenderer.render(document.body, context: context, finalSection: document.pageSetup)
 
         storage = NSTextStorage(attributedString: rendered.string)
         if let language = document.sourceLanguage {
@@ -38,7 +38,7 @@ public final class PrintedPages {
         layoutManager.styles = document.styles
         layoutManager.footnotes = NoteLayout.notes(in: storage, document: document, context: context)
         layoutManager.sections = SectionLayout.spans(in: storage, final: document.pageSetup)
-        container = NSTextContainer()
+        container = PageTextContainer()
         layoutManager.addTextContainer(container)
         storage.addLayoutManager(layoutManager)
         let pages = layoutManager.layOutPages(in: container, startingWith: 4)
