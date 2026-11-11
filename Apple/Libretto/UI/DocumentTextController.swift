@@ -18,7 +18,7 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
     var scheme: ColorScheme
     let storage = NSTextStorage()
     let layoutManager: PageLayoutManager
-    let container = NSTextContainer()
+    let container = PageTextContainer()
     let textView: DocumentTextView
     let view: PagedDocumentView
 
@@ -98,7 +98,7 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
         }
         refreshContext()
         let selection = textView.selectedRange
-        let rendered = DocumentRenderer.render(document.body, context: context)
+        let rendered = DocumentRenderer.render(document.body, context: context, finalSection: document.pageSetup)
         storage.setAttributedString(rendered.string)
         finalParagraph = rendered.finalParagraph
         trailingMarkers = rendered.trailingMarkers

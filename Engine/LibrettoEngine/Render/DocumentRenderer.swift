@@ -28,14 +28,21 @@ public struct RenderedText {
 /// last. Tables become one picture per row, so a long table breaks across
 /// pages between rows, and kept blocks one picture per line of what they hold.
 public enum DocumentRenderer: Sendable {
-    public static func render(_ blocks: [Block], context: RenderContext) -> RenderedText {
+    /// `finalSection`, the document's last section, narrows tables and
+    /// pictures in sections set in columns to their columns.
+    public static func render(_ blocks: [Block], context baseContext: RenderContext, finalSection: PageSetup? = nil) -> RenderedText {
         let output = NSMutableAttributedString()
-        var labeler = ListLabeler(context: context)
+        var labeler = ListLabeler(context: baseContext)
         var finalParagraph = Paragraph()
         var trailing: [Inline] = []
+        let columnWidths = finalSection.map { columnWidths(of: blocks, finalSection: $0) } ?? []
 
         for (index, block) in blocks.enumerated() {
             let isLast = index == blocks.count - 1
+            var context = baseContext
+            if index < columnWidths.count, let width = columnWidths[index] {
+                context.contentWidth = min(context.contentWidth, width)
+            }
             switch block {
             case .paragraph(let paragraph):
                 let label = labeler.label(for: paragraph.properties)
@@ -52,6 +59,19 @@ public enum DocumentRenderer: Sendable {
             }
         }
         return RenderedText(string: output, finalParagraph: finalParagraph, trailingMarkers: trailing)
+    }
+
+    /// The narrowest column of each block's section, for blocks in sections set in columns.
+    private static func columnWidths(of blocks: [Block], finalSection: PageSetup) -> [CGFloat?] {
+        var section = finalSection
+        var widths = [CGFloat?](repeating: nil, count: blocks.count)
+        // A section ends with the paragraph that holds its break.
+        for index in blocks.indices.reversed() {
+            if case .paragraph(let paragraph) = blocks[index], let own = paragraph.section { section = own }
+            guard section.hasColumns else { continue }
+            widths[index] = section.columnFrames(width: section.contentWidth).map { CGFloat($0.width) }.min()
+        }
+        return widths
     }
 
     // MARK: - Paragraphs
