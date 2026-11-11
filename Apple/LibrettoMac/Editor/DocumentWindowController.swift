@@ -198,20 +198,24 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         alert.alertStyle = .informational
         let readOnly = report.readOnlyFeatures
         let drawnDifferently = report.drawnDifferentlyFeatures
+        let fonts = libretto.fontSubstitutions
         alert.messageText = readOnly.isEmpty ? String(localized: "Notice.DrawnDifferently.Title")
             : String(localized: "Notice.UnsupportedFeatures.Title")
-        func section(_ message: String, _ features: [UnsupportedFeatureReport.Feature]) -> String {
-            message + "\n\n" + features.map { "• " + $0.label }.joined(separator: "\n")
+        func section(_ message: String, _ items: [String]) -> String {
+            message + "\n\n" + items.map { "• " + $0 }.joined(separator: "\n")
         }
         var sections: [String] = []
         if !readOnly.isEmpty {
             let message = libretto.savesPages ? "Notice.UnsupportedFeatures.PagesMessage"
                 : libretto.content.importedFormat != nil ? "Notice.UnsupportedFeatures.ImportedMessage"
                 : "Notice.UnsupportedFeatures.Message"
-            sections.append(section(String(localized: String.LocalizationValue(message)), readOnly))
+            sections.append(section(String(localized: String.LocalizationValue(message)), readOnly.map(\.label)))
         }
         if !drawnDifferently.isEmpty {
-            sections.append(section(String(localized: "Notice.DrawnDifferently.Message"), drawnDifferently))
+            sections.append(section(String(localized: "Notice.DrawnDifferently.Message"), drawnDifferently.map(\.label)))
+        }
+        if !fonts.isEmpty {
+            sections.append(section(String(localized: "Notice.MissingFonts.Message"), fonts.map(\.label)))
         }
         alert.informativeText = sections.joined(separator: "\n\n")
         alert.beginSheetModal(for: window)
@@ -374,7 +378,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
         case #selector(goToLine(_:)):
             return codeEditor != nil
         case #selector(showUnsupportedFeatures(_:)):
-            return libretto?.content.unsupportedFeatures.isEmpty == false
+            return libretto.map { !$0.content.unsupportedFeatures.isEmpty || !$0.fontSubstitutions.isEmpty } == true
         default:
             return true
         }
@@ -589,7 +593,7 @@ extension DocumentWindowController: NSToolbarItemValidation {
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
         case Item.unsupported:
-            item.isHidden = libretto?.content.unsupportedFeatures.isEmpty != false
+            item.isHidden = libretto.map { $0.content.unsupportedFeatures.isEmpty && $0.fontSubstitutions.isEmpty } != false
             return !item.isHidden
         case Item.style, Item.lists, Item.insert, Item.comment, Item.track:
             return pageEditor != nil
