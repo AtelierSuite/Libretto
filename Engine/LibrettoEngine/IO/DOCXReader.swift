@@ -391,21 +391,36 @@ private final class ReadContext {
                     keep(child, display: "\u{25A2}")
                 }
             case "AlternateContent":
-                // Usually a shape, with an old-style picture of itself as the fallback: the shape is read,
-                // and the whole is kept to write back.
+                // Usually a shape, with an old-style drawing of itself as the fallback. The shape is read,
+                // unless Libretto can't draw it as Word does and the fallback is a picture of it, which
+                // is drawn instead. Either way the whole is kept to write back.
                 let choice = child.children(named: "Choice").first { $0.firstChild(named: "drawing") != nil }
-                if let drawing = choice?.firstChild(named: "drawing"),
-                   let image = image(from: drawing) ?? object(from: drawing, keeping: child) {
+                let drawing = choice?.firstChild(named: "drawing")
+                let container = drawing?.children.first { $0.name == "inline" || $0.name == "anchor" }
+                if let drawing, let image = image(from: drawing) {
                     var image = image
                     image.xml = serialize(child)
                     add(.image(image))
+                } else if let container, DrawingObjectReader.isDrawnSimplified(container, package: drawings),
+                          let picture = fallbackPicture(in: child, choice: container) {
+                    add(.image(picture))
+                } else if let drawing, let object = object(from: drawing, keeping: child) {
+                    add(.image(object))
+                } else if let picture = fallbackPicture(in: child, choice: container) {
+                    add(.image(picture))
                 } else {
                     report.insert(.shapes)
                     keep(child, display: "\u{25A2}")
                 }
             case "pict", "object":
+                // An old-style shape or an embedded object, drawn as the picture it keeps of itself, if any.
                 report.insert(child.name == "object" ? .embeddedObjects : .shapes)
-                keep(child, display: "\u{25A2}")
+                if var picture = vmlPicture(in: child, sizedLike: nil) {
+                    picture.xml = serialize(child)
+                    add(.image(picture))
+                } else {
+                    keep(child, display: "\u{25A2}")
+                }
             case "footnoteReference", "endnoteReference":
                 guard let id = child.attribute("id"), let xml = serialize(child) else {
                     keep(child, display: nil)
@@ -459,6 +474,73 @@ private final class ReadContext {
         if container.name == "anchor" { placeFloating(&image, from: container) }
         if DrawingObjectReader.isDrawnSimplified(container, package: drawings) { report.insert(.simplifiedObjects) }
         return image
+    }
+
+    /// The picture an `mc:AlternateContent`'s fallback keeps of the object its choice holds, sized and
+    /// placed as that object is, and kept whole to write back.
+    private func fallbackPicture(in alternate: XMLElement, choice container: XMLElement?) -> InlineImage? {
+        guard let fallback = alternate.firstChild(named: "Fallback") else { return nil }
+        var picture: InlineImage?
+        if let drawing = fallback.firstChild(named: "drawing"), let image = image(from: drawing),
+           isRasterPicture(image.relationshipID) {
+            picture = image
+        } else if let vml = fallback.children.first(where: { $0.name == "pict" || $0.name == "object" }) {
+            picture = vmlPicture(in: vml, sizedLike: container)
+        }
+        guard var picture else { return nil }
+        if let container {
+            let extent = container.firstChild(named: "extent")
+            if let width = Double(extent?.attribute("cx") ?? ""), let height = Double(extent?.attribute("cy") ?? ""),
+               width > 0, height > 0 {
+                picture.width = width / 12_700
+                picture.height = height / 12_700
+            }
+            picture.isFloating = container.name == "anchor"
+            picture.wrap = .inline
+            if container.name == "anchor" { placeFloating(&picture, from: container) }
+        }
+        picture.xml = serialize(alternate)
+        picture.isStandIn = true
+        return picture
+    }
+
+    /// The picture a VML shape or embedded object keeps of itself (`v:imagedata`), if it is one every
+    /// platform draws, at the size its style gives, or the size of the drawing it stands in for.
+    private func vmlPicture(in element: XMLElement, sizedLike container: XMLElement?) -> InlineImage? {
+        guard let data = firstDescendant(named: "imagedata", in: element),
+              let id = data.attribute("id") ?? data.attribute("relid"), isRasterPicture(id) else { return nil }
+        var width = 0.0, height = 0.0
+        if let style = data.parent?.attribute("style") {
+            for declaration in style.split(separator: ";") {
+                let pair = declaration.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard pair.count == 2, let points = Self.points(fromCSS: pair[1]) else { continue }
+                if pair[0] == "width" { width = points }
+                if pair[0] == "height" { height = points }
+            }
+        }
+        if width <= 0 || height <= 0, let extent = container?.firstChild(named: "extent"),
+           let cx = Double(extent.attribute("cx") ?? ""), let cy = Double(extent.attribute("cy") ?? "") {
+            width = cx / 12_700
+            height = cy / 12_700
+        }
+        guard width > 0, height > 0 else { return nil }
+        var picture = InlineImage(relationshipID: id, width: width, height: height)
+        picture.isStandIn = true
+        return picture
+    }
+
+    /// A VML length (`12pt`, `1.5in`, `2cm`, `20mm`, `96px`) in points.
+    static func points(fromCSS value: String) -> Double? {
+        let units: [(String, Double)] = [("pt", 1), ("in", 72), ("cm", 72 / 2.54), ("mm", 72 / 25.4), ("px", 0.75), ("pc", 12)]
+        for (unit, scale) in units where value.hasSuffix(unit) {
+            return Double(value.dropLast(unit.count)).map { $0 * scale }
+        }
+        return Double(value).map { $0 / 12_700 }
+    }
+
+    /// Whether a relationship's part is a picture every platform draws (not EMF or WMF).
+    private func isRasterPicture(_ id: String) -> Bool {
+        drawings.part(data: id).map(DrawingObjectReader.isRasterPicture) ?? false
     }
 
     /// Where a floating drawing sits; tight wrapping is drawn as square, so the report says so.

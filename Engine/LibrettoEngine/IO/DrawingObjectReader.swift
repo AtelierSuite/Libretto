@@ -15,9 +15,12 @@ public enum DrawingObjectReader: Sendable {
         public var documentPath: String
 
         public func part(_ id: String) -> XMLElement? {
-            guard let relationship = relationships[id], !relationship.isExternal,
-                  let data = parts[DOCXPaths.resolve(relationship.target, relativeTo: documentPath)] else { return nil }
-            return try? XMLLite.parse(data)
+            part(data: id).flatMap { try? XMLLite.parse($0) }
+        }
+
+        public func part(data id: String) -> Data? {
+            guard let relationship = relationships[id], !relationship.isExternal else { return nil }
+            return parts[DOCXPaths.resolve(relationship.target, relativeTo: documentPath)]
         }
 
         public init(parts: [String: Data], relationships: [String: DocumentPackage.Relationship], documentPath: String) {
@@ -336,6 +339,14 @@ public enum DrawingObjectReader: Sendable {
             if legend.firstChild(named: "overlay")?.attribute("val") == "1" { return true }
         }
         return false
+    }
+
+    /// Whether data is a picture every platform decodes: PNG, JPEG, GIF, BMP or TIFF, but not EMF or WMF.
+    public static func isRasterPicture(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(4))
+        guard bytes.count == 4 else { return false }
+        return bytes == [0x89, 0x50, 0x4E, 0x47] || bytes.starts(with: [0xFF, 0xD8]) || bytes.starts(with: [0x47, 0x49, 0x46])
+            || bytes.starts(with: [0x42, 0x4D]) || bytes == [0x49, 0x49, 0x2A, 0x00] || bytes == [0x4D, 0x4D, 0x00, 0x2A]
     }
 
     /// A cache's points, in their order, gaps left empty.

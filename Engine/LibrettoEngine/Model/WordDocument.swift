@@ -665,6 +665,11 @@ public struct InlineImage: Equatable, Sendable {
     /// What the drawing is, when it is not a picture from an image part: a
     /// shape or text box, a chart, or a SmartArt diagram, drawn from its description.
     public var object: DrawingObject?
+    /// The picture the document keeps of an object Libretto cannot draw as Word
+    /// does (an `mc:Fallback` picture, or an embedded object's cached preview),
+    /// drawn in its place. It is written back as the object it stands in for,
+    /// so it is not resized or cropped.
+    public var isStandIn = false
 
     public init(
         relationshipID: String,
@@ -716,7 +721,9 @@ public struct InlineImage: Equatable, Sendable {
 ///   bar-of-pie charts (drawn as scatter, line and pie charts) are drawn more simply.
 /// - SmartArt: the shapes Word last laid the diagram out as, as shapes are drawn.
 ///
-/// The open notice says when a document has objects drawn more simply (`UnsupportedFeatureReport.Feature.simplifiedObjects`).
+/// Where the document keeps a picture of such an object, that picture is
+/// drawn instead (`InlineImage.isStandIn`). Otherwise the open notice says
+/// that objects are drawn more simply (`UnsupportedFeatureReport.Feature.simplifiedObjects`).
 public enum DrawingObject: Equatable, Hashable, Sendable {
     case shape(ShapeSpec)
     case chart(ChartSpec)

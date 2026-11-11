@@ -31,6 +31,8 @@ struct PicturePanel: View {
                         }
                     }
                 }
+                // A picture standing in for an object is kept as that object is.
+                .disabled(image.isStandIn)
 
                 if case .shape(let shape) = image.object {
                     Section("Picture.Section.Shape") {
@@ -61,7 +63,7 @@ struct PicturePanel: View {
                             onClear: { controller?.updateSelectedShape { $0.lineHex = nil } }
                         )
                     }
-                } else if image.object == nil {
+                } else if image.object == nil, !image.isStandIn {
                     Section("Picture.Section.Crop") {
                         cropSlider("Picture.Crop.Left", \.left, image)
                         cropSlider("Picture.Crop.Right", \.right, image)
@@ -97,6 +99,7 @@ struct PicturePanel: View {
                         )
                     }
                 }
+                .disabled(image.isStandIn)
 
                 Section {
                     Button("Picture.Delete", systemImage: "trash", role: .destructive) {
