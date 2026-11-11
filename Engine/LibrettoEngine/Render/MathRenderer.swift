@@ -4,6 +4,7 @@ import UIKit
 #else
 import AppKit
 #endif
+import CoreText
 
 /// Lays out and draws Office Math (OMML): fractions, scripts, radicals,
 /// big operators, delimiters, functions, accents, bars, limits, matrices and
@@ -84,7 +85,12 @@ public enum MathRenderer: Sendable {
             let font = self.font(italic: italic)
             let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
             let width = (string as NSString).size(withAttributes: attributes).width
-            return Box(width: width, ascent: font.ascender, descent: -font.descender) { origin in
+            // How far the ink reaches, as Word measures it: accents, bars and fraction parts sit close.
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: attributes))
+            let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            let ascent = ink.isNull ? 0 : max(0, ink.maxY)
+            let descent = ink.isNull ? 0 : max(0, -ink.minY)
+            return Box(width: width, ascent: ascent, descent: descent) { origin in
                 (string as NSString).draw(at: CGPoint(x: origin.x, y: origin.y - font.ascender), withAttributes: attributes)
             }
         }
@@ -170,11 +176,12 @@ public enum MathRenderer: Sendable {
                 return stack(element.children(named: "e").map(row), centered: false)
             case "borderBox":
                 let inner = row(element.firstChild(named: "e"))
-                return Box(width: inner.width + 4, ascent: inner.ascent + 2, descent: inner.descent + 2) { origin in
-                    inner.draw(CGPoint(x: origin.x + 2, y: origin.y))
+                let pad = max(2, size * 0.15)
+                return Box(width: inner.width + pad * 2, ascent: inner.ascent + pad, descent: inner.descent + pad) { origin in
+                    inner.draw(CGPoint(x: origin.x + pad, y: origin.y))
                     color.setStroke()
-                    PlatformBezierPath(rect: CGRect(x: origin.x + 0.5, y: origin.y - inner.ascent - 1.5, width: inner.width + 3,
-                                              height: inner.ascent + inner.descent + 3)).stroke()
+                    PlatformBezierPath(rect: CGRect(x: origin.x + 0.5, y: origin.y - inner.ascent - pad + 0.5, width: inner.width + pad * 2 - 1,
+                                              height: inner.ascent + inner.descent + pad * 2 - 1)).stroke()
                 }
             case "phant":
                 let inner = row(element.firstChild(named: "e"))
@@ -186,6 +193,11 @@ public enum MathRenderer: Sendable {
 
         // MARK: Pieces
 
+        /// A line of a matrix or of lines one above another: at least as tall as a line of text, so rows space evenly.
+        private func strut(_ box: Box) -> Box {
+            Box(width: box.width, ascent: max(box.ascent, size * 0.72), descent: max(box.descent, size * 0.24), draw: box.draw)
+        }
+
         private func fraction(_ element: XMLElement) -> Box {
             let type = property(element, "fPr", "type")
             let inner = Layout(size: size * 0.9, color: color)
@@ -194,7 +206,7 @@ public enum MathRenderer: Sendable {
             if type == "lin" || type == "skw" {
                 return .row([numerator, text("/"), denominator])
             }
-            let gap = size * 0.12
+            let gap = size * 0.18
             let width = max(numerator.width, denominator.width) + size * 0.3
             let axis = self.axis
             return Box(
@@ -262,7 +274,7 @@ public enum MathRenderer: Sendable {
             let body = row(element.firstChild(named: "e"))
             let operatorBox: Box
             if underOver {
-                operatorBox = limit(limit(symbol, lower, below: true), upper, below: false)
+                operatorBox = limit(limit(symbol, lower, below: true, gap: size * 0.12), upper, below: false, gap: size * 0.12)
             } else {
                 let raise = symbol.ascent * 0.7
                 let drop = symbol.descent + lower.ascent * 0.5
@@ -325,9 +337,9 @@ public enum MathRenderer: Sendable {
         }
 
         /// Something set centred above or below another.
-        private func limit(_ base: Box, _ attached: Box, below: Bool) -> Box {
+        private func limit(_ base: Box, _ attached: Box, below: Bool, gap: CGFloat? = nil) -> Box {
             let width = max(base.width, attached.width)
-            let gap = size * 0.05
+            let gap = gap ?? size * 0.08
             return Box(
                 width: width,
                 ascent: below ? base.ascent : base.ascent + gap + attached.ascent + attached.descent,
@@ -340,7 +352,7 @@ public enum MathRenderer: Sendable {
         }
 
         private func matrix(_ element: XMLElement) -> Box {
-            let rows = element.children(named: "mr").map { $0.children(named: "e").map(row) }
+            let rows = element.children(named: "mr").map { $0.children(named: "e").map { strut(row($0)) } }
             let columns = rows.map(\.count).max() ?? 0
             let widths = (0..<columns).map { column in rows.compactMap { $0.indices.contains(column) ? $0[column].width : nil }.max() ?? 0 }
             let gap = size * 0.6
@@ -364,6 +376,7 @@ public enum MathRenderer: Sendable {
 
         /// Lines one above another, the first on the baseline.
         private func stack(_ lines: [Box], centered: Bool) -> Box {
+            let lines = lines.map(strut)
             guard let first = lines.first else { return .empty }
             let width = lines.map(\.width).max() ?? 0
             let leading = size * 0.3
