@@ -18,7 +18,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
     var scheme: ColorScheme
     let storage = NSTextStorage()
     let layoutManager: PageLayoutManager
-    let container = NSTextContainer()
+    let container = PageTextContainer()
     let textView: DocumentTextView
     let canvas: PageCanvasView
     let state: EditorState

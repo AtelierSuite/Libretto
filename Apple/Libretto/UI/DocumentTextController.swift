@@ -18,7 +18,7 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
     var scheme: ColorScheme
     let storage = NSTextStorage()
     let layoutManager: PageLayoutManager
-    let container = NSTextContainer()
+    let container = PageTextContainer()
     let textView: DocumentTextView
     let view: PagedDocumentView
 

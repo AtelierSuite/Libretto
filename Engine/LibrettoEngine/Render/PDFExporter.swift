@@ -20,7 +20,7 @@ public enum PDFExporter: Sendable {
         layoutManager.styles = document.styles
         layoutManager.footnotes = NoteLayout.notes(in: storage, document: document, context: context)
         layoutManager.sections = SectionLayout.spans(in: storage, final: document.pageSetup)
-        let container = NSTextContainer()
+        let container = PageTextContainer()
         layoutManager.addTextContainer(container)
         storage.addLayoutManager(layoutManager)
         let pages = layoutManager.layOutPages(in: container, startingWith: 4)
