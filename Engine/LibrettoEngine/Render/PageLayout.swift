@@ -259,7 +259,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let placed = footnotes.isEmpty && noteHeights.isEmpty ? (byPage: [:], heights: [:]) : placeNotes()
             let caps = placeDropCaps()
             let paged = placeSections(pages: pages)
-            let floating = placeFloats()
+            let floating = placeFloats(pages: pages)
             notesByPage = placed.byPage
             dropCaps = caps
             pageSections = paged.pageSections
@@ -300,7 +300,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     private var floatExclusions: [CGRect] = []
 
     /// Each floating picture beside its paragraph, or where on the page it says, and what text keeps clear of.
-    private func placeFloats() -> (floats: [PlacedFloat], exclusions: [CGRect]) {
+    private func placeFloats(pages: Int) -> (floats: [PlacedFloat], exclusions: [CGRect]) {
         guard let storage = textStorage else { return ([], []) }
         let string = storage.string as NSString
         var floats: [PlacedFloat] = []
@@ -312,9 +312,13 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let glyph = glyphIndexForCharacter(at: paragraph.location)
             guard glyph < numberOfGlyphs else { return }
             let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            let page = geometry.page(containing: line.midY)
+            // One fixed to a page is on that page, or the last there is, wherever its paragraph is.
+            let page = picture.page.map { min(max(0, $0), max(0, pages - 1)) } ?? geometry.page(containing: line.midY)
             let shape = geometry.shape(page)
-            let scale = min(1, shape.contentWidth / max(picture.width, 1), shape.contentHeight * 0.9 / max(picture.height, 1))
+            // One placed on the page may be as large as the page; one beside its paragraph, as the text.
+            let isOnPage = picture.isHorizontalFromPage && picture.verticalAnchor == .page
+            let room = isOnPage ? shape.size : CGSize(width: shape.contentWidth, height: shape.contentHeight * 0.9)
+            let scale = min(1, room.width / max(picture.width, 1), room.height / max(picture.height, 1))
             let size = CGSize(width: picture.width * scale, height: picture.height * scale)
             // Across: from the margin, or the page's edge; the container starts at the text's leftmost edge.
             let origin = picture.isHorizontalFromPage ? 0 : shape.margins.left

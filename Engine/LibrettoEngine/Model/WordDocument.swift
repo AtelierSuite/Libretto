@@ -655,6 +655,9 @@ public struct InlineImage: Equatable, Sendable {
     public var wrapDistances = WrapDistances()
     /// Which sides of a picture wrapped square or tight text runs down.
     public var wrapSide: WrapSide = .both
+    /// The page a floating picture is fixed to, counted from 0, whichever
+    /// paragraph holds it: where Pages keeps an object that stays on its page.
+    public var page: Int?
 
     /// What a floating picture's place down the page is measured from.
     public enum VerticalAnchor: String, Sendable {
@@ -683,7 +686,8 @@ public struct InlineImage: Equatable, Sendable {
         wrapDistances: WrapDistances = WrapDistances(),
         crop: ImageCrop = ImageCrop(),
         isEdited: Bool = false,
-        object: DrawingObject? = nil
+        object: DrawingObject? = nil,
+        page: Int? = nil
     ) {
         self.relationshipID = relationshipID
         self.width = width
@@ -700,6 +704,7 @@ public struct InlineImage: Equatable, Sendable {
         self.crop = crop
         self.isEdited = isEdited
         self.object = object
+        self.page = page
     }
 }
 
