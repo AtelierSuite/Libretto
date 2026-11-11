@@ -327,10 +327,13 @@ public enum DrawingWriter: Sendable {
             horizontal = "<wp:positionH relativeFrom=\"\(horizontalFrom)\"><wp:posOffset>\(Int(image.horizontalOffset * 12_700))</wp:posOffset></wp:positionH>"
         }
         let vertical = "<wp:positionV relativeFrom=\"\(image.verticalAnchor.rawValue)\"><wp:posOffset>\(Int(image.verticalOffset * 12_700))</wp:posOffset></wp:positionV>"
+        let polygon = "<wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/><wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon>"
         let wrap: String
         switch image.wrap {
         case .square: wrap = "<wp:wrapSquare wrapText=\"bothSides\"/>"
-        case .tight: wrap = "<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/><wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>"
+        case .tight, .through:
+            let element = image.wrap == .tight ? "wp:wrapTight" : "wp:wrapThrough"
+            wrap = "<\(element) wrapText=\"bothSides\">\(polygon)</\(element)>"
         case .topAndBottom: wrap = "<wp:wrapTopAndBottom/>"
         default: wrap = "<wp:wrapNone/>"
         }

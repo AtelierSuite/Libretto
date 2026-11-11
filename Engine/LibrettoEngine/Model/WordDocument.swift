@@ -803,10 +803,14 @@ public struct ChartSpec: Equatable, Hashable, Sendable {
 }
 
 public enum ImageWrap: String, CaseIterable, Sendable {
-    case inline, square, tight, topAndBottom, behindText, inFrontOfText
+    case inline, square, tight, through, topAndBottom, behindText, inFrontOfText
 
     /// Whether text keeps clear of it beside it, or above and below it.
-    public var excludesText: Bool { self == .square || self == .tight || self == .topAndBottom }
+    public var excludesText: Bool { self == .square || followsOutline || self == .topAndBottom }
+
+    /// Whether text keeps to the picture's wrap polygon rather than its frame:
+    /// tight wrapping goes around its outline, through wrapping into its open parts too.
+    public var followsOutline: Bool { self == .tight || self == .through }
 }
 
 /// How far text keeps from each side of a floating picture, in points:

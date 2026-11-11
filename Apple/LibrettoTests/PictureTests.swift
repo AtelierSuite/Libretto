@@ -128,6 +128,20 @@ struct PictureTests {
         #expect(DrawingWriter.xml(for: plain, id: 1).contains(#"distT="0" distB="0" distL="114300" distR="114300""#))
     }
 
+    @Test("Through wrapping is read and written as through, not tight")
+    func readsAndWritesThroughWrapping() throws {
+        var image = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(of: try anchor("", wrap: #"<wp:wrapThrough wrapText="bothSides"/>"#), into: &image)
+        #expect(image.wrap == .through)
+        DrawingReader.readPlacement(of: try anchor("", wrap: #"<wp:wrapTight wrapText="bothSides"/>"#), into: &image)
+        #expect(image.wrap == .tight)
+
+        image.wrap = .through
+        let xml = DrawingWriter.xml(for: image, id: 1)
+        #expect(xml.contains("<wp:wrapThrough "))
+        #expect(!xml.contains("wrapTight"))
+    }
+
     @Test("Text keeps to a floating picture's wrap distances")
     func keepsToWrapDistances() throws {
         for (wrap, left) in [(ImageWrap.square, 36.0), (.tight, 0), (.square, 9)] {

@@ -463,7 +463,7 @@ private final class ReadContext {
     /// Where a floating drawing sits; tight wrapping is drawn as square, so the report says so.
     private func placeFloating(_ image: inout InlineImage, from anchor: XMLElement) {
         DrawingReader.readPlacement(of: anchor, into: &image)
-        if image.wrap == .tight { report.insert(.tightWrapping) }
+        if image.wrap.followsOutline { report.insert(.tightWrapping) }
     }
 
     private func firstDescendant(named name: String, in element: XMLElement) -> XMLElement? {
@@ -809,8 +809,10 @@ public enum DrawingReader: Sendable {
         let behind = ["1", "true", "on"].contains(anchor.attribute("behindDoc") ?? "")
         if anchor.firstChild(named: "wrapSquare") != nil {
             image.wrap = .square
-        } else if anchor.firstChild(named: "wrapTight") != nil || anchor.firstChild(named: "wrapThrough") != nil {
+        } else if anchor.firstChild(named: "wrapTight") != nil {
             image.wrap = .tight
+        } else if anchor.firstChild(named: "wrapThrough") != nil {
+            image.wrap = .through
         } else if anchor.firstChild(named: "wrapTopAndBottom") != nil {
             image.wrap = .topAndBottom
         } else {
