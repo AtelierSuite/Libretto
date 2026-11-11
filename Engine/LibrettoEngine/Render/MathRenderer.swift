@@ -14,6 +14,18 @@ public enum MathRenderer: Sendable {
 
     nonisolated(unsafe) private static let equationPattern = #/^<(?:[\w.\-]+:)?oMath(?:Para)?\b/#
 
+    nonisolated(unsafe) private static let displayPattern = #/^<(?:[\w.\-]+:)?oMathPara\b/#
+
+    /// How a paragraph's display equation lines up, if it holds one: as its `m:jc` says, centred by default.
+    public static func displayAlignment(of kept: [String]) -> NSTextAlignment? {
+        guard let xml = kept.first(where: { $0.firstMatch(of: displayPattern) != nil }) else { return nil }
+        switch element(xml)?.firstChild(named: "oMathParaPr")?.firstChild(named: "jc")?.attribute("val") {
+        case "left": return .left
+        case "right": return .right
+        default: return .center
+        }
+    }
+
     /// Whether a kept element is an equation.
     public static func isEquation(_ xml: String) -> Bool { xml.firstMatch(of: equationPattern) != nil }
 
@@ -58,11 +70,15 @@ public enum MathRenderer: Sendable {
         context.restoreGState()
     }
 
-    /// An equation drawn: the picture, and how far it reaches below the baseline.
-    public static func image(forXML xml: String, fontSize: CGFloat, color: PlatformColor) -> (image: PlatformImage, descent: CGFloat)? {
+    private static func element(_ xml: String) -> XMLElement? {
         var namespaces = DOCXPatcher.namespaceBindings(for: xml)
         namespaces["m"] = namespace
-        guard let element = XMLLite.fragment(xml, namespaces: namespaces) else { return nil }
+        return XMLLite.fragment(xml, namespaces: namespaces)
+    }
+
+    /// An equation drawn: the picture, and how far it reaches below the baseline.
+    public static func image(forXML xml: String, fontSize: CGFloat, color: PlatformColor) -> (image: PlatformImage, descent: CGFloat)? {
+        guard let element = element(xml) else { return nil }
         let box = Layout(size: fontSize, color: color).box(element)
         let pad: CGFloat = 1
         let size = CGSize(width: ceil(box.width) + pad * 2, height: ceil(box.ascent + box.descent) + pad * 2)
