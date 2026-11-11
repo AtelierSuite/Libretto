@@ -76,10 +76,14 @@ public enum MathRenderer: Sendable {
         return XMLLite.fragment(xml, namespaces: namespaces)
     }
 
+    /// An equation laid out, not yet drawn.
+    public static func box(forXML xml: String, fontSize: CGFloat, color: PlatformColor) -> Box? {
+        element(xml).map { Layout(size: fontSize, color: color).box($0) }
+    }
+
     /// An equation drawn: the picture, and how far it reaches below the baseline.
     public static func image(forXML xml: String, fontSize: CGFloat, color: PlatformColor) -> (image: PlatformImage, descent: CGFloat)? {
-        guard let element = element(xml) else { return nil }
-        let box = Layout(size: fontSize, color: color).box(element)
+        guard let box = box(forXML: xml, fontSize: fontSize, color: color) else { return nil }
         let pad: CGFloat = 1
         let size = CGSize(width: ceil(box.width) + pad * 2, height: ceil(box.ascent + box.descent) + pad * 2)
         let image = PlatformImage.drawn(size: size) { _ in
