@@ -11,6 +11,10 @@ import UniformTypeIdentifiers
 /// asks where to keep it as a Word document rather than writing over it.
 final class Document: NSDocument {
     private(set) var content = WordDocument()
+    /// The fonts the opened file's text is set in that are not installed,
+    /// and what is drawn instead. Edits only pick installed fonts, so this
+    /// is worked out once, as the file is read.
+    private(set) var fontSubstitutions: [FontSubstitution] = []
     private let history = DocumentHistory()
     /// The name of the file a converted document came from.
     private var convertedName: String?
@@ -61,6 +65,7 @@ final class Document: NSDocument {
         let read = try DocumentFile.read(fileWrapper, contentType: type)
         MainActor.assumeIsolated {
             content = read
+            fontSubstitutions = Typography.fontSubstitutions(in: read)
             undoManager?.removeAllActions()
             onReplace?(read)
         }

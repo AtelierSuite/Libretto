@@ -5,12 +5,19 @@ import UIKit
 @testable import LibrettoEngine
 
 /// Runs every `.docx` in a folder through reading, the editor's text,
-/// saving, editing and saving again, the reader and PDF export.
+/// saving, editing and saving again, the reader and PDF export, and compares
+/// each page drawn with a reference image kept beside the corpus.
 ///
 /// Off unless pointed at a folder, since the documents are not part of the
 /// repository: run with `TEST_RUNNER_LIBRETTO_CORPUS=/path/to/folder`, and
 /// optionally `TEST_RUNNER_LIBRETTO_CORPUS_OUTPUT=/path` to keep what was
 /// saved, for checking with other readers.
+///
+/// Page references are kept in `References/iOS/<document>/` in the corpus
+/// folder. A document without any has them recorded on its first run; after
+/// that, a page drawn differently or a different number of pages fails. Run
+/// with `TEST_RUNNER_LIBRETTO_RECORD_REFERENCES=1` to record them all afresh
+/// once a change is meant to draw them differently (see `PageSnapshots`).
 @Suite("Document corpus", .enabled(if: ProcessInfo.processInfo.environment["LIBRETTO_CORPUS"] != nil))
 struct CorpusTests {
     private static var folder: URL? {
@@ -44,6 +51,21 @@ struct CorpusTests {
             return "inline \(index): \(left.inlines[index]) / \(right.inlines[index])"
         }
         return "properties or identity: \(left.id == right.id ? "same" : "different") id"
+    }
+
+    @Test("Each document is drawn as its reference images show", arguments: files)
+    @MainActor
+    func matchesReferences(_ name: String) throws {
+        let folder = try #require(Self.folder)
+        let document: WordDocument
+        do {
+            document = try DOCXReader.document(from: Data(contentsOf: folder.appending(path: name)))
+        } catch {
+            return
+        }
+        let references = folder.appending(path: "References/iOS").appending(path: name)
+        let problems = try PageSnapshots.compare(document, with: references, name: name, missingIsProblem: false)
+        for problem in problems { Issue.record(Comment(rawValue: problem)) }
     }
 
     @Test("Each document survives the round trip", arguments: files)

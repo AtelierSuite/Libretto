@@ -110,6 +110,26 @@ public final class ImageStore: @unchecked Sendable {
     }
 }
 
+/// A font a document's text is set in that is not installed, and what is drawn in its place.
+public struct FontSubstitution: Hashable, Sendable {
+    public var requested: String
+    /// The installed family drawn instead; `nil` for the system font.
+    public var replacement: String?
+
+    public init(requested: String, replacement: String?) {
+        self.requested = requested
+        self.replacement = replacement
+    }
+}
+
+extension FontSubstitution {
+    /// The font, and what it is shown in, for the notice that says so.
+    public var label: String {
+        let shownIn = replacement ?? String(localized: "Notice.MissingFonts.SystemFont", bundle: .engine)
+        return String(format: String(localized: "Notice.MissingFonts.Item", bundle: .engine), requested, shownIn)
+    }
+}
+
 public enum Typography: Sendable {
     // MARK: - Runs
 
@@ -233,17 +253,51 @@ public enum Typography: Sendable {
         "Batang": "Apple SD Gothic Neo", "맑은 고딕": "Apple SD Gothic Neo",
     ]
 
+    /// The font a run's font name asks for, its theme's font for a theme font.
+    public static func requestedFamily(_ name: String?, styles: StyleSheet) -> String? {
+        switch name {
+        case RunStyle.minorThemeFont?: return styles.minorFont
+        case RunStyle.majorThemeFont?: return styles.majorFont
+        default: return name
+        }
+    }
+
+    /// The installed family a font is drawn in: the font, or what stands in
+    /// for it if it is not installed; `nil` for the system font.
+    public static func installedFamily(for requested: String?) -> String? {
+        guard let requested, !requested.isEmpty else { return nil }
+        if installedFamilies.contains(requested) { return requested }
+        return substitutes[requested].flatMap { installedFamilies.contains($0) ? $0 : nil }
+    }
+
+    /// The fonts a document's text is set in that are not installed, and
+    /// what is drawn in their place, in alphabetical order.
+    public static func fontSubstitutions(in document: WordDocument) -> [FontSubstitution] {
+        var requested: Set<String> = []
+        // A run's font is down to its paragraph's style, its own character style and its own font.
+        var seen: Set<[String?]> = []
+        for paragraph in document.allParagraphs {
+            let styleID = paragraph.properties.styleID ?? document.styles.defaultParagraphStyleID
+            for inline in paragraph.inlines where !inline.plainText.isEmpty {
+                let direct = inline.format.style
+                guard seen.insert([styleID, direct.characterStyleID, direct.fontName]).inserted else { continue }
+                let style = document.styles.resolvedRunStyle(direct, paragraphStyleID: styleID)
+                if let name = requestedFamily(style.fontName, styles: document.styles), !name.isEmpty {
+                    requested.insert(name)
+                }
+            }
+        }
+        return requested.filter { !installedFamilies.contains($0) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .map { FontSubstitution(requested: $0, replacement: installedFamily(for: $0)) }
+    }
+
     public static func font(for style: RunStyle, styles: StyleSheet, scale: CGFloat = 1) -> PlatformFont {
         var size = CGFloat(style.fontSize ?? 22) / 2 * scale
         if style.verticalAlignment == .superscript || style.verticalAlignment == .subscript { size *= 0.65 }
 
-        var name = style.fontName
-        if name == RunStyle.minorThemeFont { name = styles.minorFont }
-        if name == RunStyle.majorThemeFont { name = styles.majorFont }
-        if let requested = name, !installedFamilies.contains(requested) { name = substitutes[requested] }
-
         var descriptor: PlatformFontDescriptor
-        if let family = name, installedFamilies.contains(family) {
+        if let family = installedFamily(for: requestedFamily(style.fontName, styles: styles)) {
             descriptor = PlatformFontDescriptor(fontAttributes: [.family: family])
         } else {
             descriptor = PlatformFont.systemFont(ofSize: size).fontDescriptor

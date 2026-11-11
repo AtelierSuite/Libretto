@@ -50,7 +50,6 @@ struct MobileItem: Identifiable {
         case spacer
         case image(UIImage, width: CGFloat)
         case table(MobileTable)
-        case preserved(String)
         /// A footnote or endnote, after the text: its number and its text.
         case note(number: String, text: String)
     }
@@ -88,61 +87,63 @@ struct MobileLayout {
         var items: [MobileItem] = []
         var lastWasSpacer = true
 
-        for (index, block) in document.body.enumerated() {
-            let id = "\(index)-\(block.id)"
-            switch block {
-            case .paragraph(let paragraph):
-                let label = labeler.label(for: paragraph.properties)
-                // Pictures stand on their own, at the width of the screen.
-                for (offset, inline) in paragraph.inlines.enumerated() {
-                    if case .image(let image) = inline.content,
-                       let picture = context.images.image(for: image, in: document.package, scheme: context.scheme) {
-                        items.append(MobileItem(id: "\(id)-image-\(offset)", content: .image(picture, width: image.width)))
+        /// Blocks, and what kept blocks among them hold, in order.
+        func add(_ blocks: [Block], prefix: String) {
+            for (index, block) in blocks.enumerated() {
+                let id = "\(prefix)\(index)-\(block.id)"
+                switch block {
+                case .paragraph(let paragraph):
+                    let label = labeler.label(for: paragraph.properties)
+                    // Pictures stand on their own, at the width of the screen.
+                    for (offset, inline) in paragraph.inlines.enumerated() {
+                        if case .image(let image) = inline.content,
+                           let picture = context.images.image(for: image, in: document.package, scheme: context.scheme) {
+                            items.append(MobileItem(id: "\(id)-image-\(offset)", content: .image(picture, width: image.width)))
+                            lastWasSpacer = false
+                        }
+                    }
+                    let built = builder.paragraph(paragraph, label: label)
+                    if built.text.characters.allSatisfy(\.isWhitespace), built.label == nil {
+                        // Empty paragraphs are how documents make space; one is enough.
+                        if !lastWasSpacer { items.append(MobileItem(id: id, content: .spacer)) }
+                        lastWasSpacer = true
+                    } else {
+                        items.append(MobileItem(id: id, content: .paragraph(built)))
                         lastWasSpacer = false
                     }
-                }
-                let built = builder.paragraph(paragraph, label: label)
-                if built.text.characters.allSatisfy(\.isWhitespace), built.label == nil {
-                    // Empty paragraphs are how documents make space; one is enough.
-                    if !lastWasSpacer { items.append(MobileItem(id: id, content: .spacer)) }
-                    lastWasSpacer = true
-                } else {
-                    items.append(MobileItem(id: id, content: .paragraph(built)))
-                    lastWasSpacer = false
-                }
-            case .table(let table):
-                let appearances = TableStyling.appearances(of: table, styles: document.styles)
-                var rows: [[AttributedString]] = []
-                var fills: [[Color?]] = []
-                for (rowIndex, row) in table.rows.enumerated() {
-                    var texts: [AttributedString] = []
-                    var colors: [Color?] = []
-                    for (cellIndex, cell) in row.cells.enumerated() {
-                        let appearance = appearances[rowIndex][cellIndex]
-                        let styled = MobileTextBuilder(
-                            context: TableStyling.context(context, for: appearance),
-                            readerSize: builder.readerSize, documentSize: builder.documentSize
-                        )
-                        texts.append(cell.verticalMerge == .continue ? AttributedString() : styled.cell(cell))
-                        colors.append(appearance.fillHex.flatMap {
-                            AdaptiveColor.resolve(hex: $0, for: scheme, isText: false)
-                        })
+                case .table(let table):
+                    let appearances = TableStyling.appearances(of: table, styles: document.styles)
+                    var rows: [[AttributedString]] = []
+                    var fills: [[Color?]] = []
+                    for (rowIndex, row) in table.rows.enumerated() {
+                        var texts: [AttributedString] = []
+                        var colors: [Color?] = []
+                        for (cellIndex, cell) in row.cells.enumerated() {
+                            let appearance = appearances[rowIndex][cellIndex]
+                            let styled = MobileTextBuilder(
+                                context: TableStyling.context(context, for: appearance),
+                                readerSize: builder.readerSize, documentSize: builder.documentSize
+                            )
+                            texts.append(cell.verticalMerge == .continue ? AttributedString() : styled.cell(cell))
+                            colors.append(appearance.fillHex.flatMap {
+                                AdaptiveColor.resolve(hex: $0, for: scheme, isText: false)
+                            })
+                        }
+                        rows.append(texts)
+                        fills.append(colors)
                     }
-                    rows.append(texts)
-                    fills.append(colors)
-                }
-                items.append(MobileItem(id: id, content: .table(MobileTable(
-                    rows: rows, fills: fills, columnCount: rows.map(\.count).max() ?? 0,
-                    hasBorders: table.hasBorders
-                ))))
-                lastWasSpacer = false
-            case .preserved(let preserved):
-                if !preserved.displayText.trimmed.isEmpty {
-                    items.append(MobileItem(id: id, content: .preserved(preserved.displayText)))
+                    items.append(MobileItem(id: id, content: .table(MobileTable(
+                        rows: rows, fills: fills, columnCount: rows.map(\.count).max() ?? 0,
+                        hasBorders: table.hasBorders
+                    ))))
                     lastWasSpacer = false
+                case .preserved(let preserved):
+                    // What it holds, shown as the rest of the document is.
+                    add(PreservedRenderer.shownContent(preserved), prefix: "\(id)/")
                 }
             }
         }
+        add(document.body, prefix: "")
         // Notes come after the text, footnotes then endnotes, in the order they are referred to.
         let notes = Dictionary(document.notes.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         var seen: Set<String> = []
@@ -199,7 +200,12 @@ struct MobileTextBuilder {
 
     func cell(_ cell: TableCell) -> AttributedString {
         var result = AttributedString()
-        for (index, paragraph) in cell.blocks.flatMap(\.paragraphs).enumerated() {
+        // A kept block's paragraphs are shown as the cell's own are.
+        func shown(_ block: Block) -> [Paragraph] {
+            if case .preserved(let kept) = block { return PreservedRenderer.shownContent(kept).flatMap(shown) }
+            return block.paragraphs
+        }
+        for (index, paragraph) in cell.blocks.flatMap(shown).enumerated() {
             if index > 0 { result += AttributedString("\n") }
             result += attributed(paragraph)
         }
@@ -288,15 +294,6 @@ private struct MobileItemView: View {
                 Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, 6)
-        case .preserved(let text):
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 10)
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(.quaternary).frame(width: 2)
-                }
-                .padding(.vertical, 8)
         }
     }
 }

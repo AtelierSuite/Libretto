@@ -237,6 +237,39 @@ public enum PlatformGraphics: Sendable {
         #endif
     }
 
+    /// The context being drawn in now, if any.
+    public static var currentContext: CGContext? {
+        #if canImport(UIKit)
+        UIGraphicsGetCurrentContext()
+        #else
+        NSGraphicsContext.current?.cgContext
+        #endif
+    }
+
+    /// An opaque bitmap, `scale` pixels to the point, drawn top down: the same
+    /// pixels on any device, unlike `PlatformImage.drawn`, which follows the screen.
+    public static func bitmap(size: CGSize, scale: CGFloat, draw: (CGContext) -> Void) -> CGImage? {
+        let pixelsWide = max(1, Int((size.width * scale).rounded(.up)))
+        let pixelsHigh = max(1, Int((size.height * scale).rounded(.up)))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
+            data: nil, width: pixelsWide, height: pixelsHigh, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(pixelsHigh))
+        context.scaleBy(x: scale, y: -scale)
+        #if canImport(UIKit)
+        UIGraphicsPushContext(context)
+        draw(context)
+        UIGraphicsPopContext()
+        #else
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        draw(context)
+        NSGraphicsContext.restoreGraphicsState()
+        #endif
+        return context.makeImage()
+    }
+
     /// A PDF of pages, each its own size, drawn top down.
     public static func pdf(pages sizes: [CGSize], draw: (_ page: Int, CGContext) -> Void) -> Data {
         let first = CGRect(origin: .zero, size: sizes.first ?? CGSize(width: 612, height: 792))

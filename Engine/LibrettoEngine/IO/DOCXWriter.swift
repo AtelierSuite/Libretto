@@ -327,10 +327,13 @@ public enum DrawingWriter: Sendable {
             horizontal = "<wp:positionH relativeFrom=\"\(horizontalFrom)\"><wp:posOffset>\(Int(image.horizontalOffset * 12_700))</wp:posOffset></wp:positionH>"
         }
         let vertical = "<wp:positionV relativeFrom=\"\(image.verticalAnchor.rawValue)\"><wp:posOffset>\(Int(image.verticalOffset * 12_700))</wp:posOffset></wp:positionV>"
+        let polygon = Self.polygon(image.wrapPolygon ?? .frame)
         let wrap: String
         switch image.wrap {
         case .square: wrap = "<wp:wrapSquare wrapText=\"\(image.wrapSide.rawValue)\"/>"
-        case .tight: wrap = "<wp:wrapTight wrapText=\"\(image.wrapSide.rawValue)\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/><wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>"
+        case .tight, .through:
+            let element = image.wrap == .tight ? "wp:wrapTight" : "wp:wrapThrough"
+            wrap = "<\(element) wrapText=\"\(image.wrapSide.rawValue)\">\(polygon)</\(element)>"
         case .topAndBottom: wrap = "<wp:wrapTopAndBottom/>"
         default: wrap = "<wp:wrapNone/>"
         }
@@ -343,6 +346,16 @@ public enum DrawingWriter: Sendable {
             relativeHeight="251659264" behindDoc="\(behind)" locked="0" layoutInCell="1" allowOverlap="1">\
             <wp:simplePos x="0" y="0"/>\(horizontal)\(vertical)\(common)\(wrap)\(tail)</wp:anchor></w:drawing>
             """
+    }
+
+    /// `wp:wrapPolygon`, in Word's 21600ths of the picture.
+    static func polygon(_ polygon: WrapPolygon) -> String {
+        let points = polygon.points.enumerated().map { index, point in
+            let x = Int((point.x * WrapPolygon.unitsPerPicture).rounded())
+            let y = Int((point.y * WrapPolygon.unitsPerPicture).rounded())
+            return "<wp:\(index == 0 ? "start" : "lineTo") x=\"\(x)\" y=\"\(y)\"/>"
+        }
+        return "<wp:wrapPolygon edited=\"\(polygon.isEdited ? 1 : 0)\">\(points.joined())</wp:wrapPolygon>"
     }
 
     /// A shape's graphic, for a shape or text box inserted in Libretto.

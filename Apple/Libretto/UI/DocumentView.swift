@@ -108,8 +108,8 @@ struct DocumentView: View {
             }
             .sheet(isPresented: $state.isShowingUnsupportedFeatureNotice) {
                 UnsupportedFeatureNotice(
-                    report: document.unsupportedFeatures, isImported: document.document.importedFormat != nil,
-                    keepsWhatIsLeftOut: savesPages
+                    report: document.unsupportedFeatures, fontSubstitutions: document.fontSubstitutions,
+                    isImported: document.document.importedFormat != nil, keepsWhatIsLeftOut: savesPages
                 )
                     .presentationDetents([.medium])
                     .presentationContentInteraction(.scrolls)
@@ -526,7 +526,7 @@ struct DocumentView: View {
                     state.controller?.updateFields()
                 }
             }
-            if !document.unsupportedFeatures.isEmpty {
+            if !document.unsupportedFeatures.isEmpty || !document.fontSubstitutions.isEmpty {
                 Button("Toolbar.UnsupportedFeatures.Label", systemImage: "exclamationmark.triangle") {
                     state.isShowingUnsupportedFeatureNotice = true
                 }
@@ -589,13 +589,14 @@ struct DocumentView: View {
 }
 
 /// What the More menu's warning says: which parts of the file Libretto can
-/// only show and keep, that macros never run, and what it draws differently
-/// from Word or Pages.
+/// only show and keep, that macros never run, what it draws differently
+/// from Word or Pages, and the fonts it draws in place of ones not installed.
 ///
 /// A sheet rather than an alert: nothing here needs deciding, so it has no
 /// business stopping the user before they have seen their document.
 private struct UnsupportedFeatureNotice: View {
     var report: UnsupportedFeatureReport
+    var fontSubstitutions: [FontSubstitution] = []
     /// Converted from another format, which leaves out what it cannot bring across.
     var isImported = false
     /// Saved back into the file it came from, which keeps what was left out.
@@ -624,6 +625,11 @@ private struct UnsupportedFeatureNotice: View {
                         .padding(.top, readOnly.isEmpty ? 0 : 8)
                         .accessibilityIdentifier("drawnDifferently")
                 }
+                if !fontSubstitutions.isEmpty {
+                    section("Notice.MissingFonts.Message", items: fontSubstitutions.map(\.label))
+                        .padding(.top, readOnly.isEmpty && drawnDifferently.isEmpty ? 0 : 8)
+                        .accessibilityIdentifier("missingFonts")
+                }
             }
             .multilineTextAlignment(.leading)
             .padding(24)
@@ -632,16 +638,24 @@ private struct UnsupportedFeatureNotice: View {
     }
 
     private func section(_ message: LocalizedStringKey, features: [UnsupportedFeatureReport.Feature]) -> some View {
+        section(message, items: features.map { ($0.label, $0 == .macros) })
+    }
+
+    private func section(_ message: LocalizedStringKey, items: [String]) -> some View {
+        section(message, items: items.map { ($0, false) })
+    }
+
+    private func section(_ message: LocalizedStringKey, items: [(label: String, isMacro: Bool)]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(message)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(features, id: \.self) { feature in
-                    Label(feature.label, systemImage: feature == .macros ? "curlybraces" : "circle.fill")
+                ForEach(items, id: \.label) { item in
+                    Label(item.label, systemImage: item.isMacro ? "curlybraces" : "circle.fill")
                         .font(.callout)
-                        .labelStyle(BulletLabelStyle(isMacro: feature == .macros))
+                        .labelStyle(BulletLabelStyle(isMacro: item.isMacro))
                 }
             }
         }
