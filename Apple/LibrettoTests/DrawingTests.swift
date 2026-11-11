@@ -138,7 +138,7 @@ struct DrawingTests {
         ))
         let (image, object) = try #require(object(document))
         #expect(object == .chart(ChartSpec(kind: .column, title: "Sales", categories: ["North", "South", "West"],
-                                           series: [ChartSpec.Series(name: "2025", values: [4, 7.5, 2])])))
+                                           series: [ChartSpec.Series(name: "2025", values: [4, 7.5, 2])], legend: nil)))
         let drawn = try #require(ImageStore().image(for: image, in: document.package))
         #expect(drawn.size == CGSize(width: 150, height: 100))
     }

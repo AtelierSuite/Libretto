@@ -86,6 +86,24 @@ public struct WordDocument: Equatable, Sendable {
         body.flatMap(\.paragraphs)
     }
 
+    /// Whether the document is laid out on its pages rather than flowing: no
+    /// text of its own, only objects fixed to its pages, as a Pages page
+    /// layout document is.
+    public var isLaidOutOnPages: Bool {
+        var placed = false
+        for block in body {
+            guard case .paragraph(let paragraph) = block else { continue }
+            for inline in paragraph.inlines {
+                switch inline.content {
+                case .image(let image) where image.page != nil: placed = true
+                case .pageBreak: continue
+                default: return false
+                }
+            }
+        }
+        return placed
+    }
+
     /// The document's words, for the word count.
     public var wordCount: Int {
         allParagraphs.reduce(0) { total, paragraph in
@@ -207,18 +225,31 @@ public struct PreservedBlock: Equatable, Sendable, Identifiable {
     public var displayText: String
     public var kind: Kind
     public var leadingXML: [String] = []
+    /// What it holds, read as paragraphs and tables, only to be drawn as
+    /// they look: `xml` is what is written back, untouched.
+    public var content: [Block] = []
 
     public enum Kind: String, Sendable {
         case contentControl
         case other
     }
 
-    public init(id: UUID = UUID(), xml: String, displayText: String, kind: Kind, leadingXML: [String] = []) {
+    public init(
+        id: UUID = UUID(), xml: String, displayText: String, kind: Kind, leadingXML: [String] = [],
+        content: [Block] = []
+    ) {
         self.id = id
         self.xml = xml
         self.displayText = displayText
         self.kind = kind
         self.leadingXML = leadingXML
+        self.content = content
+    }
+
+    /// The same block: what it holds is read from `xml`, so is not compared.
+    public static func == (lhs: PreservedBlock, rhs: PreservedBlock) -> Bool {
+        lhs.id == rhs.id && lhs.xml == rhs.xml && lhs.displayText == rhs.displayText && lhs.kind == rhs.kind
+            && lhs.leadingXML == rhs.leadingXML
     }
 }
 
@@ -653,6 +684,13 @@ public struct InlineImage: Equatable, Sendable {
     public var verticalAnchor: VerticalAnchor = .paragraph
     /// How far text keeps from a floating picture that it wraps around.
     public var wrapDistances = WrapDistances()
+    /// Which sides of a picture wrapped square or tight text runs down.
+    public var wrapSide: WrapSide = .both
+    /// The page a floating picture is fixed to, counted from 0, whichever
+    /// paragraph holds it: where Pages keeps an object that stays on its page.
+    public var page: Int?
+    /// The outline text keeps to when it wraps tight or through; `nil` for the picture's frame.
+    public var wrapPolygon: WrapPolygon?
 
     /// What a floating picture's place down the page is measured from.
     public enum VerticalAnchor: String, Sendable {
@@ -665,6 +703,11 @@ public struct InlineImage: Equatable, Sendable {
     /// What the drawing is, when it is not a picture from an image part: a
     /// shape or text box, a chart, or a SmartArt diagram, drawn from its description.
     public var object: DrawingObject?
+    /// The picture the document keeps of an object Libretto cannot draw as Word
+    /// does (an `mc:Fallback` picture, or an embedded object's cached preview),
+    /// drawn in its place. It is written back as the object it stands in for,
+    /// so it is not resized or cropped.
+    public var isStandIn = false
 
     public init(
         relationshipID: String,
@@ -679,9 +722,11 @@ public struct InlineImage: Equatable, Sendable {
         verticalOffset: Double = 0,
         verticalAnchor: VerticalAnchor = .paragraph,
         wrapDistances: WrapDistances = WrapDistances(),
+        wrapPolygon: WrapPolygon? = nil,
         crop: ImageCrop = ImageCrop(),
         isEdited: Bool = false,
-        object: DrawingObject? = nil
+        object: DrawingObject? = nil,
+        page: Int? = nil
     ) {
         self.relationshipID = relationshipID
         self.width = width
@@ -695,12 +740,32 @@ public struct InlineImage: Equatable, Sendable {
         self.verticalOffset = verticalOffset
         self.verticalAnchor = verticalAnchor
         self.wrapDistances = wrapDistances
+        self.wrapPolygon = wrapPolygon
         self.crop = crop
         self.isEdited = isEdited
         self.object = object
+        self.page = page
     }
 }
 
+/// What Libretto draws of an object, and what it draws as Word does.
+///
+/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
+///   solid fills and lines, and plain text in one size and colour. Gradient,
+///   pattern and picture fills, shadows, glows and other effects, 3-D, dashed
+///   lines and arrowheads, rotation, free-form outlines and text that flows
+///   between linked boxes are drawn more simply.
+/// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
+///   and column, line and area charts combined, from their cached values, with
+///   their title, categories, solid series and slice colours, stacking and a
+///   legend at a side. 3-D, data labels, gradient fills, trend lines, error bars,
+///   secondary axes, legends in a corner or over the plot, and bubble, stock and
+///   bar-of-pie charts (drawn as scatter, line and pie charts) are drawn more simply.
+/// - SmartArt: the shapes Word last laid the diagram out as, as shapes are drawn.
+///
+/// Where the document keeps a picture of such an object, that picture is
+/// drawn instead (`InlineImage.isStandIn`). Otherwise the open notice says
+/// that objects are drawn more simply (`UnsupportedFeatureReport.Feature.simplifiedObjects`).
 public enum DrawingObject: Equatable, Hashable, Sendable {
     case shape(ShapeSpec)
     case chart(ChartSpec)
@@ -712,6 +777,14 @@ public enum DrawingObject: Equatable, Hashable, Sendable {
 public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// `a:prstGeom`'s `prst`: `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow` and the rest.
     public var geometry = "rect"
+    /// The preset outlines drawn as Word draws them; any other is drawn as a rectangle.
+    public static let drawnGeometries: Set<String> = [
+        "rect", "roundRect", "flowChartAlternateProcess", "wedgeRoundRectCallout", "ellipse", "flowChartConnector",
+        "donut", "cloud", "wedgeEllipseCallout", "triangle", "flowChartExtract", "rtTriangle", "diamond",
+        "flowChartDecision", "parallelogram", "flowChartInputOutput", "trapezoid", "pentagon", "homePlate", "hexagon",
+        "octagon", "chevron", "rightArrow", "leftArrow", "upArrow", "downArrow", "plus", "mathPlus", "star5", "line",
+        "straightConnector1", "bentConnector3", "curvedConnector3", "flowChartProcess",
+    ]
     /// Six-digit RGB, or `nil` for none.
     public var fillHex: String? = "4472C4"
     public var lineHex: String? = "2F528F"
@@ -726,6 +799,17 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var frame: ShapeFrame?
     /// The text as read, to tell whether it has been edited.
     public var originalText: String?
+    /// The text's paragraphs in their own formatting, as read, drawn while
+    /// the text is as it was.
+    public var paragraphs: [ShapeParagraph]?
+    /// An outline of its own, drawn in place of the preset geometry's.
+    public var outline: ShapeOutline?
+
+    /// The formatted paragraphs, while they still say what the text does.
+    public var formattedParagraphs: [ShapeParagraph]? {
+        guard let paragraphs, paragraphs.map(\.text).joined(separator: "\n") == text else { return nil }
+        return paragraphs
+    }
 
     public init(
         geometry: String = "rect",
@@ -737,7 +821,9 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
         fontSize: Double? = nil,
         isTextBox: Bool = false,
         frame: ShapeFrame? = nil,
-        originalText: String? = nil
+        originalText: String? = nil,
+        paragraphs: [ShapeParagraph]? = nil,
+        outline: ShapeOutline? = nil
     ) {
         self.geometry = geometry
         self.fillHex = fillHex
@@ -749,6 +835,72 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
         self.isTextBox = isTextBox
         self.frame = frame
         self.originalText = originalText
+        self.paragraphs = paragraphs
+        self.outline = outline
+    }
+}
+
+/// A paragraph of a shape's text, in its own formatting.
+public struct ShapeParagraph: Equatable, Hashable, Sendable {
+    public var runs: [ShapeRun]
+    public var alignment: ParagraphAlignment?
+    /// Points.
+    public var spaceBefore: Double
+    public var spaceAfter: Double
+    /// How many lines each line takes, if not one.
+    public var lineHeightMultiple: Double?
+
+    public var text: String { runs.map(\.text).joined() }
+
+    public init(
+        runs: [ShapeRun], alignment: ParagraphAlignment? = nil, spaceBefore: Double = 0, spaceAfter: Double = 0,
+        lineHeightMultiple: Double? = nil
+    ) {
+        self.runs = runs
+        self.alignment = alignment
+        self.spaceBefore = spaceBefore
+        self.spaceAfter = spaceAfter
+        self.lineHeightMultiple = lineHeightMultiple
+    }
+}
+
+public struct ShapeRun: Equatable, Hashable, Sendable {
+    public var text: String
+    public var style: RunStyle
+
+    public init(text: String, style: RunStyle = RunStyle()) {
+        self.text = text
+        self.style = style
+    }
+}
+
+/// A shape's outline as a path, drawn scaled from the size it was drawn at to the shape's.
+public struct ShapeOutline: Equatable, Hashable, Sendable {
+    public enum Element: Equatable, Hashable, Sendable {
+        case move(ShapePoint)
+        case line(ShapePoint)
+        case quadCurve(ShapePoint, control: ShapePoint)
+        case curve(ShapePoint, control1: ShapePoint, control2: ShapePoint)
+        case close
+    }
+
+    public var width: Double
+    public var height: Double
+    public var elements: [Element]
+
+    public init(width: Double, height: Double, elements: [Element]) {
+        self.width = width
+        self.height = height
+        self.elements = elements
+    }
+}
+
+public struct ShapePoint: Equatable, Hashable, Sendable {
+    public var x, y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
     }
 }
 
@@ -766,19 +918,31 @@ public struct ShapeFrame: Equatable, Hashable, Sendable {
 /// A chart, from the values its chart part caches.
 public struct ChartSpec: Equatable, Hashable, Sendable {
     public enum Kind: String, Sendable {
-        case column, bar, line, area, pie, doughnut, scatter
+        case column, bar, line, area, pie, doughnut, scatter, radar
     }
 
     public struct Series: Equatable, Hashable, Sendable {
         public var name: String
         public var values: [Double]
         public var colorHex: String?
+        /// In a combined chart, how this series is drawn when it differs from the
+        /// chart's own kind: a line or area over columns, say.
+        public var kind: Kind?
+        /// Colours given to points one by one, by index: a pie's slices.
+        public var pointColorsHex: [Int: String] = [:]
 
-        public init(name: String, values: [Double], colorHex: String? = nil) {
+        public init(name: String, values: [Double], colorHex: String? = nil, kind: Kind? = nil, pointColorsHex: [Int: String] = [:]) {
             self.name = name
             self.values = values
             self.colorHex = colorHex
+            self.kind = kind
+            self.pointColorsHex = pointColorsHex
         }
+    }
+
+    /// Where the legend sits: `c:legendPos`'s values.
+    public enum LegendPosition: String, Sendable {
+        case bottom = "b", top = "t", left = "l", right = "r"
     }
 
     public var kind: Kind = .column
@@ -786,27 +950,42 @@ public struct ChartSpec: Equatable, Hashable, Sendable {
     public var categories: [String] = []
     public var series: [Series] = []
     public var isStacked = false
+    /// `nil` for a chart without one.
+    public var legend: LegendPosition? = .bottom
 
     public init(
         kind: Kind = .column,
         title: String? = nil,
         categories: [String] = [],
         series: [Series] = [],
-        isStacked: Bool = false
+        isStacked: Bool = false,
+        legend: LegendPosition? = .bottom
     ) {
         self.kind = kind
         self.title = title
         self.categories = categories
         self.series = series
         self.isStacked = isStacked
+        self.legend = legend
     }
 }
 
 public enum ImageWrap: String, CaseIterable, Sendable {
-    case inline, square, tight, topAndBottom, behindText, inFrontOfText
+    case inline, square, tight, through, topAndBottom, behindText, inFrontOfText
 
     /// Whether text keeps clear of it beside it, or above and below it.
-    public var excludesText: Bool { self == .square || self == .tight || self == .topAndBottom }
+    public var excludesText: Bool { self == .square || followsOutline || self == .topAndBottom }
+
+    /// Whether text keeps to the picture's wrap polygon rather than its frame:
+    /// tight wrapping goes around its outline, through wrapping into its open parts too.
+    public var followsOutline: Bool { self == .tight || self == .through }
+}
+
+/// Which sides of a floating picture text runs down: `wrapText`.
+public enum WrapSide: String, Sendable {
+    case both = "bothSides", left, right
+    /// Only the side with more room.
+    case largest
 }
 
 /// How far text keeps from each side of a floating picture, in points:
@@ -1159,6 +1338,10 @@ public struct PageSetup: Equatable, Sendable {
     /// Text columns, and the space between them, in twips.
     public var columns = 1
     public var columnSpacing = 708
+    /// Each column's own width and the space after it, in twips, when the
+    /// columns differ (`w:cols w:equalWidth="0"`); empty when they are alike.
+    /// Kept in the section's XML, so not written back from here.
+    public var columnSizes: [ColumnSize] = []
     /// `w:pgNumType`'s format for the page numbers its headers and footers
     /// show, such as `lowerRoman`; `nil` for 1, 2, 3.
     public var pageNumberFormat: String?
@@ -1206,6 +1389,45 @@ public struct PageSetup: Equatable, Sendable {
     public var isChanged: Bool {
         preservedXML == nil || original != values || headerFooters != (originalHeaderFooters ?? HeaderFooterReferences())
     }
+
+    /// One text column: its width and the space after it, in twips.
+    public struct ColumnSize: Equatable, Sendable {
+        public var width: Int
+        public var space: Int
+
+        public init(width: Int, space: Int) {
+            self.width = width
+            self.space = space
+        }
+    }
+
+    /// Where each text column is across text `width` points wide, from its
+    /// left edge, and how wide, in points: one column for a section in one.
+    /// Columns that would not fit are narrowed in proportion.
+    public func columnFrames(width: Double) -> [(x: Double, width: Double)] {
+        let sizes: [(width: Double, space: Double)]
+        if columnSizes.count > 1 {
+            sizes = columnSizes.map { (Double(max(0, $0.width)) / 20, Double(max(0, $0.space)) / 20) }
+        } else if columns > 1 {
+            let space = Double(max(0, columnSpacing)) / 20
+            let each = (width - space * Double(columns - 1)) / Double(columns)
+            sizes = Array(repeating: (each, space), count: columns)
+        } else {
+            return [(0, width)]
+        }
+        // The space after the last column is not part of the text.
+        let total = sizes.dropLast().reduce(0) { $0 + $1.width + $1.space } + (sizes.last?.width ?? 0)
+        let scale = total > width && total > 0 ? width / total : 1
+        guard sizes.allSatisfy({ $0.width * scale >= 1 }) else { return [(0, width)] }
+        var x = 0.0
+        return sizes.map { size in
+            defer { x += (size.width + size.space) * scale }
+            return (x, size.width * scale)
+        }
+    }
+
+    /// Whether the section's text is set in more than one column.
+    public var hasColumns: Bool { columns > 1 || columnSizes.count > 1 }
 
     /// Points, the unit the page view lays out in.
     public var size: CGSize { CGSize(width: Double(width) / 20, height: Double(height) / 20) }

@@ -62,8 +62,6 @@ public enum DOCXReader: Sendable {
         let sections = [pageSetup] + blocks.compactMap { block -> PageSetup? in
             if case .paragraph(let paragraph) = block { return paragraph.section } else { return nil }
         }
-        // Columns are kept, but every section is drawn in one.
-        if sections.contains(where: { $0.columns > 1 }) { report.insert(.multipleColumns) }
         let references = sections.flatMap { section in
             section.headerFooters.headers.values.map { ($0, false) } + section.headerFooters.footers.values.map { ($0, true) }
         }
@@ -177,7 +175,9 @@ private final class ReadContext {
                 guard let xml = serialize(element) else { continue }
                 let text = element.children.filter { $0.name != "tblPr" && $0.name != "tblGrid" }
                     .map { HeaderFooterReader.plainText(of: $0) }.filter { !$0.isEmpty }.joined(separator: "\n")
-                blocks.append(.preserved(PreservedBlock(xml: xml, displayText: text, kind: .other, leadingXML: pending)))
+                blocks.append(.preserved(PreservedBlock(
+                    xml: xml, displayText: text, kind: .other, leadingXML: pending, content: [.table(table(from: element))]
+                )))
                 pending = []
             case "sdt":
                 report.insert(.contentControls)
@@ -186,8 +186,9 @@ private final class ReadContext {
                     content.children.map { HeaderFooterReader.plainText(of: $0) }
                         .filter { !$0.isEmpty }.joined(separator: "\n")
                 } ?? ""
+                let content = element.firstChild(named: "sdtContent").map { self.blocks(from: Self.unwrapped($0.children)).blocks }
                 blocks.append(.preserved(PreservedBlock(
-                    xml: xml, displayText: text, kind: .contentControl, leadingXML: pending
+                    xml: xml, displayText: text, kind: .contentControl, leadingXML: pending, content: content ?? []
                 )))
                 pending = []
             case "sectPr":
@@ -391,21 +392,36 @@ private final class ReadContext {
                     keep(child, display: "\u{25A2}")
                 }
             case "AlternateContent":
-                // Usually a shape, with an old-style picture of itself as the fallback: the shape is read,
-                // and the whole is kept to write back.
+                // Usually a shape, with an old-style drawing of itself as the fallback. The shape is read,
+                // unless Libretto can't draw it as Word does and the fallback is a picture of it, which
+                // is drawn instead. Either way the whole is kept to write back.
                 let choice = child.children(named: "Choice").first { $0.firstChild(named: "drawing") != nil }
-                if let drawing = choice?.firstChild(named: "drawing"),
-                   let image = image(from: drawing) ?? object(from: drawing, keeping: child) {
+                let drawing = choice?.firstChild(named: "drawing")
+                let container = drawing?.children.first { $0.name == "inline" || $0.name == "anchor" }
+                if let drawing, let image = image(from: drawing) {
                     var image = image
                     image.xml = serialize(child)
                     add(.image(image))
+                } else if let container, DrawingObjectReader.isDrawnSimplified(container, package: drawings),
+                          let picture = fallbackPicture(in: child, choice: container) {
+                    add(.image(picture))
+                } else if let drawing, let object = object(from: drawing, keeping: child) {
+                    add(.image(object))
+                } else if let picture = fallbackPicture(in: child, choice: container) {
+                    add(.image(picture))
                 } else {
                     report.insert(.shapes)
                     keep(child, display: "\u{25A2}")
                 }
             case "pict", "object":
+                // An old-style shape or an embedded object, drawn as the picture it keeps of itself, if any.
                 report.insert(child.name == "object" ? .embeddedObjects : .shapes)
-                keep(child, display: "\u{25A2}")
+                if var picture = vmlPicture(in: child, sizedLike: nil) {
+                    picture.xml = serialize(child)
+                    add(.image(picture))
+                } else {
+                    keep(child, display: "\u{25A2}")
+                }
             case "footnoteReference", "endnoteReference":
                 guard let id = child.attribute("id"), let xml = serialize(child) else {
                     keep(child, display: nil)
@@ -439,7 +455,7 @@ private final class ReadContext {
             func fraction(_ name: String) -> Double { (Double(source.attribute(name) ?? "") ?? 0) / 100_000 }
             image.crop = ImageCrop(left: fraction("l"), top: fraction("t"), right: fraction("r"), bottom: fraction("b"))
         }
-        if container.name == "anchor" { placeFloating(&image, from: container) }
+        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
         return image
     }
 
@@ -457,13 +473,80 @@ private final class ReadContext {
         )
         image.object = object
         if container.name == "anchor" { placeFloating(&image, from: container) }
+        if DrawingObjectReader.isDrawnSimplified(container, package: drawings) { report.insert(.simplifiedObjects) }
         return image
     }
 
-    /// Where a floating drawing sits; tight wrapping is drawn as square, so the report says so.
+    /// The picture an `mc:AlternateContent`'s fallback keeps of the object its choice holds, sized and
+    /// placed as that object is, and kept whole to write back.
+    private func fallbackPicture(in alternate: XMLElement, choice container: XMLElement?) -> InlineImage? {
+        guard let fallback = alternate.firstChild(named: "Fallback") else { return nil }
+        var picture: InlineImage?
+        if let drawing = fallback.firstChild(named: "drawing"), let image = image(from: drawing),
+           isRasterPicture(image.relationshipID) {
+            picture = image
+        } else if let vml = fallback.children.first(where: { $0.name == "pict" || $0.name == "object" }) {
+            picture = vmlPicture(in: vml, sizedLike: container)
+        }
+        guard var picture else { return nil }
+        if let container {
+            let extent = container.firstChild(named: "extent")
+            if let width = Double(extent?.attribute("cx") ?? ""), let height = Double(extent?.attribute("cy") ?? ""),
+               width > 0, height > 0 {
+                picture.width = width / 12_700
+                picture.height = height / 12_700
+            }
+            picture.isFloating = container.name == "anchor"
+            picture.wrap = .inline
+            if container.name == "anchor" { placeFloating(&picture, from: container) }
+        }
+        picture.xml = serialize(alternate)
+        picture.isStandIn = true
+        return picture
+    }
+
+    /// The picture a VML shape or embedded object keeps of itself (`v:imagedata`), if it is one every
+    /// platform draws, at the size its style gives, or the size of the drawing it stands in for.
+    private func vmlPicture(in element: XMLElement, sizedLike container: XMLElement?) -> InlineImage? {
+        guard let data = firstDescendant(named: "imagedata", in: element),
+              let id = data.attribute("id") ?? data.attribute("relid"), isRasterPicture(id) else { return nil }
+        var width = 0.0, height = 0.0
+        if let style = data.parent?.attribute("style") {
+            for declaration in style.split(separator: ";") {
+                let pair = declaration.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard pair.count == 2, let points = Self.points(fromCSS: pair[1]) else { continue }
+                if pair[0] == "width" { width = points }
+                if pair[0] == "height" { height = points }
+            }
+        }
+        if width <= 0 || height <= 0, let extent = container?.firstChild(named: "extent"),
+           let cx = Double(extent.attribute("cx") ?? ""), let cy = Double(extent.attribute("cy") ?? "") {
+            width = cx / 12_700
+            height = cy / 12_700
+        }
+        guard width > 0, height > 0 else { return nil }
+        var picture = InlineImage(relationshipID: id, width: width, height: height)
+        picture.isStandIn = true
+        return picture
+    }
+
+    /// A VML length (`12pt`, `1.5in`, `2cm`, `20mm`, `96px`) in points.
+    static func points(fromCSS value: String) -> Double? {
+        let units: [(String, Double)] = [("pt", 1), ("in", 72), ("cm", 72 / 2.54), ("mm", 72 / 25.4), ("px", 0.75), ("pc", 12)]
+        for (unit, scale) in units where value.hasSuffix(unit) {
+            return Double(value.dropLast(unit.count)).map { $0 * scale }
+        }
+        return Double(value).map { $0 / 12_700 }
+    }
+
+    /// Whether a relationship's part is a picture every platform draws (not EMF or WMF).
+    private func isRasterPicture(_ id: String) -> Bool {
+        drawings.part(data: id).map(DrawingObjectReader.isRasterPicture) ?? false
+    }
+
+    /// Where a floating drawing sits.
     private func placeFloating(_ image: inout InlineImage, from anchor: XMLElement) {
         DrawingReader.readPlacement(of: anchor, into: &image)
-        if image.wrap == .tight { report.insert(.tightWrapping) }
     }
 
     private func firstDescendant(named name: String, in element: XMLElement) -> XMLElement? {
@@ -486,6 +569,18 @@ private final class ReadContext {
             && rows.allSatisfy { $0.children.allSatisfy { cellLevel.contains($0.name) } }
     }
 
+    /// Elements as they are shown: those inside custom XML and content
+    /// controls in their place, as Word draws them.
+    static func unwrapped(_ elements: [XMLElement]) -> [XMLElement] {
+        elements.flatMap { element -> [XMLElement] in
+            switch element.name {
+            case "customXml": return unwrapped(element.children.filter { $0.name != "customXmlPr" })
+            case "sdt": return unwrapped(element.firstChild(named: "sdtContent")?.children ?? [])
+            default: return [element]
+            }
+        }
+    }
+
     func table(from element: XMLElement) -> Table {
         let tblPr = element.firstChild(named: "tblPr")
         let styleID = tblPr?.firstChild(named: "tblStyle")?.attribute("val")
@@ -493,9 +588,11 @@ private final class ReadContext {
             .map { Int($0.attribute("w") ?? "") ?? 0 } ?? []
         let explicitBorders = tblPr?.firstChild(named: "tblBorders").map(PropertyReader.hasVisibleBorders)
 
-        let rows = element.children(named: "tr").map { row in
+        // An editable table holds only rows of cells; a kept one, read only to be drawn, may hold
+        // them inside content controls.
+        let rows = Self.unwrapped(element.children).filter { $0.name == "tr" }.map { row in
             TableRow(
-                cells: row.children(named: "tc").map(cell),
+                cells: Self.unwrapped(row.children).filter { $0.name == "tc" }.map(cell),
                 exceptionsXML: row.firstChild(named: "tblPrEx").flatMap { serialize($0) },
                 preservedPropertiesXML: row.firstChild(named: "trPr").flatMap { serialize($0) },
                 isHeader: row.firstChild(named: "trPr")?.firstChild(named: "tblHeader") != nil
@@ -809,8 +906,10 @@ public enum DrawingReader: Sendable {
         let behind = ["1", "true", "on"].contains(anchor.attribute("behindDoc") ?? "")
         if anchor.firstChild(named: "wrapSquare") != nil {
             image.wrap = .square
-        } else if anchor.firstChild(named: "wrapTight") != nil || anchor.firstChild(named: "wrapThrough") != nil {
+        } else if anchor.firstChild(named: "wrapTight") != nil {
             image.wrap = .tight
+        } else if anchor.firstChild(named: "wrapThrough") != nil {
+            image.wrap = .through
         } else if anchor.firstChild(named: "wrapTopAndBottom") != nil {
             image.wrap = .topAndBottom
         } else {
@@ -824,11 +923,14 @@ public enum DrawingReader: Sendable {
                   let emu = Double(value), emu >= 0 else { return fallback }
             return emu / 12_700
         }
+        image.wrapSide = wrapping.flatMap { $0.attribute("wrapText") }.flatMap(WrapSide.init(rawValue:)) ?? .both
         let defaults = WrapDistances()
         image.wrapDistances = WrapDistances(
             top: distance("distT", defaults.top), bottom: distance("distB", defaults.bottom),
             left: distance("distL", defaults.left), right: distance("distR", defaults.right)
         )
+        image.wrapPolygon = (wrapping?.name == "wrapTight" || wrapping?.name == "wrapThrough")
+            ? wrapping?.firstChild(named: "wrapPolygon").flatMap(polygon(from:)) : nil
         if let horizontal = anchor.firstChild(named: "positionH") {
             image.isHorizontalFromPage = horizontal.attribute("relativeFrom") == "page"
             if let align = horizontal.firstChild(named: "align")?.text {
@@ -845,6 +947,17 @@ public enum DrawingReader: Sendable {
             }
             image.verticalOffset = (Double(vertical.firstChild(named: "posOffset")?.text ?? "") ?? 0) / 12_700
         }
+    }
+
+    /// `wp:wrapPolygon`'s start and the lines from it, as fractions of the picture.
+    public static func polygon(from element: XMLElement) -> WrapPolygon? {
+        let points = element.children.compactMap { point -> WrapPolygon.Point? in
+            guard point.name == "start" || point.name == "lineTo",
+                  let x = Double(point.attribute("x") ?? ""), let y = Double(point.attribute("y") ?? "") else { return nil }
+            return WrapPolygon.Point(x: x / WrapPolygon.unitsPerPicture, y: y / WrapPolygon.unitsPerPicture)
+        }
+        guard points.count >= 3 else { return nil }
+        return WrapPolygon(points: points, isEdited: ["1", "true", "on"].contains(element.attribute("edited") ?? ""))
     }
 }
 
@@ -927,6 +1040,17 @@ public enum PageSetupReader: Sendable {
         if let columns = sectPr.firstChild(named: "cols") {
             setup.columns = max(1, value(columns, "num") ?? 1)
             setup.columnSpacing = value(columns, "space") ?? setup.columnSpacing
+            // Columns of their own widths, each with the space after it.
+            if let equal = columns.attribute("equalWidth"), ["0", "false", "off"].contains(equal) {
+                let sizes = columns.children(named: "col").compactMap { column -> PageSetup.ColumnSize? in
+                    guard let width = value(column, "w") else { return nil }
+                    return PageSetup.ColumnSize(width: width, space: value(column, "space") ?? 0)
+                }
+                if sizes.count > 1 {
+                    setup.columnSizes = sizes
+                    setup.columns = sizes.count
+                }
+            }
         }
         setup.pageNumberFormat = sectPr.firstChild(named: "pgNumType")?.attribute("fmt").flatMap { $0 == "decimal" ? nil : $0 }
         setup.originalHeaderFooters = setup.headerFooters

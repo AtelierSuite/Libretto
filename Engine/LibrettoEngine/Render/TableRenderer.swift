@@ -5,8 +5,7 @@ import UIKit
 import AppKit
 #endif
 
-/// Draws tables, row by row, and kept blocks, line by line, as pictures for
-/// the page view's text.
+/// Draws tables, row by row, as pictures for the page view's text.
 public enum TableRenderer: Sendable {
     /// Word's default cell margins.
     public static let horizontalPadding: CGFloat = 5.4
@@ -116,10 +115,15 @@ public enum TableRenderer: Sendable {
                     attributes: [.font: PlatformFont.systemFont(ofSize: 9), .foregroundColor: context.defaultTextColor]
                 ))
             case .preserved(let preserved):
-                output.append(NSAttributedString(
-                    string: preserved.displayText + "\n",
-                    attributes: [.font: PlatformFont.systemFont(ofSize: 10), .foregroundColor: context.defaultTextColor]
-                ))
+                // What it holds, as the cell's own paragraphs are.
+                let content = PreservedRenderer.shownContent(preserved)
+                guard !content.isEmpty else { continue }
+                let text = NSMutableAttributedString(attributedString: cellText(TableCell(blocks: content), context: context))
+                if index < cell.blocks.count - 1, !text.string.hasSuffix("\n") {
+                    let attributes = text.length > 0 ? text.attributes(at: text.length - 1, effectiveRange: nil) : [:]
+                    text.append(NSAttributedString(string: "\n", attributes: attributes))
+                }
+                output.append(text)
             }
         }
         // An equation in a cell reads as its text: the cell is drawn as plain text, not laid out.
@@ -136,34 +140,6 @@ public enum TableRenderer: Sendable {
         // Drawn text has no use for attachments it cannot show.
         output.removeAttribute(.attachment, range: NSRange(location: 0, length: output.length))
         return output
-    }
-
-    /// A kept block's text, one picture per line, tinted to show it is not editable.
-    public static func preservedImages(_ block: PreservedBlock, context: RenderContext) -> [PlatformImage] {
-        let text = block.displayText.isEmpty ? String(localized: "Block.Preserved.Placeholder", bundle: .engine) : block.displayText
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: PlatformFont.systemFont(ofSize: 11),
-            .foregroundColor: context.defaultTextColor.withAlphaComponent(0.75),
-        ]
-        let width = context.contentWidth
-        return text.components(separatedBy: "\n").map { line in
-            let string = NSAttributedString(string: line.isEmpty ? " " : line, attributes: attributes)
-            let bounds = string.boundingRect(
-                with: CGSize(width: width - 12, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
-            )
-            let size = CGSize(width: width, height: min(ceil(bounds.height) + 4, context.contentHeight * 0.9))
-            return PlatformImage.drawn(size: size) { graphics in
-                PlatformColor.systemGray.withAlphaComponent(0.12).setFill()
-                graphics.fill(CGRect(origin: .zero, size: size))
-                PlatformColor.systemGray.withAlphaComponent(0.5).setFill()
-                graphics.fill(CGRect(x: 0, y: 0, width: 2, height: size.height))
-                string.draw(
-                    with: CGRect(x: 8, y: 2, width: width - 12, height: size.height - 4),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
-                )
-            }
-        }
     }
 }
 #endif

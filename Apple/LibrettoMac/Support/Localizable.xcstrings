@@ -5321,6 +5321,41 @@
         }
       }
     },
+    "Notice.MissingFonts.Message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This document uses fonts that aren’t installed, so Libretto shows its text in other fonts. Lines and pages may break in different places than in Word or Pages. The document keeps its own fonts when it’s saved."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この書類にはインストールされていないフォントが使われているため、Librettoでは別のフォントで表示しています。行やページの区切り位置がWordやPagesと異なる場合があります。保存しても、書類のフォント指定はそのまま保持されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 문서에는 설치되지 않은 서체가 사용되어 Libretto에서 다른 서체로 표시합니다. 줄과 페이지가 Word 또는 Pages와 다른 위치에서 나뉠 수 있습니다. 문서를 저장해도 원래 서체 지정은 유지됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文稿使用了未安装的字体，因此 Libretto 以其他字体显示其文本。换行和分页的位置可能与 Word 或 Pages 中不同。存储文稿时会保留其原有字体。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件使用了未安裝的字體，因此 Libretto 以其他字體顯示其文字。換行和分頁的位置可能與 Word 或 Pages 中不同。儲存文件時會保留其原有字體。"
+          }
+        }
+      }
+    },
     "Notice.Pages.Unsaved": {
       "extractionState": "manual",
       "localizations": {

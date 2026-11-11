@@ -37,50 +37,53 @@ struct DrawnDifferentlyTests {
         #expect(document.unsupportedFeatures.drawnDifferentlyFeatures.isEmpty)
     }
 
-    @Test("A final section in two columns is noticed")
-    func columnsInFinalSection() throws {
+    @Test("A section in two columns is not noticed: it is drawn in two")
+    func columns() throws {
         let section = """
             <w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="2" w:space="720"/></w:sectPr></w:pPr>\
             <w:r><w:t>In two columns</w:t></w:r></w:p>
             """
         let document = try document(body: section)
-        #expect(document.unsupportedFeatures.features.contains(.multipleColumns))
-        #expect(document.unsupportedFeatures.drawnDifferentlyFeatures == [.multipleColumns])
-        #expect(document.unsupportedFeatures.readOnlyFeatures.isEmpty)
+        #expect(document.unsupportedFeatures.isEmpty)
     }
 
-    @Test("A section in one column is not")
-    func oneColumn() throws {
-        let section = """
-            <w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="1" w:space="720"/></w:sectPr></w:pPr>\
-            <w:r><w:t>In one column</w:t></w:r></w:p>
-            """
-        let document = try document(body: section)
-        #expect(!document.unsupportedFeatures.features.contains(.multipleColumns))
-    }
-
-    @Test("Tight and through wrapping are noticed, square wrapping is not", arguments: [
-        ("<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>", true),
-        ("<wp:wrapThrough wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapThrough>", true),
-        ("<wp:wrapSquare wrapText=\"bothSides\"/>", false),
+    @Test("Tight, through and square wrapping are drawn as Word does, so none is noticed", arguments: [
+        "<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>",
+        "<wp:wrapThrough wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapThrough>",
+        "<wp:wrapSquare wrapText=\"bothSides\"/>",
     ])
-    func wrapping(wrap: String, noticed: Bool) throws {
+    func wrapping(wrap: String) throws {
         let document = try document(body: floatingShape(wrap: wrap))
         let floats = document.allParagraphs.flatMap(\.inlines).contains {
             if case .image(let image) = $0.content { return image.isFloating } else { return false }
         }
         #expect(floats)
-        #expect(document.unsupportedFeatures.features.contains(.tightWrapping) == noticed)
+        #expect(document.unsupportedFeatures.drawnDifferentlyFeatures.isEmpty)
     }
 
     @Test("What is drawn differently is told apart from what is read-only, each in order")
     func split() {
-        let report = UnsupportedFeatureReport(features: [.tightWrapping, .macros, .multipleColumns, .shapes])
+        let report = UnsupportedFeatureReport(features: [.simplifiedObjects, .macros, .shapes])
         #expect(report.readOnlyFeatures == [.macros, .shapes])
-        #expect(report.drawnDifferentlyFeatures == [.multipleColumns, .tightWrapping])
+        #expect(report.drawnDifferentlyFeatures == [.simplifiedObjects])
         #expect(!report.isEmpty)
         for feature in UnsupportedFeatureReport.Feature.allCases {
             #expect(!feature.label.hasPrefix("Unsupported."), "\(feature) has no words of its own")
         }
+    }
+
+    @Test("Shape properties drawn more simply are told apart from those drawn as Word does", arguments: [
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:effectLst/></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"heart\"/></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", true),
+    ])
+    func simplifiedShapes(content: String, simplified: Bool) throws {
+        let shape = try XMLLite.parse(Data("<wps:wsp xmlns:wps=\"\(Self.wps)\" xmlns:a=\"\(OOXML.drawingMainNamespace)\">\(content)</wps:wsp>".utf8))
+        #expect(DrawingObjectReader.isSimplified(shape: shape) == simplified)
     }
 }

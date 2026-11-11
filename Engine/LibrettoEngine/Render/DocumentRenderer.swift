@@ -26,16 +26,23 @@ public struct RenderedText {
 ///
 /// Paragraphs become their text, each ended by a paragraph mark except the
 /// last. Tables become one picture per row, so a long table breaks across
-/// pages between rows, and kept blocks one picture per line.
+/// pages between rows, and kept blocks one picture per line of what they hold.
 public enum DocumentRenderer: Sendable {
-    public static func render(_ blocks: [Block], context: RenderContext) -> RenderedText {
+    /// `finalSection`, the document's last section, narrows tables and
+    /// pictures in sections set in columns to their columns.
+    public static func render(_ blocks: [Block], context baseContext: RenderContext, finalSection: PageSetup? = nil) -> RenderedText {
         let output = NSMutableAttributedString()
-        var labeler = ListLabeler(context: context)
+        var labeler = ListLabeler(context: baseContext)
         var finalParagraph = Paragraph()
         var trailing: [Inline] = []
+        let columnWidths = finalSection.map { columnWidths(of: blocks, finalSection: $0) } ?? []
 
         for (index, block) in blocks.enumerated() {
             let isLast = index == blocks.count - 1
+            var context = baseContext
+            if index < columnWidths.count, let width = columnWidths[index] {
+                context.contentWidth = min(context.contentWidth, width)
+            }
             switch block {
             case .paragraph(let paragraph):
                 let label = labeler.label(for: paragraph.properties)
@@ -52,6 +59,19 @@ public enum DocumentRenderer: Sendable {
             }
         }
         return RenderedText(string: output, finalParagraph: finalParagraph, trailingMarkers: trailing)
+    }
+
+    /// The narrowest column of each block's section, for blocks in sections set in columns.
+    private static func columnWidths(of blocks: [Block], finalSection: PageSetup) -> [CGFloat?] {
+        var section = finalSection
+        var widths = [CGFloat?](repeating: nil, count: blocks.count)
+        // A section ends with the paragraph that holds its break.
+        for index in blocks.indices.reversed() {
+            if case .paragraph(let paragraph) = blocks[index], let own = paragraph.section { section = own }
+            guard section.hasColumns else { continue }
+            widths[index] = section.columnFrames(width: section.contentWidth).map { CGFloat($0.width) }.min()
+        }
+        return widths
     }
 
     // MARK: - Paragraphs
@@ -205,7 +225,7 @@ public enum DocumentRenderer: Sendable {
     ) -> ImageAttachment {
         let attachment = ImageAttachment()
         attachment.inline = inline
-        attachment.image = context.images.image(for: image, in: context.package) ?? PlatformImage.symbol("photo")
+        attachment.image = context.images.image(for: image, in: context.package, scheme: context.scheme) ?? PlatformImage.symbol("photo")
         // A floating picture takes no room in its line: the page layout sets it where it sits.
         guard image.wrap == .inline else {
             attachment.bounds = CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
@@ -235,9 +255,10 @@ public enum DocumentRenderer: Sendable {
     // MARK: - Blocks
 
     /// How the line of a block's pictures is set: tight, so rows sit flush.
-    public static func blockParagraphStyle() -> NSParagraphStyle {
+    /// A kept block's pictures hold its own spacing, so it has none of its own after it.
+    public static func blockParagraphStyle(for block: Block? = nil) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.paragraphSpacing = 6
+        if case .preserved = block { style.paragraphSpacing = 0 } else { style.paragraphSpacing = 6 }
         style.lineSpacing = 0
         return style
     }
@@ -247,14 +268,14 @@ public enum DocumentRenderer: Sendable {
     public static func renderBlock(_ block: Block, context: RenderContext) -> NSAttributedString {
         let output = NSMutableAttributedString()
         let lineAttributes: [NSAttributedString.Key: Any] = [
-            .font: blockFont, .paragraphStyle: blockParagraphStyle(),
+            .font: blockFont, .paragraphStyle: blockParagraphStyle(for: block),
         ]
         let pictures: [(image: PlatformImage, rowID: TableRow.ID?)]
         switch block {
         case .table(let table):
             pictures = TableRenderer.rowImages(table, context: context).map { ($0.image, $0.rowID) }
         case .preserved(let preserved):
-            pictures = TableRenderer.preservedImages(preserved, context: context).map { ($0, nil) }
+            pictures = PreservedRenderer.images(preserved, context: context).map { ($0, nil) }
         case .paragraph:
             pictures = []
         }
