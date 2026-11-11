@@ -140,8 +140,8 @@ public enum MathRenderer: Sendable {
                                                          "≡", "→", "←", "⇒", "⇔", "∈", "∉", "⊂", "⊃", "∪", "∩", "·", "∝"]
 
         /// A run's text: letters in italic unless the run says plain, operators spaced out.
-        private func run(_ element: XMLElement) -> Box {
-            let content = element.children(named: "t").map(\.text).joined()
+        private func run(_ element: XMLElement, text content: String? = nil) -> Box {
+            let content = content ?? Self.runText(element)
             let plain = element.firstChild(named: "rPr")?.firstChild(named: "sty")?.attribute("val") == "p"
             var boxes: [Box] = []
             var pending = ""
@@ -165,6 +165,8 @@ public enum MathRenderer: Sendable {
             flush()
             return .row(boxes)
         }
+
+        private static func runText(_ element: XMLElement) -> String { element.children(named: "t").map(\.text).joined() }
 
         /// An element's children, side by side, their properties left out.
         public func row(_ element: XMLElement?) -> Box {
@@ -214,7 +216,7 @@ public enum MathRenderer: Sendable {
             case "m":
                 return matrix(element)
             case "eqArr":
-                return stack(element.children(named: "e").map(row), centered: false)
+                return equationArray(element)
             case "borderBox":
                 let inner = row(element.firstChild(named: "e"))
                 let pad = max(2, size * 0.15)
@@ -462,6 +464,68 @@ public enum MathRenderer: Sendable {
                         x += widths[column] + gap
                     }
                     y += heights[index].1 + size * 0.2
+                }
+            }
+        }
+
+        /// An equation array's line, cut where it aligns: at each `&` in its text, and before each run marked `aln`.
+        private func alignedPieces(_ element: XMLElement) -> [Box] {
+            var pieces: [[Box]] = [[]]
+            for child in element.children where !child.name.hasSuffix("Pr") {
+                guard child.name == "r" else {
+                    pieces[pieces.count - 1].append(box(child))
+                    continue
+                }
+                if child.firstChild(named: "rPr")?.firstChild(named: "aln") != nil { pieces.append([]) }
+                for (index, part) in Self.runText(child).split(separator: "&", omittingEmptySubsequences: false).enumerated() {
+                    if index > 0 { pieces.append([]) }
+                    if !part.isEmpty { pieces[pieces.count - 1].append(run(child, text: String(part))) }
+                }
+            }
+            return pieces.map(Box.row)
+        }
+
+        /// Lines one above another, as Word sets them: lined up at their alignment points (pieces between them
+        /// right- then left-aligned, by turns), lines with none centred, the whole centred on the math axis
+        /// unless its base is the top or bottom line.
+        private func equationArray(_ element: XMLElement) -> Box {
+            let lines = element.children(named: "e").map(alignedPieces)
+            let columns = lines.map(\.count).max() ?? 0
+            guard columns > 0 else { return .empty }
+            let widths = (0..<columns).map { column in
+                lines.compactMap { $0.indices.contains(column) ? $0[column].width : nil }.max() ?? 0
+            }
+            let width = widths.reduce(0, +)
+            let rows: [Box] = lines.map { pieces in
+                let row = strut(.row(pieces))
+                return Box(width: width, ascent: row.ascent, descent: row.descent) { origin in
+                    if columns == 1 {
+                        pieces[0].draw(CGPoint(x: origin.x + (width - pieces[0].width) / 2, y: origin.y))
+                        return
+                    }
+                    var x = origin.x
+                    for (column, piece) in pieces.enumerated() {
+                        let left = column.isMultiple(of: 2) ? widths[column] - piece.width : 0
+                        piece.draw(CGPoint(x: x + left, y: origin.y))
+                        x += widths[column]
+                    }
+                }
+            }
+            let leading = size * 0.2
+            let total = rows.reduce(0) { $0 + $1.ascent + $1.descent } + leading * CGFloat(rows.count - 1)
+            // Where the array's own baseline falls, measured down from its top.
+            let baseline: CGFloat
+            switch property(element, "eqArrPr", "baseJc") {
+            case "top": baseline = rows[0].ascent
+            case "bot", "bottom": baseline = total - rows[rows.count - 1].descent
+            default: baseline = total / 2 + axis
+            }
+            return Box(width: width, ascent: baseline, descent: total - baseline) { origin in
+                var y = origin.y - baseline
+                for row in rows {
+                    y += row.ascent
+                    row.draw(CGPoint(x: origin.x, y: y))
+                    y += row.descent + leading
                 }
             }
         }
