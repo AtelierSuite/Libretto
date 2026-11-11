@@ -234,10 +234,18 @@ private struct Pages09Converter {
         let pages = (drawables?.elements ?? []).filter { $0.name == "page-group" }
         if !pages.isEmpty, blocks.allSatisfy(Self.isBlank) {
             // A page layout document has no body text: its pages are what is placed on them.
-            blocks = floatingBlocks(pages)
-        } else if drawables?.descendants(where: { $0.name == "drawable-shape" || $0.name == "media" }).isEmpty == false {
-            // Objects placed on a page of a word-processing document have no place in its text.
-            document.unsupportedFeatures.insert(.shapes)
+            blocks = pageLayoutBlocks(pages)
+        } else if !pages.isEmpty {
+            // Objects placed on a page of a word-processing document stay on their page, so the
+            // body's first paragraph holds them, each fixed to its page.
+            let objects = pageObjects(pages).map { Inline(.image($0)) }
+            if let first = blocks.firstIndex(where: { if case .paragraph = $0 { true } else { false } }),
+               case .paragraph(var paragraph) = blocks[first] {
+                paragraph.inlines.insert(contentsOf: objects, at: 0)
+                blocks[first] = .paragraph(paragraph)
+            } else if !objects.isEmpty {
+                blocks.insert(.paragraph(Paragraph(inlines: objects)), at: 0)
+            }
         }
         // A table cannot end the document; Word wants a paragraph after it.
         if blocks.isEmpty || { if case .table = blocks.last { true } else { false } }() {
@@ -251,13 +259,12 @@ private struct Pages09Converter {
         return document
     }
 
-    /// What is placed on the pages, page by page, read down each page and
-    /// across: text boxes' and shapes' text as paragraphs, pictures and
-    /// tables as they are, and a page break between pages.
-    private mutating func floatingBlocks(_ pages: [Node]) -> [Block] {
+    /// What is placed on the pages, page by page: a paragraph for each page
+    /// holding its pictures, shapes and text boxes, each where Pages places it
+    /// on that page, its tables after it, and a page break between pages.
+    private mutating func pageLayoutBlocks(_ pages: [Node]) -> [Block] {
         var blocks: [Block] = []
-        let ordered = pages.sorted { ($0.attributes["page"].flatMap(Int.init) ?? 0) < ($1.attributes["page"].flatMap(Int.init) ?? 0) }
-        for (index, page) in ordered.enumerated() {
+        for (index, page) in Self.ordered(pages).enumerated() {
             if index > 0 {
                 if case .paragraph(var last) = blocks.last {
                     last.inlines.append(Inline(.pageBreak))
@@ -266,35 +273,168 @@ private struct Pages09Converter {
                     blocks.append(.paragraph(Paragraph(inlines: [Inline(.pageBreak)])))
                 }
             }
-            let items = page.elements.map { item -> (node: Node, x: Double, y: Double) in
-                let position = item.first("geometry")?.first("position")?.attributes
-                return (item, position?["x"].flatMap(Self.measure) ?? 0, position?["y"].flatMap(Self.measure) ?? 0)
-            }
-            for item in items.sorted(by: { ($0.y, $0.x) < ($1.y, $1.x) }) {
-                switch item.node.name {
-                case "drawable-shape":
-                    let body = item.node.first("text")?.first("text-storage")?.first("text-body")
-                    let content = body.map { self.blocks(in: $0, recordsStyles: true) } ?? []
-                    if content.allSatisfy(Self.isBlank) {
-                        // A shape with no text is a drawing Libretto cannot bring across.
-                        document.unsupportedFeatures.insert(.shapes)
-                    } else {
-                        blocks += content
-                    }
-                case "tabular-info":
-                    if let table = table(item.node) { blocks.append(.table(table)) }
-                case "media":
-                    if let image = image(in: item.node) {
-                        blocks.append(.paragraph(Paragraph(inlines: [Inline(.image(image))])))
-                    } else {
-                        document.unsupportedFeatures.insert(.shapes)
-                    }
-                default:
-                    document.unsupportedFeatures.insert(.shapes)
+            var objects: [InlineImage] = []
+            var tables: [Table] = []
+            for item in page.elements {
+                if item.name == "tabular-info" {
+                    if let table = table(item) { tables.append(table) }
+                    continue
+                }
+                // Nothing on the page has text around it to wrap.
+                if var object = floatingObject(item, page: index) {
+                    object.wrap = .inFrontOfText
+                    objects.append(object)
                 }
             }
+            blocks.append(.paragraph(Paragraph(inlines: objects.map { Inline(.image($0)) })))
+            blocks += tables.map { .table($0) }
         }
         return blocks
+    }
+
+    /// Page groups in page order.
+    private static func ordered(_ pages: [Node]) -> [Node] {
+        pages.sorted { ($0.attributes["page"].flatMap(Int.init) ?? 0) < ($1.attributes["page"].flatMap(Int.init) ?? 0) }
+    }
+
+    /// The objects placed on the pages of a word-processing document, each
+    /// fixed to its page: Pages numbers them from one, unless one is page zero.
+    private mutating func pageObjects(_ pages: [Node]) -> [InlineImage] {
+        let numbers = pages.map { $0.attributes["page"].flatMap(Int.init) ?? 1 }
+        let first = numbers.contains(0) ? 0 : 1
+        return zip(pages, numbers).flatMap { page, number in
+            page.elements.compactMap { item -> InlineImage? in
+                guard item.name != "tabular-info" else {
+                    document.unsupportedFeatures.insert(.shapes)
+                    return nil
+                }
+                return floatingObject(item, page: max(0, number - first))
+            }
+        }
+    }
+
+    /// A picture, shape or text box placed on a page, as an object floating
+    /// where it sits on it, wrapped as Pages wraps it.
+    private mutating func floatingObject(_ node: Node, page: Int) -> InlineImage? {
+        var placed: InlineImage
+        switch node.name {
+        case "drawable-shape":
+            guard let shape = shape(node) else { return nil }
+            placed = shape
+        case "media":
+            guard let image = image(in: node) else {
+                document.unsupportedFeatures.insert(.shapes)
+                return nil
+            }
+            placed = image
+        default:
+            document.unsupportedFeatures.insert(.shapes)
+            return nil
+        }
+        let position = node.first("geometry")?.first("position")?.attributes
+        placed.isFloating = true
+        placed.isHorizontalFromPage = true
+        placed.verticalAnchor = .page
+        placed.horizontalOffset = position?["x"].flatMap(Self.measure) ?? 0
+        placed.verticalOffset = position?["y"].flatMap(Self.measure) ?? 0
+        placed.page = page
+        let wrap = node.first("wrap")?.attributes
+        let margin = wrap?["margin"].flatMap(Self.measure) ?? 12
+        if wrap?["floating-wrap-enabled"] == "false" {
+            placed.wrap = .inFrontOfText
+        } else {
+            (placed.wrap, placed.wrapSide, placed.wrapDistances) = PagesConverter.wrap(
+                type: wrap?["type"].flatMap(UInt64.init) ?? 0, margin: margin
+            )
+        }
+        return placed
+    }
+
+    /// An `sf:drawable-shape`, a shape or text box, at its size: its outline,
+    /// fill and line, and its text in its own formatting; `nil` for one that shows nothing.
+    private mutating func shape(_ node: Node) -> InlineImage? {
+        let geometry = node.first("geometry")
+        let size = geometry?.first("size")?.attributes
+        let width = size?["w"].flatMap(Self.measure) ?? 0
+        let height = size?["h"].flatMap(Self.measure) ?? 0
+        guard width > 0 || height > 0 else { return nil }
+        let storage = node.first("text")?.first("text-storage")
+        var spec = ShapeSpec(fillHex: nil, lineHex: nil, lineWidth: 0, textColorHex: "000000", isTextBox: storage?.attributes["kind"] == "textbox")
+        if let style = resolved(node.first("style")?.elements.first) {
+            switch inheritedValue("fill", from: style) {
+            case .color(let hex)?: spec.fillHex = hex
+            case .node(let fill)?: spec.fillHex = fill.descendants { $0.name == "color" }.first.flatMap { color($0) }
+            default: break
+            }
+            if case .node(let stroke)? = inheritedValue("stroke", from: style),
+               stroke.first("pattern")?.attributes["type"] != "empty",
+               let line = stroke.first("color").flatMap({ color($0) }) {
+                spec.lineHex = line
+                spec.lineWidth = stroke.attributes["width"].flatMap(Self.measure) ?? 1
+            }
+        }
+        let natural = geometry?.first("naturalSize")?.attributes
+        let naturalWidth = natural?["w"].flatMap(Self.measure) ?? width
+        let naturalHeight = natural?["h"].flatMap(Self.measure) ?? height
+        if let path = node.first("path")?.elements.first {
+            switch path.name {
+            case "bezier-path":
+                spec.outline = path.first("bezier")?.attributes["path"].flatMap {
+                    Self.outline($0, width: naturalWidth, height: naturalHeight)
+                }
+            case "scalar-path":
+                (spec.geometry, spec.outline) = PagesConverter.scalarOutline(
+                    type: path.attributes["type"].flatMap(UInt64.init) ?? 0,
+                    amount: path.attributes["scalar"].flatMap(Self.measure) ?? 0,
+                    width: max(naturalWidth, 1), height: max(naturalHeight, 1)
+                )
+            default:
+                break
+            }
+        }
+        if let body = storage?.first("text-body") {
+            let paragraphs = PagesConverter.shapeParagraphs(blocks(in: body, recordsStyles: false))
+            if !paragraphs.allSatisfy({ $0.text.isEmpty }) {
+                spec.paragraphs = paragraphs
+                spec.text = paragraphs.map(\.text).joined(separator: "\n")
+                spec.originalText = spec.text
+            }
+        }
+        guard spec.fillHex != nil || spec.lineHex != nil || !spec.text.isEmpty else { return nil }
+        return InlineImage(relationshipID: "", width: max(width, 1), height: max(height, 1), object: .shape(spec))
+    }
+
+    /// An `sf:bezier`'s path, a run of `M`, `L`, `Q` and `C` with their points and `Z`, as an outline.
+    static func outline(_ path: String, width: Double, height: Double) -> ShapeOutline? {
+        let tokens = path.split(whereSeparator: { $0 == " " || $0 == "," || $0.isNewline })
+        var elements: [ShapeOutline.Element] = []
+        var index = 0
+        var largest = ShapePoint(x: 0, y: 0)
+        func points(_ count: Int) -> [ShapePoint]? {
+            guard index + count * 2 <= tokens.count else { return nil }
+            var result: [ShapePoint] = []
+            for _ in 0..<count {
+                guard let x = Self.measure(String(tokens[index])), let y = Self.measure(String(tokens[index + 1])) else { return nil }
+                result.append(ShapePoint(x: x, y: y))
+                largest = ShapePoint(x: max(largest.x, x), y: max(largest.y, y))
+                index += 2
+            }
+            return result
+        }
+        while index < tokens.count {
+            let command = tokens[index]
+            index += 1
+            switch command {
+            case "M": guard let at = points(1) else { return nil }; elements.append(.move(at[0]))
+            case "L": guard let at = points(1) else { return nil }; elements.append(.line(at[0]))
+            case "Q": guard let at = points(2) else { return nil }; elements.append(.quadCurve(at[1], control: at[0]))
+            case "C": guard let at = points(3) else { return nil }; elements.append(.curve(at[2], control1: at[0], control2: at[1]))
+            case "Z": elements.append(.close)
+            default: return nil
+            }
+        }
+        guard !elements.isEmpty else { return nil }
+        return ShapeOutline(width: max(width > 0 ? width : largest.x, 1), height: max(height > 0 ? height : largest.y, 1), elements: elements)
     }
 
     /// Whether a block shows nothing: a paragraph with no text, or only breaks.
@@ -523,6 +663,10 @@ private struct Pages09Converter {
                         if let table = table(attached) { pendingTables.append(table) }
                     } else if let image = attached.flatMap({ image(in: $0) }) {
                         runs.append(Inline(.image(image), format: format))
+                    } else if let drawn = attached.flatMap({ $0.name == "drawable-shape" ? $0 : $0.descendants { $0.name == "drawable-shape" }.first }),
+                              let shape = shape(drawn) {
+                        // A shape or text box set in the text, drawn in its line.
+                        runs.append(Inline(.image(shape), format: format))
                     } else {
                         document.unsupportedFeatures.insert(.shapes)
                     }

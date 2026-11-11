@@ -574,11 +574,12 @@ struct Pages09Tests {
         #expect(document.allParagraphs.map(\.plainText) == Self.document.allParagraphs.map(\.plainText))
     }
 
-    @Test("A page layout document's text boxes and tables read down each page, a page break between pages")
+    @Test("A page layout document's text boxes and shapes stay where they are placed, each page's tables after it")
     func pageLayout() throws {
         func box(_ text: String, x: Int, y: Int) -> String {
             """
-            <sf:drawable-shape><sf:geometry><sf:position sfa:x="\(x)" sfa:y="\(y)"/></sf:geometry><sf:text>\
+            <sf:drawable-shape><sf:geometry><sf:size sfa:w="200" sfa:h="40"/><sf:position sfa:x="\(x)" sfa:y="\(y)"/>\
+            </sf:geometry><sf:text>\
             <sf:text-storage sf:kind="textbox"><sf:text-body><sf:p>\(text)<sf:br/></sf:p></sf:text-body></sf:text-storage>\
             </sf:text></sf:drawable-shape>
             """
@@ -587,8 +588,9 @@ struct Pages09Tests {
             <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
             xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
             <sl:drawables><sl:page-group sl:page="2">\(box("Second page", x: 40, y: 40))</sl:page-group>\
-            <sl:page-group sl:page="1">\(box("Lower", x: 20, y: 300))\(box("Right", x: 300, y: 50))\(box("Left", x: 20, y: 50))\
-            <sf:drawable-shape><sf:geometry><sf:position sfa:x="0" sfa:y="0"/></sf:geometry></sf:drawable-shape>\
+            <sl:page-group sl:page="1">\(box("Lower", x: 20, y: 300))\(box("Right", x: 300, y: 50))\
+            <sf:drawable-shape><sf:geometry><sf:size sfa:w="50" sfa:h="50"/><sf:position sfa:x="0" sfa:y="0"/></sf:geometry>\
+            </sf:drawable-shape>\
             <sf:tabular-info><sf:geometry><sf:position sfa:x="20" sfa:y="200"/></sf:geometry><sf:tabular-model><sf:grid>\
             <sf:columns><sf:grid-column sf:width="100"/></sf:columns><sf:rows><sf:grid-row/></sf:rows>\
             <sf:datasource><sf:t><sf:ct sfa:s="Cell"/></sf:t></sf:datasource></sf:grid></sf:tabular-model></sf:tabular-info>\
@@ -597,9 +599,63 @@ struct Pages09Tests {
             </sf:text-body></sf:text-storage></sl:document>
             """
         let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
-        #expect(document.allParagraphs.map(\.plainText) == ["Left", "Right", "Cell", "Lower", "Second page"])
-        #expect(document.allParagraphs[3].inlines.last?.content == .pageBreak)
-        #expect(document.unsupportedFeatures.features == [.shapes])
+        func objects(_ paragraph: Paragraph) -> [InlineImage] {
+            paragraph.inlines.compactMap { if case .image(let image) = $0.content { image } else { nil } }
+        }
+        func text(_ image: InlineImage) -> String? {
+            if case .shape(let shape)? = image.object { shape.text } else { nil }
+        }
+        let paragraphs = document.allParagraphs
+        // A shape with neither fill, line nor text shows nothing, so is left out.
+        #expect(paragraphs.map { objects($0).compactMap(text) } == [["Lower", "Right"], [], [], ["Second page"]])
+        #expect(paragraphs.map(\.plainText) == ["", "Cell", "", ""])
+        let first = objects(paragraphs[0])
+        #expect(first.map(\.horizontalOffset) == [20, 300])
+        #expect(first.map(\.verticalOffset) == [300, 50])
+        #expect(first.allSatisfy { $0.page == 0 && $0.wrap == .inFrontOfText && $0.width == 200 })
+        #expect(objects(paragraphs[3]).map(\.page) == [1])
+        #expect(paragraphs[2].inlines.last?.content == .pageBreak)
+        #expect(document.unsupportedFeatures.isEmpty)
+    }
+
+    @Test("Objects placed on the pages of a word-processing document float on their pages, drawn as Pages draws them")
+    func floatingObjects() throws {
+        let index = """
+            <sl:document xmlns:sfa="http://developer.apple.com/namespaces/sfa" \
+            xmlns:sf="http://developer.apple.com/namespaces/sf" xmlns:sl="http://developer.apple.com/namespaces/sl">\
+            <sl:stylesheet><sf:anon-styles><sf:graphic-style sfa:ID="SFDGraphicStyle-1"><sf:property-map>\
+            <sf:fill><sf:color sfa:r="1" sfa:g="0" sfa:b="0" sfa:a="1"/></sf:fill>\
+            <sf:stroke><sf:stroke sf:width="2"><sf:color sfa:r="0" sfa:g="0" sfa:b="1" sfa:a="1"/>\
+            <sf:pattern sf:type="solid"/></sf:stroke></sf:stroke></sf:property-map></sf:graphic-style></sf:anon-styles>\
+            </sl:stylesheet>\
+            <sl:drawables><sl:page-group sl:page="2">\
+            <sf:drawable-shape><sf:geometry><sf:naturalSize sfa:w="100" sfa:h="100"/><sf:size sfa:w="200" sfa:h="100"/>\
+            <sf:position sfa:x="300" sfa:y="150"/></sf:geometry>\
+            <sf:path><sf:bezier-path><sf:bezier sfa:path="M 50 0 L 100 100 L 0 100 Z"/></sf:bezier-path></sf:path>\
+            <sf:style><sf:graphic-style-ref sfa:IDREF="SFDGraphicStyle-1"/></sf:style>\
+            <sf:wrap sf:type="3" sf:margin="6" sf:floating-wrap-enabled="true"/></sf:drawable-shape>\
+            </sl:page-group></sl:drawables>\
+            <sf:text-storage sf:kind="body"><sf:text-body><sf:section><sf:layout><sf:p>Body text.</sf:p>\
+            </sf:layout></sf:section></sf:text-body></sf:text-storage></sl:document>
+            """
+        let document = try PagesReader.document(fromFiles: ["index.xml": Data(index.utf8)])
+        let paragraph = try #require(document.allParagraphs.first)
+        #expect(paragraph.plainText == "Body text.")
+        guard case .image(let image)? = paragraph.inlines.first?.content, case .shape(let shape)? = image.object else {
+            Issue.record("No shape")
+            return
+        }
+        #expect(image.page == 1)
+        #expect(image.horizontalOffset == 300 && image.verticalOffset == 150)
+        #expect(image.width == 200 && image.height == 100)
+        #expect(image.wrap == .topAndBottom)
+        #expect(image.wrapDistances.top == 6)
+        #expect(shape.fillHex == "FF0000")
+        #expect(shape.lineHex == "0000FF" && shape.lineWidth == 2)
+        #expect(shape.outline == ShapeOutline(width: 100, height: 100, elements: [
+            .move(ShapePoint(x: 50, y: 0)), .line(ShapePoint(x: 100, y: 100)), .line(ShapePoint(x: 0, y: 100)), .close,
+        ]))
+        #expect(document.unsupportedFeatures.isEmpty)
     }
 
     @Test("Normal takes the style most of the text is in, not a title before it")
