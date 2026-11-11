@@ -292,7 +292,7 @@ ${darkRules.split("\n").filter(Boolean).map((rule) => `:root[data-theme="dark"] 
       image.style.objectFit = "cover";
       image.style.objectPosition = `${(left / Math.max(0.0001, left + right || 1)) * 100}% ${(top / Math.max(0.0001, top + bottom || 1)) * 100}%`;
     }
-    if (run.wrap && ["square", "tight", "topAndBottom"].includes(run.wrap)) {
+    if (run.wrap && ["square", "tight", "through", "topAndBottom"].includes(run.wrap)) {
       image.classList.add(run.align === "right" ? "pages__picture--right" : run.align === "center" ? "pages__picture--centre" : "pages__picture--left");
     }
     const url = this.pictures.get(run.id);

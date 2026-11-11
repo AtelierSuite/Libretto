@@ -1190,41 +1190,6 @@
           }
         }
       }
-    },
-    "Unsupported.TightWrapping": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tight or through text wrapping, which is shown as square"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「外周」または「内部」の折り返し（「四角」で表示されます）"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "빽빽하게 또는 투과 텍스트 줄 바꿈(정사각형으로 표시됨)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "紧密型或穿越型文字环绕（以四周型显示）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "緊密或穿透文字環繞（以矩形顯示）"
-          }
-        }
-      }
     }
   },
   "version": "1.0"

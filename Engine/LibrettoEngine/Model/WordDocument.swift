@@ -666,6 +666,8 @@ public struct InlineImage: Equatable, Sendable {
     public var verticalAnchor: VerticalAnchor = .paragraph
     /// How far text keeps from a floating picture that it wraps around.
     public var wrapDistances = WrapDistances()
+    /// The outline text keeps to when it wraps tight or through; `nil` for the picture's frame.
+    public var wrapPolygon: WrapPolygon?
 
     /// What a floating picture's place down the page is measured from.
     public enum VerticalAnchor: String, Sendable {
@@ -692,6 +694,7 @@ public struct InlineImage: Equatable, Sendable {
         verticalOffset: Double = 0,
         verticalAnchor: VerticalAnchor = .paragraph,
         wrapDistances: WrapDistances = WrapDistances(),
+        wrapPolygon: WrapPolygon? = nil,
         crop: ImageCrop = ImageCrop(),
         isEdited: Bool = false,
         object: DrawingObject? = nil
@@ -708,6 +711,7 @@ public struct InlineImage: Equatable, Sendable {
         self.verticalOffset = verticalOffset
         self.verticalAnchor = verticalAnchor
         self.wrapDistances = wrapDistances
+        self.wrapPolygon = wrapPolygon
         self.crop = crop
         self.isEdited = isEdited
         self.object = object
@@ -816,10 +820,14 @@ public struct ChartSpec: Equatable, Hashable, Sendable {
 }
 
 public enum ImageWrap: String, CaseIterable, Sendable {
-    case inline, square, tight, topAndBottom, behindText, inFrontOfText
+    case inline, square, tight, through, topAndBottom, behindText, inFrontOfText
 
     /// Whether text keeps clear of it beside it, or above and below it.
-    public var excludesText: Bool { self == .square || self == .tight || self == .topAndBottom }
+    public var excludesText: Bool { self == .square || followsOutline || self == .topAndBottom }
+
+    /// Whether text keeps to the picture's wrap polygon rather than its frame:
+    /// tight wrapping goes around its outline, through wrapping into its open parts too.
+    public var followsOutline: Bool { self == .tight || self == .through }
 }
 
 /// How far text keeps from each side of a floating picture, in points:

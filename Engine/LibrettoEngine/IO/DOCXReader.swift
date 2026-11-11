@@ -440,7 +440,7 @@ private final class ReadContext {
             func fraction(_ name: String) -> Double { (Double(source.attribute(name) ?? "") ?? 0) / 100_000 }
             image.crop = ImageCrop(left: fraction("l"), top: fraction("t"), right: fraction("r"), bottom: fraction("b"))
         }
-        if container.name == "anchor" { placeFloating(&image, from: container) }
+        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
         return image
     }
 
@@ -457,14 +457,8 @@ private final class ReadContext {
             xml: serialize(kept), isFloating: container.name == "anchor"
         )
         image.object = object
-        if container.name == "anchor" { placeFloating(&image, from: container) }
+        if container.name == "anchor" { DrawingReader.readPlacement(of: container, into: &image) }
         return image
-    }
-
-    /// Where a floating drawing sits; tight wrapping is drawn as square, so the report says so.
-    private func placeFloating(_ image: inout InlineImage, from anchor: XMLElement) {
-        DrawingReader.readPlacement(of: anchor, into: &image)
-        if image.wrap == .tight { report.insert(.tightWrapping) }
     }
 
     private func firstDescendant(named name: String, in element: XMLElement) -> XMLElement? {
@@ -824,8 +818,10 @@ public enum DrawingReader: Sendable {
         let behind = ["1", "true", "on"].contains(anchor.attribute("behindDoc") ?? "")
         if anchor.firstChild(named: "wrapSquare") != nil {
             image.wrap = .square
-        } else if anchor.firstChild(named: "wrapTight") != nil || anchor.firstChild(named: "wrapThrough") != nil {
+        } else if anchor.firstChild(named: "wrapTight") != nil {
             image.wrap = .tight
+        } else if anchor.firstChild(named: "wrapThrough") != nil {
+            image.wrap = .through
         } else if anchor.firstChild(named: "wrapTopAndBottom") != nil {
             image.wrap = .topAndBottom
         } else {
@@ -844,6 +840,8 @@ public enum DrawingReader: Sendable {
             top: distance("distT", defaults.top), bottom: distance("distB", defaults.bottom),
             left: distance("distL", defaults.left), right: distance("distR", defaults.right)
         )
+        image.wrapPolygon = (wrapping?.name == "wrapTight" || wrapping?.name == "wrapThrough")
+            ? wrapping?.firstChild(named: "wrapPolygon").flatMap(polygon(from:)) : nil
         if let horizontal = anchor.firstChild(named: "positionH") {
             image.isHorizontalFromPage = horizontal.attribute("relativeFrom") == "page"
             if let align = horizontal.firstChild(named: "align")?.text {
@@ -860,6 +858,17 @@ public enum DrawingReader: Sendable {
             }
             image.verticalOffset = (Double(vertical.firstChild(named: "posOffset")?.text ?? "") ?? 0) / 12_700
         }
+    }
+
+    /// `wp:wrapPolygon`'s start and the lines from it, as fractions of the picture.
+    public static func polygon(from element: XMLElement) -> WrapPolygon? {
+        let points = element.children.compactMap { point -> WrapPolygon.Point? in
+            guard point.name == "start" || point.name == "lineTo",
+                  let x = Double(point.attribute("x") ?? ""), let y = Double(point.attribute("y") ?? "") else { return nil }
+            return WrapPolygon.Point(x: x / WrapPolygon.unitsPerPicture, y: y / WrapPolygon.unitsPerPicture)
+        }
+        guard points.count >= 3 else { return nil }
+        return WrapPolygon(points: points, isEdited: ["1", "true", "on"].contains(element.attribute("edited") ?? ""))
     }
 }
 
