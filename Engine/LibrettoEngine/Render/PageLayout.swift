@@ -364,9 +364,20 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     }
 
     /// Whether drawing the text draws the floating pictures on its pages too;
-    /// off where they are drawn by `drawFloats(onPage:behindText:at:)`, clear of
-    /// what the text is clipped to.
+    /// off where the pages draw them, from `floatsByPage` or with
+    /// `drawFloats(onPage:behindText:at:)`, clear of what the text is clipped to.
     public var drawsFloatsWithText = true
+
+    /// The floating pictures on each page, each framed where it is on its page, from the page's top left corner.
+    public var floatsByPage: [Int: [PlacedFloat]] {
+        Dictionary(grouping: placedFloats.map { placed in
+            var onPage = placed
+            onPage.frame = placed.frame.offsetBy(
+                dx: geometry.textLeft, dy: geometry.shape(placed.page).margins.top - geometry.textTop(placed.page)
+            )
+            return onPage
+        }, by: \.page)
+    }
 
     /// Draws the floating pictures on a page, behind the text or in front of it.
     public func drawFloats(onPage page: Int, behindText: Bool, at origin: CGPoint) {

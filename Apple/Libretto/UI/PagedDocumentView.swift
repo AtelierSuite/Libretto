@@ -12,11 +12,14 @@ final class PagedDocumentView: UIView, UIScrollViewDelegate, UIGestureRecognizer
     private let canvas = UIView()
     private let textView: UITextView
     private var pageViews: [PageBackgroundView] = []
+    /// What floats in front of each page's text, over the text view.
+    private var frontViews: [FloatsView] = []
 
     private var geometry: PageGeometry?
     private var pages = 0
     private var texts = WordDocumentHeaderFooter()
     private var notes = PageNotes()
+    private var floats: [Int: [PageLayoutManager.PlacedFloat]] = [:]
     /// Until the user pinches, the pages are kept fitted to the width.
     private var fitsWidth = true
     private var lastWidth: CGFloat = 0
@@ -50,22 +53,31 @@ final class PagedDocumentView: UIView, UIScrollViewDelegate, UIGestureRecognizer
 
     // MARK: - Pages
 
-    func update(geometry: PageGeometry, pages: Int, texts: WordDocumentHeaderFooter, notes: PageNotes = PageNotes()) {
+    func update(
+        geometry: PageGeometry, pages: Int, texts: WordDocumentHeaderFooter, notes: PageNotes = PageNotes(),
+        floats: [Int: [PageLayoutManager.PlacedFloat]] = [:]
+    ) {
         let changed = geometry != self.geometry
-        guard changed || pages != self.pages || texts != self.texts || notes != self.notes else { return }
+        guard changed || pages != self.pages || texts != self.texts || notes != self.notes || floats != self.floats
+        else { return }
         self.geometry = geometry
         self.pages = pages
         self.texts = texts
         self.notes = notes
+        self.floats = floats
         if changed { fitsWidth = true }
 
         while pageViews.count < pages {
             let page = PageBackgroundView()
             canvas.insertSubview(page, belowSubview: textView)
             pageViews.append(page)
+            let front = FloatsView(behindText: false)
+            canvas.insertSubview(front, aboveSubview: textView)
+            frontViews.append(front)
         }
         while pageViews.count > pages {
             pageViews.removeLast().removeFromSuperview()
+            frontViews.removeLast().removeFromSuperview()
         }
         layoutCanvas()
     }
@@ -90,6 +102,9 @@ final class PagedDocumentView: UIView, UIScrollViewDelegate, UIGestureRecognizer
             page.frame = geometry.pageFrame(index).offsetBy(dx: Self.inset, dy: Self.inset)
             page.configure(texts, page: index, of: pages, shape: geometry.shape(index))
             page.configureNotes(notes.byPage[index] ?? [], height: notes.heights[index] ?? 0, shape: geometry.shape(index))
+            page.configureFloats(floats[index] ?? [])
+            frontViews[index].frame = page.frame
+            frontViews[index].floats = floats[index] ?? []
         }
         textView.frame = CGRect(
             x: Self.inset + geometry.textLeft, y: Self.inset + geometry.margins.top,
@@ -203,10 +218,39 @@ private final class NotesView: UIView {
     }
 }
 
+/// A page's floating pictures, behind its text or in front of it, where they are on the page.
+private final class FloatsView: UIView {
+    let behindText: Bool
+    var floats: [PageLayoutManager.PlacedFloat] = [] {
+        didSet { if floats != oldValue { setNeedsDisplay() } }
+    }
+
+    init(behindText: Bool) {
+        self.behindText = behindText
+        super.init(frame: .zero)
+        isOpaque = false
+        backgroundColor = .clear
+        contentMode = .redraw
+        // Touches go through to the text, as they do to the page.
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override func draw(_ rect: CGRect) {
+        for placed in floats where placed.behindText == behindText && placed.frame.intersects(rect) {
+            placed.image.drawUpright(in: placed.frame)
+        }
+    }
+}
+
 final class PageBackgroundView: UIView {
     private let headerLabel = UILabel()
     private let footerLabel = UILabel()
     private let notesView = NotesView()
+    private let behindView = FloatsView(behindText: true)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -215,6 +259,7 @@ final class PageBackgroundView: UIView {
         layer.shadowOpacity = 0.12
         layer.shadowRadius = 6
         layer.shadowOffset = CGSize(width: 0, height: 2)
+        addSubview(behindView)
         for label in [headerLabel, footerLabel] {
             label.font = HeaderFooterDrawing.font
             label.textColor = .secondaryLabel
@@ -222,6 +267,11 @@ final class PageBackgroundView: UIView {
             addSubview(label)
         }
         addSubview(notesView)
+    }
+
+    func configureFloats(_ floats: [PageLayoutManager.PlacedFloat]) {
+        behindView.frame = bounds
+        behindView.floats = floats
     }
 
     func configureNotes(_ notes: [NSAttributedString], height: CGFloat, shape: PageGeometry.Shape) {

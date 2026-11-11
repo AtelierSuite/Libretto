@@ -59,6 +59,8 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
         let geometry = baseGeometry
         context = RenderContext(document: document, scheme: scheme, images: images)
         layoutManager = PageLayoutManager(geometry: geometry)
+        // The pages draw the floating pictures, all of each, whichever of the text's tiles they cross.
+        layoutManager.drawsFloatsWithText = false
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
         container.widthTracksTextView = false
@@ -118,7 +120,8 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
             texts: WordDocumentHeaderFooter(
                 document: document, sections: layoutManager.sections.map(\.setup), pageSections: layoutManager.pageSections
             ),
-            notes: PageNotes(byPage: layoutManager.notesByPage, heights: layoutManager.noteHeights)
+            notes: PageNotes(byPage: layoutManager.notesByPage, heights: layoutManager.noteHeights),
+            floats: layoutManager.floatsByPage
         )
     }
 
