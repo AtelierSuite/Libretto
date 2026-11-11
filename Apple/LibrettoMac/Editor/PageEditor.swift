@@ -56,6 +56,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
         baseGeometry = PageGeometry(setup: document.pageSetup, gap: PageCanvasView.pageGap)
         context = RenderContext(document: document, scheme: scheme, images: images)
         layoutManager = PageLayoutManager(geometry: baseGeometry)
+        layoutManager.outlinesKeptBlocks = true
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
         container.widthTracksTextView = false

@@ -148,6 +148,8 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// selection more strongly than the rest.
     public var commentRanges: [NSRange] = []
     public var activeCommentRanges: [NSRange] = []
+    /// Whether kept blocks, which cannot be edited, are outlined: on screen, not in print.
+    public var outlinesKeptBlocks = false
 
     public init(geometry: PageGeometry) {
         self.geometry = geometry
@@ -850,6 +852,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
 
     public override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         drawParagraphDecorations(forGlyphRange: glyphsToShow, at: origin)
+        if outlinesKeptBlocks { drawKeptBlockOutlines(forGlyphRange: glyphsToShow, at: origin) }
         drawFloats(behindText: true, forGlyphRange: glyphsToShow, at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         guard !commentRanges.isEmpty, let container = textContainers.first else { return }
@@ -862,6 +865,40 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                 forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container
             ) { rect, _ in
                 PlatformGraphics.fill(rect.offsetBy(dx: origin.x, dy: origin.y))
+            }
+        }
+    }
+
+    // MARK: - Kept blocks
+
+    /// A faint dashed outline round each kept block on each page it is on, at the text's edges: the text
+    /// view may not draw beyond them.
+    private func drawKeptBlockOutlines(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        guard let storage = textStorage, let container = textContainers.first else { return }
+        let shown = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let string = storage.string as NSString
+        var blocks: [NSRange] = []
+        storage.enumerateAttribute(.attachment, in: shown) { value, range, _ in
+            guard let attachment = value as? BlockAttachment, case .preserved = attachment.block else { return }
+            let line = string.paragraphRange(for: NSRange(location: range.location, length: 0))
+            if blocks.last != line { blocks.append(line) }
+        }
+        let color = (scheme == .dark ? PlatformColor.white : PlatformColor.black).withAlphaComponent(0.25)
+        for block in blocks {
+            var boxes: [Int: CGRect] = [:]
+            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: block, actualCharacterRange: nil)) {
+                _, used, _, _, _ in
+                let page = self.geometry.page(containing: used.midY)
+                boxes[page] = boxes[page].map { $0.union(used) } ?? used
+            }
+            for rect in boxes.values {
+                let box = CGRect(x: 0, y: rect.minY, width: container.size.width, height: rect.height)
+                let frame = box.insetBy(dx: 0.5, dy: 0.5).offsetBy(dx: origin.x, dy: origin.y)
+                let path = PlatformBezierPath(roundedRect: frame, cornerRadius: 2)
+                path.lineWidth = 0.5
+                path.setLineDash([3, 2], count: 2, phase: 0)
+                color.setStroke()
+                path.stroke()
             }
         }
     }
