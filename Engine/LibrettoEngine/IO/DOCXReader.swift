@@ -62,8 +62,6 @@ public enum DOCXReader: Sendable {
         let sections = [pageSetup] + blocks.compactMap { block -> PageSetup? in
             if case .paragraph(let paragraph) = block { return paragraph.section } else { return nil }
         }
-        // Columns are kept, but every section is drawn in one.
-        if sections.contains(where: { $0.columns > 1 }) { report.insert(.multipleColumns) }
         let references = sections.flatMap { section in
             section.headerFooters.headers.values.map { ($0, false) } + section.headerFooters.footers.values.map { ($0, true) }
         }
