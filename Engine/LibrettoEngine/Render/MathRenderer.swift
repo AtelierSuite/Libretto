@@ -240,7 +240,8 @@ public enum MathRenderer: Sendable {
             case "groupChr":
                 let character = property(element, "groupChrPr", "chr") ?? "\u{23DF}"
                 let below = property(element, "groupChrPr", "pos") != "top"
-                return limit(row(element.firstChild(named: "e")), Layout(size: size, color: color).text(character), below: below)
+                let base = row(element.firstChild(named: "e"))
+                return limit(base, across(character, width: base.width), below: below, gap: size * 0.15)
             case "limLow", "limUpp":
                 return limit(row(element.firstChild(named: "e")), smaller.row(element.firstChild(named: "lim")), below: element.name == "limLow")
             case "m":
@@ -449,6 +450,25 @@ public enum MathRenderer: Sendable {
                 var transform = CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY)
                     .concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
                     .concatenating(CGAffineTransform(translationX: side, y: axis - height / 2))
+                    .concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                    .concatenating(CGAffineTransform(translationX: origin.x, y: origin.y))
+                guard let placed = path.copy(using: &transform) else { return }
+                MathRenderer.fill(placed, color: color)
+            }
+        }
+
+        /// A brace, bracket or arrow set over or under something, stretched across it as Word does.
+        private func across(_ character: String, width: CGFloat) -> Box {
+            let path = MathRenderer.glyphPath(character, font: font(italic: false))
+            let bounds = path.boundingBoxOfPath
+            guard !bounds.isNull, bounds.width > 0, width > bounds.width * 1.05 else { return text(character) }
+            let scaleX = width / bounds.width
+            let scaleY = min(1.2, 1 + (scaleX - 1) * 0.03)
+            let height = bounds.height * scaleY
+            let color = self.color
+            return Box(width: width, ascent: height, descent: 0) { origin in
+                var transform = CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY)
+                    .concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
                     .concatenating(CGAffineTransform(scaleX: 1, y: -1))
                     .concatenating(CGAffineTransform(translationX: origin.x, y: origin.y))
                 guard let placed = path.copy(using: &transform) else { return }
