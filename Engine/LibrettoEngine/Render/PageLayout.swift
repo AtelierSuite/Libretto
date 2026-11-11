@@ -652,6 +652,9 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// - The space after a paragraph runs off the foot of a page: its last
     ///   line stays on the page if the line itself fits, where TextKit would
     ///   move it to the next page for want of room for the space after it.
+    /// - The space before a paragraph is left out at the top of a page the
+    ///   text flowed on to, but kept on the first page, where TextKit would
+    ///   leave it out, and after a page or section break.
     private func spaceAsWord(
         _ rect: UnsafeMutablePointer<CGRect>, used: UnsafeMutablePointer<CGRect>, baseline: UnsafeMutablePointer<CGFloat>,
         characters: NSRange, glyphs: NSRange, in container: NSTextContainer
@@ -662,10 +665,18 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         else { return false }
         let string = storage.string as NSString
         var changed = false
-        // What TextKit put above the line: the space before, on a paragraph's first.
+        if characters.location == 0, style.paragraphSpacingBefore > 0, used.pointee.minY - rect.pointee.minY < 0.01 {
+            // TextKit leaves out the space before the first paragraph; Word keeps it.
+            let before = style.paragraphSpacingBefore
+            rect.pointee.size.height += before
+            used.pointee.origin.y += before
+            baseline.pointee += before
+            changed = true
+        }
+        // What is above the line: the space before, on a paragraph's first.
         let before = max(0, used.pointee.minY - rect.pointee.minY)
         let page = geometry.page(containing: rect.pointee.minY + 0.5)
-        let startsPage = page > 0 && abs(rect.pointee.minY - geometry.textTop(page)) < 0.5
+        var startsPage = page > 0 && abs(rect.pointee.minY - geometry.textTop(page)) < 0.5
 
         let last = NSMaxRange(characters) - 1
         if startsPage, style.paragraphSpacing > 0, glyphs.location > 0,
@@ -679,8 +690,18 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             if needed <= room.height + 0.01, !container.exclusionPaths.contains(where: { $0.bounds.intersects(probe) }) {
                 used.pointee.origin.y -= rect.pointee.minY - moved.minY
                 rect.pointee = moved
+                startsPage = false
                 changed = true
             }
+        }
+
+        let startsParagraph = characters.location == 0
+            || string.character(at: characters.location - 1) == TextCharacters.paragraphBreakUnit
+        if startsPage, startsParagraph, before > 0, characters.location > 0, flowedOn(to: characters.location) {
+            rect.pointee.size.height -= before
+            used.pointee.origin.y -= before
+            baseline.pointee -= before
+            changed = true
         }
         return changed
     }
@@ -692,6 +713,23 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let bottom = geometry.textBottom(page) - (noteHeights[page] ?? 0)
         guard geometry.page(containing: previous.minY + 0.5) == page, previous.maxY < bottom - 0.5 else { return nil }
         return CGRect(x: previous.minX, y: previous.maxY, width: previous.width, height: bottom - previous.maxY)
+    }
+
+    /// Whether the paragraph starting at `location` begins its page because
+    /// the text before it ran out of room, rather than at a page or column
+    /// break, a section break that starts a page, or a page break before it.
+    private func flowedOn(to location: Int) -> Bool {
+        guard let storage = textStorage, location > 0 else { return false }
+        let string = storage.string as NSString
+        let mark = location - 1
+        if mark > 0 {
+            let unit = string.character(at: mark - 1)
+            if unit == TextCharacters.pageBreakUnit || unit == TextCharacters.columnBreakUnit { return false }
+        }
+        if let section = sectionStarted(byMarkAt: mark), section.setup.start != .continuous { return false }
+        if let box = storage.attribute(.librettoParagraph, at: location, effectiveRange: nil) as? ParagraphBox,
+           styles.resolvedParagraphProperties(box.paragraph.properties).pageBreakBefore == true { return false }
+        return true
     }
 
     // MARK: - Repeated header rows
