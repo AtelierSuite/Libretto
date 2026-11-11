@@ -824,6 +824,7 @@ public enum DrawingReader: Sendable {
                   let emu = Double(value), emu >= 0 else { return fallback }
             return emu / 12_700
         }
+        image.wrapSide = wrapping.flatMap { $0.attribute("wrapText") }.flatMap(WrapSide.init(rawValue:)) ?? .both
         let defaults = WrapDistances()
         image.wrapDistances = WrapDistances(
             top: distance("distT", defaults.top), bottom: distance("distB", defaults.bottom),

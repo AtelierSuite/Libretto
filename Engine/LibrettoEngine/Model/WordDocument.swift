@@ -653,6 +653,8 @@ public struct InlineImage: Equatable, Sendable {
     public var verticalAnchor: VerticalAnchor = .paragraph
     /// How far text keeps from a floating picture that it wraps around.
     public var wrapDistances = WrapDistances()
+    /// Which sides of a picture wrapped square or tight text runs down.
+    public var wrapSide: WrapSide = .both
 
     /// What a floating picture's place down the page is measured from.
     public enum VerticalAnchor: String, Sendable {
@@ -807,6 +809,13 @@ public enum ImageWrap: String, CaseIterable, Sendable {
 
     /// Whether text keeps clear of it beside it, or above and below it.
     public var excludesText: Bool { self == .square || self == .tight || self == .topAndBottom }
+}
+
+/// Which sides of a floating picture text runs down: `wrapText`.
+public enum WrapSide: String, Sendable {
+    case both = "bothSides", left, right
+    /// Only the side with more room.
+    case largest
 }
 
 /// How far text keeps from each side of a floating picture, in points:

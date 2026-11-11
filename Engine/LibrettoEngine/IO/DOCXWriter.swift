@@ -329,8 +329,8 @@ public enum DrawingWriter: Sendable {
         let vertical = "<wp:positionV relativeFrom=\"\(image.verticalAnchor.rawValue)\"><wp:posOffset>\(Int(image.verticalOffset * 12_700))</wp:posOffset></wp:positionV>"
         let wrap: String
         switch image.wrap {
-        case .square: wrap = "<wp:wrapSquare wrapText=\"bothSides\"/>"
-        case .tight: wrap = "<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/><wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>"
+        case .square: wrap = "<wp:wrapSquare wrapText=\"\(image.wrapSide.rawValue)\"/>"
+        case .tight: wrap = "<wp:wrapTight wrapText=\"\(image.wrapSide.rawValue)\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/><wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>"
         case .topAndBottom: wrap = "<wp:wrapTopAndBottom/>"
         default: wrap = "<wp:wrapNone/>"
         }

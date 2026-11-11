@@ -167,4 +167,42 @@ struct PictureTests {
             .first { $0.minY >= placed.frame.minY }
         #expect(try #require(below).minY >= placed.frame.maxY + 24 - 0.5)
     }
+
+    @Test("Text kept to the larger side of a picture leaves the narrower side bare")
+    func wrapsLargestSide() throws {
+        for side in [WrapSide.both, .largest] {
+            let (controller, latest) = makeController()
+            controller.textView.selectedRange = NSRange(location: 0, length: 0)
+            controller.insertImage(png(width: 200, height: 100))
+            controller.textView.selectedRange = NSRange(location: 0, length: 1)
+            controller.updateSelectedImage { picture in
+                picture.wrap = .square
+                picture.wrapSide = side
+                picture.horizontalOffset = 60
+                picture.width = 100
+                picture.height = 50
+            }
+            let layout = controller.layoutManager
+            let placed = try #require(layout.placedFloats.first)
+            let firstLine = layout.lineFragmentRect(forGlyphAt: 1, effectiveRange: nil)
+            if side == .largest {
+                #expect(firstLine.minX >= placed.frame.maxX)
+                let xml = Fixtures.text(try Fixtures.written(try #require(latest())), "word/document.xml")
+                #expect(xml.contains("<wp:wrapSquare wrapText=\"largest\"/>"))
+            } else {
+                #expect(firstLine.maxX <= placed.frame.minX)
+            }
+        }
+    }
+
+    @Test("Word's wrapText says which side text keeps to")
+    func readsWrapSide() throws {
+        var image = InlineImage(relationshipID: "rId1", width: 100, height: 50, isFloating: true)
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"largest\"/>"), into: &image)
+        #expect(image.wrapSide == .largest)
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapTight wrapText=\"left\"/>"), into: &image)
+        #expect(image.wrapSide == .left)
+        DrawingReader.readPlacement(of: try anchor("", wrap: "<wp:wrapSquare wrapText=\"bothSides\"/>"), into: &image)
+        #expect(image.wrapSide == .both)
+    }
 }

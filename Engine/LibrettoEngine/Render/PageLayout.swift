@@ -342,10 +342,15 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let height = frame.height + distance.top + distance.bottom
             switch picture.wrap {
             case .square, .tight:
-                exclusions.append(CGRect(
-                    x: frame.minX - distance.left, y: top,
-                    width: frame.width + distance.left + distance.right, height: height
-                ))
+                var left = frame.minX - distance.left
+                var right = frame.maxX + distance.right
+                // Text kept to one side leaves the other side bare, out to the edge of the text.
+                if picture.wrapSide != .both {
+                    let keepsLeft = picture.wrapSide == .left
+                        || (picture.wrapSide == .largest && left >= geometry.contentWidth - right)
+                    if keepsLeft { right = max(right, geometry.contentWidth + 1) } else { left = min(left, -1) }
+                }
+                exclusions.append(CGRect(x: left, y: top, width: right - left, height: height))
             case .topAndBottom:
                 exclusions.append(CGRect(x: -1, y: top, width: geometry.contentWidth + 2, height: height))
             default: break
