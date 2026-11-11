@@ -257,8 +257,15 @@ public enum MathRenderer: Sendable {
                                               height: inner.ascent + inner.descent + pad * 2 - 1)).stroke()
                 }
             case "phant":
+                // Shown unless it says not to; taking its room unless told to take none across, above or below.
                 let inner = row(element.firstChild(named: "e"))
-                return Box(width: inner.width, ascent: inner.ascent, descent: inner.descent) { _ in }
+                func on(_ name: String, _ fallback: Bool) -> Bool { MathRenderer.isOn(
+                    element.firstChild(named: "phantPr")?.firstChild(named: name).map { $0.attribute("val") ?? "1" }, default: fallback) }
+                let shown = on("show", true)
+                return Box(
+                    width: on("zeroWid", false) ? 0 : inner.width, ascent: on("zeroAsc", false) ? 0 : inner.ascent,
+                    descent: on("zeroDesc", false) ? 0 : inner.descent
+                ) { origin in if shown { inner.draw(origin) } }
             default:
                 return element.name.hasSuffix("Pr") ? .empty : row(element)
             }
