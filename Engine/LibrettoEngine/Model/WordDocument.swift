@@ -207,18 +207,31 @@ public struct PreservedBlock: Equatable, Sendable, Identifiable {
     public var displayText: String
     public var kind: Kind
     public var leadingXML: [String] = []
+    /// What it holds, read as paragraphs and tables, only to be drawn as
+    /// they look: `xml` is what is written back, untouched.
+    public var content: [Block] = []
 
     public enum Kind: String, Sendable {
         case contentControl
         case other
     }
 
-    public init(id: UUID = UUID(), xml: String, displayText: String, kind: Kind, leadingXML: [String] = []) {
+    public init(
+        id: UUID = UUID(), xml: String, displayText: String, kind: Kind, leadingXML: [String] = [],
+        content: [Block] = []
+    ) {
         self.id = id
         self.xml = xml
         self.displayText = displayText
         self.kind = kind
         self.leadingXML = leadingXML
+        self.content = content
+    }
+
+    /// The same block: what it holds is read from `xml`, so is not compared.
+    public static func == (lhs: PreservedBlock, rhs: PreservedBlock) -> Bool {
+        lhs.id == rhs.id && lhs.xml == rhs.xml && lhs.displayText == rhs.displayText && lhs.kind == rhs.kind
+            && lhs.leadingXML == rhs.leadingXML
     }
 }
 
@@ -1167,6 +1180,10 @@ public struct PageSetup: Equatable, Sendable {
     /// Text columns, and the space between them, in twips.
     public var columns = 1
     public var columnSpacing = 708
+    /// Each column's own width and the space after it, in twips, when the
+    /// columns differ (`w:cols w:equalWidth="0"`); empty when they are alike.
+    /// Kept in the section's XML, so not written back from here.
+    public var columnSizes: [ColumnSize] = []
     /// `w:pgNumType`'s format for the page numbers its headers and footers
     /// show, such as `lowerRoman`; `nil` for 1, 2, 3.
     public var pageNumberFormat: String?
@@ -1214,6 +1231,45 @@ public struct PageSetup: Equatable, Sendable {
     public var isChanged: Bool {
         preservedXML == nil || original != values || headerFooters != (originalHeaderFooters ?? HeaderFooterReferences())
     }
+
+    /// One text column: its width and the space after it, in twips.
+    public struct ColumnSize: Equatable, Sendable {
+        public var width: Int
+        public var space: Int
+
+        public init(width: Int, space: Int) {
+            self.width = width
+            self.space = space
+        }
+    }
+
+    /// Where each text column is across text `width` points wide, from its
+    /// left edge, and how wide, in points: one column for a section in one.
+    /// Columns that would not fit are narrowed in proportion.
+    public func columnFrames(width: Double) -> [(x: Double, width: Double)] {
+        let sizes: [(width: Double, space: Double)]
+        if columnSizes.count > 1 {
+            sizes = columnSizes.map { (Double(max(0, $0.width)) / 20, Double(max(0, $0.space)) / 20) }
+        } else if columns > 1 {
+            let space = Double(max(0, columnSpacing)) / 20
+            let each = (width - space * Double(columns - 1)) / Double(columns)
+            sizes = Array(repeating: (each, space), count: columns)
+        } else {
+            return [(0, width)]
+        }
+        // The space after the last column is not part of the text.
+        let total = sizes.dropLast().reduce(0) { $0 + $1.width + $1.space } + (sizes.last?.width ?? 0)
+        let scale = total > width && total > 0 ? width / total : 1
+        guard sizes.allSatisfy({ $0.width * scale >= 1 }) else { return [(0, width)] }
+        var x = 0.0
+        return sizes.map { size in
+            defer { x += (size.width + size.space) * scale }
+            return (x, size.width * scale)
+        }
+    }
+
+    /// Whether the section's text is set in more than one column.
+    public var hasColumns: Bool { columns > 1 || columnSizes.count > 1 }
 
     /// Points, the unit the page view lays out in.
     public var size: CGSize { CGSize(width: Double(width) / 20, height: Double(height) / 20) }

@@ -62,8 +62,6 @@ public enum DOCXReader: Sendable {
         let sections = [pageSetup] + blocks.compactMap { block -> PageSetup? in
             if case .paragraph(let paragraph) = block { return paragraph.section } else { return nil }
         }
-        // Columns are kept, but every section is drawn in one.
-        if sections.contains(where: { $0.columns > 1 }) { report.insert(.multipleColumns) }
         let references = sections.flatMap { section in
             section.headerFooters.headers.values.map { ($0, false) } + section.headerFooters.footers.values.map { ($0, true) }
         }
@@ -177,7 +175,9 @@ private final class ReadContext {
                 guard let xml = serialize(element) else { continue }
                 let text = element.children.filter { $0.name != "tblPr" && $0.name != "tblGrid" }
                     .map { HeaderFooterReader.plainText(of: $0) }.filter { !$0.isEmpty }.joined(separator: "\n")
-                blocks.append(.preserved(PreservedBlock(xml: xml, displayText: text, kind: .other, leadingXML: pending)))
+                blocks.append(.preserved(PreservedBlock(
+                    xml: xml, displayText: text, kind: .other, leadingXML: pending, content: [.table(table(from: element))]
+                )))
                 pending = []
             case "sdt":
                 report.insert(.contentControls)
@@ -186,8 +186,9 @@ private final class ReadContext {
                     content.children.map { HeaderFooterReader.plainText(of: $0) }
                         .filter { !$0.isEmpty }.joined(separator: "\n")
                 } ?? ""
+                let content = element.firstChild(named: "sdtContent").map { self.blocks(from: Self.unwrapped($0.children)).blocks }
                 blocks.append(.preserved(PreservedBlock(
-                    xml: xml, displayText: text, kind: .contentControl, leadingXML: pending
+                    xml: xml, displayText: text, kind: .contentControl, leadingXML: pending, content: content ?? []
                 )))
                 pending = []
             case "sectPr":
@@ -480,6 +481,18 @@ private final class ReadContext {
             && rows.allSatisfy { $0.children.allSatisfy { cellLevel.contains($0.name) } }
     }
 
+    /// Elements as they are shown: those inside custom XML and content
+    /// controls in their place, as Word draws them.
+    static func unwrapped(_ elements: [XMLElement]) -> [XMLElement] {
+        elements.flatMap { element -> [XMLElement] in
+            switch element.name {
+            case "customXml": return unwrapped(element.children.filter { $0.name != "customXmlPr" })
+            case "sdt": return unwrapped(element.firstChild(named: "sdtContent")?.children ?? [])
+            default: return [element]
+            }
+        }
+    }
+
     func table(from element: XMLElement) -> Table {
         let tblPr = element.firstChild(named: "tblPr")
         let styleID = tblPr?.firstChild(named: "tblStyle")?.attribute("val")
@@ -487,9 +500,11 @@ private final class ReadContext {
             .map { Int($0.attribute("w") ?? "") ?? 0 } ?? []
         let explicitBorders = tblPr?.firstChild(named: "tblBorders").map(PropertyReader.hasVisibleBorders)
 
-        let rows = element.children(named: "tr").map { row in
+        // An editable table holds only rows of cells; a kept one, read only to be drawn, may hold
+        // them inside content controls.
+        let rows = Self.unwrapped(element.children).filter { $0.name == "tr" }.map { row in
             TableRow(
-                cells: row.children(named: "tc").map(cell),
+                cells: Self.unwrapped(row.children).filter { $0.name == "tc" }.map(cell),
                 exceptionsXML: row.firstChild(named: "tblPrEx").flatMap { serialize($0) },
                 preservedPropertiesXML: row.firstChild(named: "trPr").flatMap { serialize($0) },
                 isHeader: row.firstChild(named: "trPr")?.firstChild(named: "tblHeader") != nil
@@ -936,6 +951,17 @@ public enum PageSetupReader: Sendable {
         if let columns = sectPr.firstChild(named: "cols") {
             setup.columns = max(1, value(columns, "num") ?? 1)
             setup.columnSpacing = value(columns, "space") ?? setup.columnSpacing
+            // Columns of their own widths, each with the space after it.
+            if let equal = columns.attribute("equalWidth"), ["0", "false", "off"].contains(equal) {
+                let sizes = columns.children(named: "col").compactMap { column -> PageSetup.ColumnSize? in
+                    guard let width = value(column, "w") else { return nil }
+                    return PageSetup.ColumnSize(width: width, space: value(column, "space") ?? 0)
+                }
+                if sizes.count > 1 {
+                    setup.columnSizes = sizes
+                    setup.columns = sizes.count
+                }
+            }
         }
         setup.pageNumberFormat = sectPr.firstChild(named: "pgNumType")?.attribute("fmt").flatMap { $0 == "decimal" ? nil : $0 }
         setup.originalHeaderFooters = setup.headerFooters

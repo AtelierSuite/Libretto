@@ -547,8 +547,6 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         case shapes
         case contentControls
         case embeddedObjects
-        /// A section set in more than one column, drawn as one.
-        case multipleColumns
 
         public var label: String {
             switch self {
@@ -556,7 +554,6 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
             case .shapes: return String(localized: "Unsupported.Shapes", bundle: .engine)
             case .contentControls: return String(localized: "Unsupported.ContentControls", bundle: .engine)
             case .embeddedObjects: return String(localized: "Unsupported.EmbeddedObjects", bundle: .engine)
-            case .multipleColumns: return String(localized: "Unsupported.MultipleColumns", bundle: .engine)
             }
         }
 
@@ -565,7 +562,6 @@ public struct UnsupportedFeatureReport: Equatable, Sendable {
         /// here, and the report, once Libretto draws it as they do.
         public var isDrawnDifferently: Bool {
             switch self {
-            case .multipleColumns: return true
             case .macros, .shapes, .contentControls, .embeddedObjects: return false
             }
         }

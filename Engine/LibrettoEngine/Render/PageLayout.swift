@@ -148,6 +148,8 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// selection more strongly than the rest.
     public var commentRanges: [NSRange] = []
     public var activeCommentRanges: [NSRange] = []
+    /// Whether kept blocks, which cannot be edited, are outlined: on screen, not in print.
+    public var outlinesKeptBlocks = false
 
     public init(geometry: PageGeometry) {
         self.geometry = geometry
@@ -198,6 +200,13 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     }
     /// Which section each page is in, as laid out.
     public private(set) var pageSections: [Int] = []
+
+    // MARK: - Columns
+
+    /// Whether lines are put in their columns; not while the text is measured without pages.
+    var columnsEnabled = true
+    /// Where each section's columns, balanced on its last page, end there, by section.
+    public internal(set) var columnBalance: [Int: ColumnBalance] = [:]
 
     /// The section a character is in.
     public func section(at location: Int) -> Int {
@@ -260,13 +269,19 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let caps = placeDropCaps()
             let paged = placeSections(pages: pages)
             let floating = placeFloats()
+            let balance = balanceColumns()
             notesByPage = placed.byPage
             dropCaps = caps
             pageSections = paged.pageSections
             placedFloats = floating.floats
             let exclusions = caps.compactMap(\.exclusion) + floating.exclusions
             let shaped = PageGeometry(shapes: paged.shapes, gap: geometry.gap)
-            guard placed.heights != noteHeights || exclusions != dropCapExclusions || shaped != geometry else { break }
+            guard placed.heights != noteHeights || exclusions != dropCapExclusions || shaped != geometry
+                || balance != columnBalance else { break }
+            if balance != columnBalance, let storage = textStorage {
+                columnBalance = balance
+                invalidateLayout(forCharacterRange: NSRange(location: 0, length: storage.length), actualCharacterRange: nil)
+            }
             noteHeights = placed.heights
             dropCapExclusions = exclusions
             geometry = shaped
@@ -491,7 +506,9 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             // on roughly as many pages as that needs, is far quicker.
             container.exclusionPaths = []
             container.size = CGSize(width: geometry.contentWidth, height: 10_000_000)
+            columnsEnabled = false
             ensureLayout(for: container)
+            columnsEnabled = true
             let unpaged = usedRect(for: container).maxY
             pages = max(pages + 1, Int(ceil(unpaged / geometry.contentHeight * 1.1)) + 1)
             configure(container, pages: pages)
@@ -608,8 +625,11 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         }
         let string = storage.string as NSString
         let last = NSMaxRange(characters) - 1
+        // A column break in a section set in columns moves on to the next column, which the container sees to;
+        // in one column, it ends the page, as in Word.
+        let inColumns = sections.isEmpty ? false : sections[section(at: characters.location)].setup.hasColumns
         func isBreak(_ unit: unichar) -> Bool {
-            unit == TextCharacters.pageBreakUnit || unit == TextCharacters.columnBreakUnit
+            unit == TextCharacters.pageBreakUnit || (unit == TextCharacters.columnBreakUnit && !inColumns)
         }
         var endsPage = isBreak(string.character(at: last))
             || (last > 0 && string.character(at: last) == TextCharacters.paragraphBreakUnit
@@ -621,13 +641,27 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             if next.pageBreakBefore == true {
                 endsPage = true
             } else {
-                // What the next paragraph keeps together, if it would not fit on what is left of the page.
+                // What the next paragraph keeps together, if it would not fit on what is left of the page,
+                // or the column.
                 let rect = lineFragmentRect.pointee
                 let page = geometry.page(containing: rect.minY + 0.5)
-                let bottom = geometry.textBottom(page) - (noteHeights[page] ?? 0)
+                var bottom = geometry.textBottom(page) - (noteHeights[page] ?? 0)
+                let nextSection = section(at: last + 1)
+                let frames = inColumns && section(at: last) == nextSection ? columnFrames(section: nextSection, page: page) : []
+                let column = frames.indices.min { abs(frames[$0].minX - rect.minX) < abs(frames[$1].minX - rect.minX) }
+                if let column {
+                    bottom = columnBottom(section: nextSection, page: page, column: column, of: frames.count)
+                }
                 let left = bottom - rect.maxY
-                if left > 0, let needed = keptHeight(startingAt: last + 1, properties: next, available: left),
+                if left > 0, let needed = keptHeight(startingAt: last + 1, properties: next, available: left, width: rect.width),
                    needed > left, needed < geometry.contentHeight * 0.9 {
+                    if let column, column + 1 < frames.count {
+                        // On to the next column: the line reaches the column's foot, and the container does the rest.
+                        var moved = rect
+                        moved.size.height = bottom - rect.minY + 1
+                        lineFragmentRect.pointee = moved
+                        return true
+                    }
                     endsPage = true
                 }
             }
@@ -713,7 +747,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// that one's first line; its first two lines, to leave no widow at the
     /// page's foot; or `nil` if it can break anywhere. Measured only when
     /// it might not fit in what is `available`.
-    private func keptHeight(startingAt start: Int, properties: ParagraphProperties, available: CGFloat) -> CGFloat? {
+    private func keptHeight(startingAt start: Int, properties: ParagraphProperties, available: CGFloat, width: CGFloat) -> CGFloat? {
         guard let storage = textStorage else { return nil }
         let keepsWhole = properties.keepLines == true || properties.keepNext == true
         guard keepsWhole || properties.widowControl == true else { return nil }
@@ -727,7 +761,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         if !keepsWhole, available > before + line * 2.5 { return nil }
         func height(of range: NSRange) -> CGFloat {
             ceil(storage.attributedSubstring(from: range).boundingRect(
-                with: CGSize(width: geometry.contentWidth, height: .greatestFiniteMagnitude),
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
             ).height)
         }
@@ -746,6 +780,8 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         var properties: ParagraphProperties
         var paragraph: NSRange
         var page: Int
+        /// Where the column the box is in starts, across the container.
+        var column: Int
         var rect: CGRect
     }
 
@@ -768,31 +804,44 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let properties = styles.resolvedParagraphProperties(box.paragraph.properties)
             guard properties.shadingHex != nil || properties.borders.map({ !$0.isEmpty }) == true else { continue }
             let style = storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle
-            var boxes: [Int: CGRect] = [:]
+            // A box on each page, and in each column the paragraph is in there.
+            struct Place: Hashable, Comparable {
+                var page: Int
+                var column: Int
+                static func < (a: Place, b: Place) -> Bool { (a.page, a.column) < (b.page, b.column) }
+            }
+            let inColumns = hasColumns
+            var boxes: [Place: CGRect] = [:]
             enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) {
                 rect, _, _, _, _ in
-                let page = self.geometry.page(containing: rect.midY)
-                boxes[page] = boxes[page].map { $0.union(rect) } ?? rect
+                let place = Place(page: self.geometry.page(containing: rect.midY), column: inColumns ? Int(rect.minX.rounded()) : 0)
+                boxes[place] = boxes[place].map { $0.union(rect) } ?? rect
             }
             let first = boxes.keys.min()
             let last = boxes.keys.max()
-            for (page, var rect) in boxes {
+            for (place, var rect) in boxes {
                 // The box holds the text, not the paragraph's spacing.
-                if page == first { rect.origin.y += style?.paragraphSpacingBefore ?? 0; rect.size.height -= style?.paragraphSpacingBefore ?? 0 }
-                if page == last { rect.size.height -= style?.paragraphSpacing ?? 0 }
+                if place == first { rect.origin.y += style?.paragraphSpacingBefore ?? 0; rect.size.height -= style?.paragraphSpacingBefore ?? 0 }
+                if place == last { rect.size.height -= style?.paragraphSpacing ?? 0 }
                 let left = min(style?.headIndent ?? 0, style?.firstLineHeadIndent ?? 0)
-                rect.origin.x = left
-                rect.size.width = container.size.width - left + (style?.tailIndent ?? 0)
-                decorations.append(Decoration(properties: properties, paragraph: range, page: page, rect: rect))
+                // In columns, across the column; otherwise across the text, as before.
+                let start = inColumns ? rect.minX : 0
+                let width = inColumns ? rect.width : container.size.width
+                rect.origin.x = start + left
+                rect.size.width = width - left + (style?.tailIndent ?? 0)
+                decorations.append(Decoration(
+                    properties: properties, paragraph: range, page: place.page, column: place.column, rect: rect
+                ))
             }
         }
-        decorations.sort { ($0.paragraph.location, $0.page) < ($1.paragraph.location, $1.page) }
+        decorations.sort { ($0.paragraph.location, $0.page, $0.column) < ($1.paragraph.location, $1.page, $1.column) }
 
         let ink = scheme == .dark ? PlatformColor.white : PlatformColor.black
         for (index, decoration) in decorations.enumerated() {
             func joins(_ other: Decoration?) -> Bool {
                 guard let other else { return false }
-                return other.page == decoration.page && other.properties.borders == decoration.properties.borders
+                return other.page == decoration.page && other.column == decoration.column
+                    && other.properties.borders == decoration.properties.borders
                     && other.properties.shadingHex == decoration.properties.shadingHex
                     && other.paragraph.location != decoration.paragraph.location
                     && (NSMaxRange(other.paragraph) == decoration.paragraph.location
@@ -862,10 +911,83 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         path.stroke()
     }
 
+    // MARK: - Finding the text at a point
+
+    /// The glyph at a point. Lines in columns do not run down the container
+    /// in order, which the layout manager's own search counts on; there, the
+    /// line under the point is found among the page's, nearest across first,
+    /// and the glyph along it.
+    public override func glyphIndex(
+        for point: CGPoint, in container: NSTextContainer, fractionOfDistanceThroughGlyph partialFraction: UnsafeMutablePointer<CGFloat>?
+    ) -> Int {
+        guard hasColumns, numberOfGlyphs > 0 else {
+            return super.glyphIndex(for: point, in: container, fractionOfDistanceThroughGlyph: partialFraction)
+        }
+        let page = geometry.page(containing: point.y)
+        let area = CGRect(x: 0, y: geometry.textTop(page), width: geometry.contentWidth, height: geometry.shape(page).contentHeight)
+        let glyphs = glyphRange(forBoundingRect: area, in: container)
+        var best: (rect: CGRect, glyphs: NSRange, distance: CGFloat)?
+        enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, range, _ in
+            let across = max(rect.minX - point.x, 0, point.x - rect.maxX)
+            let down = max(rect.minY - point.y, 0, point.y - rect.maxY)
+            let distance = across * 10_000 + down
+            if best.map({ distance < $0.distance }) ?? true { best = (rect, range, distance) }
+        }
+        guard let line = best, line.glyphs.length > 0 else {
+            return super.glyphIndex(for: point, in: container, fractionOfDistanceThroughGlyph: partialFraction)
+        }
+        let x = point.x - line.rect.minX
+        let end = NSMaxRange(line.glyphs)
+        let used = lineFragmentUsedRect(forGlyphAt: line.glyphs.location, effectiveRange: nil)
+        for glyph in line.glyphs.location..<end {
+            let start = location(forGlyphAt: glyph).x
+            let next = glyph + 1 < end ? location(forGlyphAt: glyph + 1).x : used.maxX - line.rect.minX
+            if x < next || glyph + 1 == end {
+                if glyph + 1 == end, x >= next, let storage = textStorage {
+                    // Past the end of the line: before its break, or after its last glyph.
+                    let character = characterIndexForGlyph(at: glyph)
+                    let isBreak = character < storage.length
+                        && CharacterSet.newlines.contains(UnicodeScalar((storage.string as NSString).character(at: character)) ?? " ")
+                    partialFraction?.pointee = isBreak ? 0 : 1
+                    return glyph
+                }
+                partialFraction?.pointee = next > start ? min(1, max(0, (x - start) / (next - start))) : 0
+                return glyph
+            }
+        }
+        partialFraction?.pointee = 1
+        return end - 1
+    }
+
+    /// The glyphs in a rect. Lines in columns go back up the page for each
+    /// column, so a rect across part of a page may hold lines far apart in
+    /// the text; pages, though, follow one another, so the rect is widened
+    /// to the whole pages it crosses. Drawing more than the rect is harmless.
+    public override func glyphRange(forBoundingRect bounds: CGRect, in container: NSTextContainer) -> NSRange {
+        super.glyphRange(forBoundingRect: wholePages(bounds), in: container)
+    }
+
+    public override func glyphRange(forBoundingRectWithoutAdditionalLayout bounds: CGRect, in container: NSTextContainer) -> NSRange {
+        super.glyphRange(forBoundingRectWithoutAdditionalLayout: wholePages(bounds), in: container)
+    }
+
+    private func wholePages(_ bounds: CGRect) -> CGRect {
+        // Views ask for everything with rects of no end, which cover whole pages already.
+        let limit = geometry.totalHeight(pages: 100_000)
+        guard hasColumns, !bounds.isNull, !bounds.isEmpty, !bounds.isInfinite,
+              bounds.minY.isFinite, bounds.maxY.isFinite, bounds.minY > -limit, bounds.maxY < limit else { return bounds }
+        let first = geometry.page(containing: bounds.minY)
+        let last = geometry.page(containing: bounds.maxY)
+        let top = min(bounds.minY, geometry.textTop(first))
+        let bottom = max(bounds.maxY, geometry.textBottom(last))
+        return CGRect(x: 0, y: top, width: max(bounds.maxX, geometry.contentWidth), height: bottom - top)
+    }
+
     // MARK: - Comments
 
     public override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         drawParagraphDecorations(forGlyphRange: glyphsToShow, at: origin)
+        if outlinesKeptBlocks { drawKeptBlockOutlines(forGlyphRange: glyphsToShow, at: origin) }
         drawFloats(behindText: true, forGlyphRange: glyphsToShow, at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         guard !commentRanges.isEmpty, let container = textContainers.first else { return }
@@ -878,6 +1000,40 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                 forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container
             ) { rect, _ in
                 PlatformGraphics.fill(rect.offsetBy(dx: origin.x, dy: origin.y))
+            }
+        }
+    }
+
+    // MARK: - Kept blocks
+
+    /// A faint dashed outline round each kept block on each page it is on, at the text's edges: the text
+    /// view may not draw beyond them.
+    private func drawKeptBlockOutlines(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        guard let storage = textStorage, let container = textContainers.first else { return }
+        let shown = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let string = storage.string as NSString
+        var blocks: [NSRange] = []
+        storage.enumerateAttribute(.attachment, in: shown) { value, range, _ in
+            guard let attachment = value as? BlockAttachment, case .preserved = attachment.block else { return }
+            let line = string.paragraphRange(for: NSRange(location: range.location, length: 0))
+            if blocks.last != line { blocks.append(line) }
+        }
+        let color = (scheme == .dark ? PlatformColor.white : PlatformColor.black).withAlphaComponent(0.25)
+        for block in blocks {
+            var boxes: [Int: CGRect] = [:]
+            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: block, actualCharacterRange: nil)) {
+                _, used, _, _, _ in
+                let page = self.geometry.page(containing: used.midY)
+                boxes[page] = boxes[page].map { $0.union(used) } ?? used
+            }
+            for rect in boxes.values {
+                let box = CGRect(x: 0, y: rect.minY, width: container.size.width, height: rect.height)
+                let frame = box.insetBy(dx: 0.5, dy: 0.5).offsetBy(dx: origin.x, dy: origin.y)
+                let path = PlatformBezierPath(roundedRect: frame, cornerRadius: 2)
+                path.lineWidth = 0.5
+                path.setLineDash([3, 2], count: 2, phase: 0)
+                color.setStroke()
+                path.stroke()
             }
         }
     }
