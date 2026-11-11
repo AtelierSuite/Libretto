@@ -10,7 +10,7 @@ import AppKit
 public enum PDFExporter: Sendable {
     public static func data(from document: WordDocument) -> Data {
         let context = RenderContext(document: document, scheme: .light, images: ImageStore())
-        let rendered = DocumentRenderer.render(document.body, context: context)
+        let rendered = DocumentRenderer.render(document.body, context: context, finalSection: document.pageSetup)
 
         let storage = NSTextStorage(attributedString: rendered.string)
         if let language = document.sourceLanguage {

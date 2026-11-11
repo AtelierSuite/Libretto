@@ -97,7 +97,7 @@ final class DocumentTextController: NSObject, UITextViewDelegate {
         }
         refreshContext()
         let selection = textView.selectedRange
-        let rendered = DocumentRenderer.render(document.body, context: context)
+        let rendered = DocumentRenderer.render(document.body, context: context, finalSection: document.pageSetup)
         storage.setAttributedString(rendered.string)
         finalParagraph = rendered.finalParagraph
         trailingMarkers = rendered.trailingMarkers
