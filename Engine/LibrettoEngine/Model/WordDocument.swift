@@ -751,7 +751,8 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, see-through or not, linear and circular gradient fills, Word's line,
+///   solid fills, solid and dashed lines, see-through or not, linear and
+///   circular gradient fills, Word's line,
 ///   grid, check and shade patterns (`ShapePattern.isForeground`), outer
 ///   shadows, glows, and text in
 ///   its paragraphs' formatting, across, or up or down, turned and flipped
@@ -759,7 +760,7 @@ public struct InlineImage: Equatable, Sendable {
 ///   Gradients out to a rectangle or the shape's own path (drawn as circular
 ///   ones), other patterns (drawn as their two colours mixed), picture fills,
 ///   stretched or skewed shadows, inner shadows and other effects, 3-D,
-///   dashed lines and arrowheads, stacked text and free-form outlines are
+///   arrowheads, stacked text and free-form outlines are
 ///   drawn more simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
@@ -816,6 +817,11 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// How solid the fill and the line are, from 0, clear, to 1: their colours' `a:alpha`.
     public var fillAlpha: Double = 1
     public var lineAlpha: Double = 1
+    /// The line's dashes and the gaps between them, in turn, in widths of the line: `a:prstDash`
+    /// or `a:custDash`. `nil` for a solid line.
+    public var lineDashes: [Double]?
+    /// Whether the line's ends, and its dashes', are round: `a:ln`'s `cap="rnd"`.
+    public var hasRoundCaps = false
     /// Points.
     public var lineWidth: Double = 1
     public var text = ""

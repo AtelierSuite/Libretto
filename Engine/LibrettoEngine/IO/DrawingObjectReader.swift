@@ -289,6 +289,8 @@ public enum DrawingObjectReader: Sendable {
         }
         if let line = properties?.firstChild(named: "ln") {
             if let width = line.attribute("w").flatMap(Double.init) { shape.lineWidth = width / 12_700 }
+            shape.lineDashes = dashes(of: line)
+            shape.hasRoundCaps = line.attribute("cap") == "rnd"
             if line.firstChild(named: "noFill") != nil {
                 shape.lineHex = nil
             } else if let fill = line.firstChild(named: "solidFill") {
@@ -331,6 +333,25 @@ public enum DrawingObjectReader: Sendable {
         default:
             return false
         }
+    }
+
+    /// Word's preset dashes, each dash and gap in widths of the line.
+    public static let presetDashes: [String: [Double]] = [
+        "dot": [1, 3], "dash": [4, 3], "dashDot": [4, 3, 1, 3], "lgDash": [8, 3], "lgDashDot": [8, 3, 1, 3],
+        "lgDashDotDot": [8, 3, 1, 3, 1, 3], "sysDot": [1, 1], "sysDash": [3, 1], "sysDashDot": [3, 1, 1, 1],
+        "sysDashDotDot": [3, 1, 1, 1, 1, 1],
+    ]
+
+    /// A line's dashes and gaps, in widths of the line: a preset's, or its own (`a:ds`, in thousandths
+    /// of a percent); `nil` for a solid line.
+    static func dashes(of line: XMLElement) -> [Double]? {
+        if let custom = line.firstChild(named: "custDash") {
+            let pattern = custom.children(named: "ds").flatMap { stop in
+                ["d", "sp"].map { (Double(stop.attribute($0) ?? "") ?? 0) / 100_000 }
+            }
+            return pattern.contains(where: { $0 > 0 }) ? pattern.map { max($0, 0.01) } : nil
+        }
+        return line.firstChild(named: "prstDash")?.attribute("val").flatMap { presetDashes[$0] }
     }
 
     /// An `a:gradFill`'s stops, in order, and which way it runs.
@@ -533,8 +554,8 @@ public enum DrawingObjectReader: Sendable {
                !ShapeSpec.drawnGeometries.contains(geometry) { return true }
             if let line = properties.firstChild(named: "ln") {
                 if line.firstChild(named: "gradFill") != nil || line.firstChild(named: "pattFill") != nil { return true }
-                if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid" { return true }
-                if line.firstChild(named: "custDash") != nil { return true }
+                if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid",
+                   presetDashes[dash] == nil { return true }
                 for end in ["headEnd", "tailEnd"] {
                     if let type = line.firstChild(named: end)?.attribute("type"), type != "none" { return true }
                 }

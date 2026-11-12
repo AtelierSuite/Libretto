@@ -240,6 +240,11 @@ public enum ObjectRenderer: Sendable {
         if let line = shape.lineHex {
             color(line).withAlphaComponent(CGFloat(shape.lineAlpha)).setStroke()
             path.lineWidth = max(0.5, shape.lineWidth)
+            if shape.hasRoundCaps { path.lineCapStyle = .round }
+            if let dashes = shape.lineDashes, !dashes.isEmpty {
+                let lengths = dashes.map { CGFloat($0) * path.lineWidth }
+                path.setLineDash(lengths, count: lengths.count, phase: 0)
+            }
             path.stroke()
         }
     }

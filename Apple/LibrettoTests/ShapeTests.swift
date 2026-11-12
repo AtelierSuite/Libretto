@@ -574,4 +574,34 @@ struct ShapeTests {
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 30, y: 30)), "FFFFFF"))
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 1, y: 1)), "FFFFFF", by: 20))
     }
+
+    // MARK: - Lines
+
+    @Test("A dashed line is read as its dashes and gaps in widths of the line, Word's presets and its own")
+    func readsDashes() throws {
+        func dashes(_ line: String) throws -> [Double]? {
+            let properties = "<a:noFill/><a:ln w=\"25400\"><a:solidFill><a:srgbClr val=\"C00000\"/></a:solidFill>\(line)</a:ln>"
+            return try Self.shapeSpec(try Self.document(body: Self.anchored(Self.shape(properties: properties)))).lineDashes
+        }
+        #expect(try dashes("<a:prstDash val=\"dash\"/>") == [4, 3])
+        #expect(try dashes("<a:prstDash val=\"sysDashDot\"/>") == [3, 1, 1, 1])
+        #expect(try dashes("<a:prstDash val=\"solid\"/>") == nil)
+        #expect(try dashes("<a:custDash><a:ds d=\"200000\" sp=\"100000\"/></a:custDash>") == [2, 1])
+        #expect(try dashes("") == nil)
+    }
+
+    @Test("A dashed outline is drawn in dashes and gaps as long as its width says")
+    func drawsDashes() throws {
+        let properties = """
+            <a:noFill/><a:ln w="25400"><a:solidFill><a:srgbClr val="C00000"/></a:solidFill><a:prstDash val="dash"/></a:ln>
+            """
+        let document = try Self.document(body: Self.anchored(Self.shape(properties: properties)))
+        let shape = try Self.shapeSpec(document)
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+        // A 2-point line: dashes 8 points long, gaps 6, along the top from the top left corner.
+        let image = ObjectRenderer.image(for: .shape(shape), size: CGSize(width: 100, height: 40))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 5.5, y: 1.5)), "C00000", by: 20))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 12.5, y: 1.5)), "FFFFFF", by: 20))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 19.5, y: 1.5)), "C00000", by: 20))
+    }
 }
