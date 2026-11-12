@@ -356,4 +356,25 @@ struct ShapeTests {
         #expect(abs(float.frame.minY - caption.maxY) < 0.5)
         #expect(after.minY >= float.frame.maxY)
     }
+
+    @Test("A shape flipped left to right is read and drawn mirrored, and stays within its frame")
+    func flipped() throws {
+        let graphic = Self.shape("rightArrow", properties: Self.green, transform: " flipH=\"1\" flipV=\"0\"")
+        let document = try Self.document(body: Self.anchored(graphic))
+        let shape = try Self.shapeSpec(document)
+        #expect(shape.flipsHorizontally && !shape.flipsVertically)
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        // 100 by 50 points: the arrow's head, at the right unflipped, is at the left; its shaft at the right.
+        let size = CGSize(width: 100, height: 50)
+        let flipped = ObjectRenderer.image(for: .shape(shape), size: size)
+        #expect(flipped.size == size)
+        var plain = shape
+        plain.flipsHorizontally = false
+        let unflipped = ObjectRenderer.image(for: .shape(plain), size: size)
+        #expect(Self.isNear(Self.color(unflipped, at: CGPoint(x: 5, y: 15)), "70AD47"))
+        #expect(Self.isNear(Self.color(flipped, at: CGPoint(x: 5, y: 15)), "FFFFFF"))
+        #expect(Self.isNear(Self.color(flipped, at: CGPoint(x: 95, y: 15)), "70AD47"))
+        #expect(Self.isNear(Self.color(flipped, at: CGPoint(x: 5, y: 25)), "70AD47"))
+    }
 }

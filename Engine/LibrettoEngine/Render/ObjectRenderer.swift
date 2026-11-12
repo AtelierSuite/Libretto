@@ -124,6 +124,31 @@ public enum ObjectRenderer: Sendable {
     }
 
     private static func drawUnturned(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
+        context.saveGState()
+        context.concatenate(mirror(shape, in: rect))
+        drawOutline(shape, in: rect, context: context)
+        context.restoreGState()
+        guard !shape.text.isEmpty else { return }
+        // Text is never mirrored; flipped top to bottom, it is upside down.
+        context.saveGState()
+        defer { context.restoreGState() }
+        if shape.flipsVertically {
+            context.concatenate(CGAffineTransform(translationX: rect.midX, y: rect.midY).rotated(by: .pi)
+                .translatedBy(x: -rect.midX, y: -rect.midY))
+        }
+        drawText(shape, in: rect, context: context, scheme: scheme)
+    }
+
+    /// How a shape's outline and fill are mirrored about its middle.
+    static func mirror(_ shape: ShapeSpec, in rect: CGRect) -> CGAffineTransform {
+        guard shape.flipsHorizontally || shape.flipsVertically else { return .identity }
+        return CGAffineTransform(translationX: rect.midX, y: rect.midY)
+            .scaledBy(x: shape.flipsHorizontally ? -1 : 1, y: shape.flipsVertically ? -1 : 1)
+            .translatedBy(x: -rect.midX, y: -rect.midY)
+    }
+
+    /// A shape's fill and its line.
+    private static func drawOutline(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
         let inset = outlineRect(for: shape, in: rect)
         let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
         if let fill = shape.fillHex {
@@ -135,7 +160,10 @@ public enum ObjectRenderer: Sendable {
             path.lineWidth = max(0.5, shape.lineWidth)
             path.stroke()
         }
-        guard !shape.text.isEmpty else { return }
+    }
+
+    /// A shape's text, in its own area, or its part of the text its linked boxes share.
+    private static func drawText(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
         let ink: PlatformColor = shape.fillHex == nil && scheme == .dark ? .white : .black
         let fallbackColor = color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? ink : .white)
         let text: NSAttributedString

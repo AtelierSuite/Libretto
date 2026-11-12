@@ -260,6 +260,8 @@ public enum DrawingObjectReader: Sendable {
         shape.geometry = properties?.firstChild(named: "prstGeom")?.attribute("prst") ?? "rect"
         if let transform = properties?.firstChild(named: "xfrm") {
             shape.rotation = (Double(transform.attribute("rot") ?? "") ?? 0) / 60_000
+            shape.flipsHorizontally = ["1", "true"].contains(transform.attribute("flipH") ?? "")
+            shape.flipsVertically = ["1", "true"].contains(transform.attribute("flipV") ?? "")
         }
         if properties?.firstChild(named: "noFill") != nil {
             shape.fillHex = nil
@@ -439,9 +441,6 @@ public enum DrawingObjectReader: Sendable {
             if properties.firstChild(named: "effectDag") != nil { return true }
             if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
                !ShapeSpec.drawnGeometries.contains(geometry) { return true }
-            if let transform = properties.firstChild(named: "xfrm"),
-               ["1", "true"].contains(transform.attribute("flipH") ?? "")
-                || ["1", "true"].contains(transform.attribute("flipV") ?? "") { return true }
             if let line = properties.firstChild(named: "ln") {
                 if line.firstChild(named: "gradFill") != nil || line.firstChild(named: "pattFill") != nil { return true }
                 if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid" { return true }

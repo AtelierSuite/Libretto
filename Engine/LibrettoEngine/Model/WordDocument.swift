@@ -752,8 +752,8 @@ public struct InlineImage: Equatable, Sendable {
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
 ///   solid fills and lines, and text in its paragraphs' formatting, turned
-///   with the shape. Gradient, pattern and picture fills, shadows, glows and
-///   other effects, 3-D, dashed lines and arrowheads, flips and free-form
+///   and flipped with the shape. Gradient, pattern and picture fills, shadows,
+///   glows and other effects, 3-D, dashed lines and arrowheads, and free-form
 ///   outlines are drawn more simply. Text runs from one linked text box on
 ///   into the next.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
@@ -835,6 +835,10 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var linkedText: LinkedText?
     /// Degrees clockwise it is turned about its middle, its text with it: `a:xfrm`'s `rot`.
     public var rotation: Double = 0
+    /// Mirrored left to right, or top to bottom, before it is turned: `a:xfrm`'s `flipH`
+    /// and `flipV`. Its text is not mirrored, but flipped top to bottom it is upside down.
+    public var flipsHorizontally = false
+    public var flipsVertically = false
 
     public enum TextAnchor: String, Sendable {
         case top = "t", middle = "ctr", bottom = "b"
