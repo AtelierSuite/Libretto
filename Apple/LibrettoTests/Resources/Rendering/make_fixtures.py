@@ -12,6 +12,8 @@ WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+WPG = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
 
 # Fonts every iOS and macOS install has, so the references don't depend on
 # what happens to be installed.
@@ -156,7 +158,104 @@ def floating_picture():
     return body, f"<w:sectPr>{LETTER}</w:sectPr>", media
 
 
-FIXTURES = {"text": text, "table": table, "pages": pages, "floating-picture": floating_picture}
+def shapes():
+    """One of each shape effect Libretto draws as Word does, each in its own paragraph under a caption,
+    kept above and below text, as Word puts a shape under a line."""
+    def anchor(ident, cx, cy, graphic, wrap="<wp:wrapTopAndBottom/>", align="center"):
+        return (f'<w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" '
+                f'relativeHeight="{ident}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>{align}</wp:align>'
+                f'</wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+                f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}'
+                f'<wp:docPr id="{ident}" name="Shape {ident}"/><wp:cNvGraphicFramePr/><a:graphic>{graphic}'
+                f'</a:graphic></wp:anchor></w:drawing></w:r></w:p>')
+
+    def text_box(text, size=20, colour="FFFFFF"):
+        return ('<wps:txbx><w:txbxContent><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr>'
+                f'<w:rFonts w:ascii="Helvetica" w:hAnsi="Helvetica"/><w:color w:val="{colour}"/><w:sz w:val="{size}"/>'
+                f'</w:rPr><w:t xml:space="preserve">{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx>')
+
+    def wsp(cx, cy, geometry, properties, text="", body="", transform="", x=0, y=0):
+        body = body or '<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="ctr"/>'
+        return (f'<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm{transform}><a:off x="{x}" y="{y}"/><a:ext cx="{int(cx)}" cy="{int(cy)}"/>'
+                f'</a:xfrm><a:prstGeom prst="{geometry}"><a:avLst/></a:prstGeom>{properties}</wps:spPr>{text}{body}</wps:wsp>')
+
+    def shape(cx, cy, geometry, properties, text="", body="", transform=""):
+        return f'<a:graphicData uri="{WPS}">{wsp(cx, cy, geometry, properties, text, body, transform)}</a:graphicData>'
+
+    def solid(colour, alpha=None):
+        inner = f'<a:alpha val="{alpha}"/>' if alpha else ""
+        return f'<a:solidFill><a:srgbClr val="{colour}">{inner}</a:srgbClr></a:solidFill>'
+
+    line = f'<a:ln w="12700">{solid("2F528F")}</a:ln>'
+    inch = 914400
+    gradient_shadow = shape(2 * inch, 0.6 * inch, "rect",
+        '<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:srgbClr val="1F4E79"/></a:gs>'
+        '<a:gs pos="50000"><a:srgbClr val="5B9BD5"/></a:gs><a:gs pos="100000"><a:srgbClr val="DEEBF7"/></a:gs>'
+        '</a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill>' + line
+        + '<a:effectLst><a:outerShdw blurRad="76200" dist="50800" dir="2700000" algn="tl" rotWithShape="0">'
+          '<a:srgbClr val="000000"><a:alpha val="45000"/></a:srgbClr></a:outerShdw></a:effectLst>',
+        text_box("Gradient and shadow"))
+    radial = shape(1.4 * inch, 0.8 * inch, "ellipse",
+        '<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFD966"/></a:gs><a:gs pos="100000"><a:srgbClr val="C55A11"/>'
+        '</a:gs></a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>'
+        '</a:gradFill><a:ln><a:noFill/></a:ln>', text_box("Radial"))
+    dashed = shape(2 * inch, 0.5 * inch, "roundRect", f'<a:noFill/><a:ln w="28575">{solid("C00000")}<a:prstDash val="dash"/></a:ln>')
+    arrow_line = shape(2.5 * inch, 0, "straightConnector1",
+        f'<a:ln w="25400">{solid("000000")}<a:headEnd type="triangle"/><a:tailEnd type="arrow"/></a:ln>')
+    turned = shape(1.6 * inch, 0.5 * inch, "rect", solid("70AD47") + line, text_box("Turned 30°"), transform=' rot="1800000"')
+    flipped = shape(1.4 * inch, 0.5 * inch, "rightArrow", solid("ED7D31") + line, transform=' flipH="1"')
+    sideways = shape(0.5 * inch, 1.2 * inch, "rect", solid("7030A0") + line, text_box("Sideways"),
+        '<wps:bodyPr rot="0" vert="vert270" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="ctr"/>')
+    pattern = shape(2 * inch, 0.5 * inch, "rect",
+        '<a:pattFill prst="wdDnDiag"><a:fgClr><a:srgbClr val="C00000"/></a:fgClr><a:bgClr><a:srgbClr val="FFF2CC"/>'
+        '</a:bgClr></a:pattFill>' + line)
+    star = shape(0.8 * inch, 0.8 * inch, "star5", solid("70AD47", 50000) + line
+        + '<a:effectLst><a:glow rad="101600"><a:srgbClr val="70AD47"><a:alpha val="60000"/></a:srgbClr></a:glow></a:effectLst>')
+    member = 0.7 * inch
+    group = (f'<a:graphicData uri="{WPG}"><wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/>'
+             f'<a:ext cx="{int(2.8 * inch)}" cy="{int(member)}"/><a:chOff x="0" y="0"/>'
+             f'<a:chExt cx="{int(2.8 * inch)}" cy="{int(member)}"/></a:xfrm></wpg:grpSpPr>'
+             + wsp(member, member, "ellipse", solid("4472C4") + line, text_box("1"))
+             + wsp(member, member, "triangle", solid("ED7D31") + line, text_box("2"), x=int(1.05 * inch))
+             + wsp(member, member, "diamond", solid("A5A5A5") + line, text_box("3"), x=int(2.1 * inch))
+             + '</wpg:wgp></a:graphicData>')
+    flow = "".join(f'<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">{words}</w:t></w:r></w:p>'
+                   for words in ["Linked boxes: this starts in the left box,", "keeps going until it runs out of room,",
+                                 "and carries on in the right-hand box,", "which has no text of its own."])
+    box = '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+    linked_body = '<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="t"/>'
+    def linked(content):
+        return (f'<a:graphicData uri="{WPS}"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/>'
+                f'<a:ext cx="{int(1.8 * inch)}" cy="{int(0.55 * inch)}"/></a:xfrm>{box}{solid("FFFFFF")}'
+                f'<a:ln w="9525">{solid("000000")}</a:ln></wps:spPr>{content}{linked_body}</wps:wsp></a:graphicData>')
+    square = '<wp:wrapSquare wrapText="bothSides"/>'
+    boxes = (anchor(12, int(1.8 * inch), int(0.55 * inch), linked(f'<wps:txbx id="1"><w:txbxContent>{flow}</w:txbxContent></wps:txbx>'),
+                    square, "left")[:-len("</w:p>")]
+             + anchor(13, int(1.8 * inch), int(0.55 * inch), linked('<wps:linkedTxbx id="1" seq="1"/>'), square, "right")
+             [len("<w:p>"):])
+
+    def caption(text):
+        return p(text, props='<w:spacing w:after="0"/>')
+
+    parts = [("Gradient down the shape, and a shadow down and to the right.", gradient_shadow, 2, 0.6),
+             ("Out from a yellow middle to an orange edge.", radial, 1.4, 0.8),
+             ("A dashed red outline, no fill.", dashed, 2, 0.5),
+             ("A filled triangle at the left end, an open arrow at the right.", arrow_line, 2.5, 1 / 72),
+             ("Turned 30° clockwise, its text with it.", turned, 1.6, 0.5),
+             ("An arrow pointing right, flipped to point left.", flipped, 1.4, 0.5),
+             ("Text running bottom to top.", sideways, 0.5, 1.2),
+             ("Red stripes down to the right on pale yellow.", pattern, 2, 0.5),
+             ("Half see-through, with a soft green glow.", star, 0.8, 0.8),
+             ("A group: circle, triangle and diamond.", group, 2.8, 0.7)]
+    body = p("Shapes", "Heading1")
+    for index, (words, graphic, width, height) in enumerate(parts, 1):
+        body += caption(words) + anchor(index, int(width * inch), int(height * inch), graphic)
+    body += caption("Two linked text boxes, the text running from the left one into the right.") + boxes
+    return body, f"<w:sectPr>{LETTER}</w:sectPr>", {}
+
+
+FIXTURES = {"text": text, "table": table, "pages": pages, "floating-picture": floating_picture, "shapes": shapes}
 
 
 def write(name, body, section, media):
@@ -165,8 +264,10 @@ def write(name, body, section, media):
               '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGE</w:instrText></w:r>'
               '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r>'
               '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>')
+    # Shapes' prefixes, only where there are shapes, so the other documents stay as they were.
+    shape_prefixes = f' xmlns:wps="{WPS}" xmlns:wpg="{WPG}"' if "<wps:" in body else ""
     document = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="{W}" xmlns:r="{R}" '
-                f'xmlns:wp="{WP}" xmlns:a="{A}" xmlns:pic="{PIC}"><w:body>{body}{section}</w:body></w:document>')
+                f'xmlns:wp="{WP}" xmlns:a="{A}" xmlns:pic="{PIC}"{shape_prefixes}><w:body>{body}{section}</w:body></w:document>')
     rels = [f'<Relationship Id="rIdStyles" Type="{REL}/styles" Target="styles.xml"/>',
             f'<Relationship Id="rIdNumbering" Type="{REL}/numbering" Target="numbering.xml"/>']
     overrides = [
