@@ -752,13 +752,15 @@ public struct InlineImage: Equatable, Sendable {
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
 ///   solid fills and lines, see-through or not, linear and circular gradient fills, Word's line,
-///   grid, check and shade patterns (`ShapePattern.isForeground`), and text in
+///   grid, check and shade patterns (`ShapePattern.isForeground`), outer
+///   shadows, and text in
 ///   its paragraphs' formatting, across, or up or down, turned and flipped
 ///   with the shape. Text runs from one linked text box on into the next.
 ///   Gradients out to a rectangle or the shape's own path (drawn as circular
 ///   ones), other patterns (drawn as their two colours mixed), picture fills,
-///   shadows, glows and other effects, 3-D, dashed lines and arrowheads,
-///   stacked text and free-form outlines are drawn more simply.
+///   stretched or skewed shadows, inner shadows, glows and other effects, 3-D,
+///   dashed lines and arrowheads, stacked text and free-form outlines are
+///   drawn more simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
@@ -851,6 +853,8 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var gradient: ShapeGradient?
     /// A pattern it is filled with in place of `fillHex`, which holds its background colour.
     public var pattern: ShapePattern?
+    /// The shadow it casts behind it: `a:outerShdw`.
+    public var shadow: ShapeShadow?
 
     public enum TextDirection: String, Sendable {
         /// Across, as usual.
@@ -1041,6 +1045,35 @@ public struct ShapePattern: Equatable, Hashable, Sendable {
                          15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21]
             return order[(y % 8) * 8 + x % 8] < (percent * 64 + 50) / 100
         }
+    }
+}
+
+/// A shadow a shape casts: `a:outerShdw`, blurred, set off from the shape.
+public struct ShapeShadow: Equatable, Hashable, Sendable {
+    /// Points.
+    public var blur: Double
+    public var distance: Double
+    /// Degrees clockwise from across, the way it is set off.
+    public var direction: Double
+    public var colorHex: String
+    public var alpha: Double
+    /// Whether it is set off the way the shape is turned, rather than across the page: `rotWithShape`.
+    public var turnsWithShape: Bool
+
+    public init(blur: Double, distance: Double, direction: Double, colorHex: String = "000000", alpha: Double = 1,
+                turnsWithShape: Bool = false) {
+        self.blur = blur
+        self.distance = distance
+        self.direction = direction
+        self.colorHex = colorHex
+        self.alpha = alpha
+        self.turnsWithShape = turnsWithShape
+    }
+
+    /// How far it is set off across and down, in points.
+    public var offset: (x: Double, y: Double) {
+        let radians = direction * .pi / 180
+        return (distance * cos(radians), distance * sin(radians))
     }
 }
 

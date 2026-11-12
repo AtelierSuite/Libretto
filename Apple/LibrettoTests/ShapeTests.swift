@@ -515,4 +515,41 @@ struct ShapeTests {
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 25)), "B7D6A3", by: 8))
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 1, y: 25)), "CBD4E3", by: 10))
     }
+
+    // MARK: - Effects
+
+    @Test("An outer shadow is read, and cast down and to the right as its direction says, past the shape's frame")
+    func outerShadow() throws {
+        let effects = """
+            <a:solidFill><a:srgbClr val="70AD47"/></a:solidFill><a:ln><a:noFill/></a:ln><a:effectLst>\
+            <a:outerShdw blurRad="0" dist="127000" dir="2700000" algn="tl" rotWithShape="0"><a:srgbClr val="000000"/>\
+            </a:outerShdw></a:effectLst>
+            """
+        let document = try Self.document(body: Self.anchored(Self.shape(properties: effects)))
+        let shape = try Self.shapeSpec(document)
+        let shadow = try #require(shape.shadow)
+        #expect(shadow.distance == 10 && shadow.direction == 45 && shadow.blur == 0)
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        // 60 by 40 points; the shadow 7.07 points right and down.
+        let size = CGSize(width: 60, height: 40)
+        #expect(ObjectRenderer.overhang(for: .shape(shape), size: size) == ObjectRenderer.Overhang(bottom: 7.25, right: 7.25))
+        #expect(ObjectRenderer.overhang(for: .shape(shape), size: size, effects: false) == .zero)
+        let image = ObjectRenderer.image(for: .shape(shape), size: size)
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 30, y: 20)), "70AD47"))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 65, y: 44)), "000000", by: 30))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 3, y: 44)), "FFFFFF"))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 65, y: 3)), "FFFFFF"))
+
+        // Turned, the shadow still falls down and to the right on the page.
+        var turned = shape
+        turned.rotation = 180
+        let turnedImage = ObjectRenderer.image(for: .shape(turned), size: size)
+        #expect(Self.isNear(Self.color(turnedImage, at: CGPoint(x: 65, y: 44)), "000000", by: 30))
+        #expect(Self.isNear(Self.color(turnedImage, at: CGPoint(x: 3, y: 44)), "FFFFFF"))
+
+        let stretched = effects.replacingOccurrences(of: "rotWithShape=\"0\"", with: "sx=\"90000\"")
+        #expect(try Self.document(body: Self.anchored(Self.shape(properties: stretched))).unsupportedFeatures.features
+            .contains(.simplifiedObjects))
+    }
 }

@@ -94,7 +94,38 @@ public enum ObjectRenderer: Sendable {
 
     /// Where a shape in a frame is drawn, turned and with its effects.
     static func drawnBounds(of shape: ShapeSpec, in rect: CGRect, effects: Bool) -> CGRect {
-        rect.applying(turn(shape, in: rect))
+        let turned = rect.applying(turn(shape, in: rect))
+        guard effects else { return turned }
+        var drawn = turned
+        if let shadow = shape.shadow {
+            let offset = shadowOffset(shadow, of: shape)
+            drawn = drawn.union(turned.offsetBy(dx: offset.width, dy: offset.height).insetBy(dx: -shadow.blur, dy: -shadow.blur))
+        }
+        return drawn
+    }
+
+    /// How far a shadow is set off on the page: the way the shape is turned too, if it turns with it.
+    static func shadowOffset(_ shadow: ShapeShadow, of shape: ShapeSpec) -> CGSize {
+        let offset = CGPoint(x: shadow.offset.x, y: shadow.offset.y)
+        guard shadow.turnsWithShape else { return CGSize(width: offset.x, height: offset.y) }
+        let turned = offset.applying(CGAffineTransform(rotationAngle: shape.rotation * .pi / 180))
+        return CGSize(width: turned.x, height: turned.y)
+    }
+
+    /// Casts a shadow from what is drawn next, set off and blurred as much on the page as it says.
+    /// Core Graphics measures a shadow in the context's base space, so it is turned and scaled there,
+    /// from the page's space: the context's, less the shape's own turn.
+    private static func castShadow(_ shadow: ShapeShadow, of shape: ShapeSpec, in rect: CGRect, context: CGContext) {
+        let offset = shadowOffset(shadow, of: shape)
+        let ctm = turn(shape, in: rect).inverted().concatenating(context.ctm)
+        var base = CGSize(width: offset.width * ctm.a + offset.height * ctm.c, height: offset.width * ctm.b + offset.height * ctm.d)
+        #if canImport(UIKit)
+        // UIKit's contexts set shadows off down their own flipped space, not up the base space.
+        base.height = -base.height
+        #endif
+        let scale = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        let ink = color(shadow.colorHex).withAlphaComponent(CGFloat(shadow.alpha)).cgColor
+        context.setShadow(offset: base, blur: CGFloat(shadow.blur) * scale, color: ink)
     }
 
     /// How a shape is turned about its middle.
@@ -125,8 +156,14 @@ public enum ObjectRenderer: Sendable {
 
     private static func drawUnturned(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
         context.saveGState()
+        // The fill and line cast one shadow together; the text, none of its own.
+        if let shadow = shape.shadow {
+            castShadow(shadow, of: shape, in: rect, context: context)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
         context.concatenate(mirror(shape, in: rect))
         drawOutline(shape, in: rect, context: context)
+        if shape.shadow != nil { context.endTransparencyLayer() }
         context.restoreGState()
         guard !shape.text.isEmpty else { return }
         // Text is never mirrored; flipped top to bottom, it is upside down.

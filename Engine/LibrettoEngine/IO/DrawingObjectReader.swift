@@ -301,6 +301,30 @@ public enum DrawingObjectReader: Sendable {
             shape.lineHex = color(in: reference)
         }
         if let font = style?.firstChild(named: "fontRef") { shape.textColorHex = color(in: font) }
+        if let effects = properties?.firstChild(named: "effectLst") {
+            if let shadow = effects.firstChild(named: "outerShdw") {
+                func points(_ name: String) -> Double { (Double(shadow.attribute(name) ?? "") ?? 0) / 12_700 }
+                shape.shadow = ShapeShadow(
+                    blur: points("blurRad"), distance: points("dist"),
+                    direction: (Double(shadow.attribute("dir") ?? "") ?? 0) / 60_000,
+                    colorHex: color(in: shadow) ?? "000000", alpha: alpha(in: shadow),
+                    turnsWithShape: ["1", "true"].contains(shadow.attribute("rotWithShape") ?? "")
+                )
+            }
+        }
+    }
+
+    /// The effects Libretto draws as Word does, and an outer shadow's attributes that keep it so:
+    /// one not stretched or skewed.
+    static func isDrawn(effect: XMLElement) -> Bool {
+        switch effect.name {
+        case "outerShdw":
+            let unstretched = ["sx", "sy"].allSatisfy { (effect.attribute($0) ?? "100000") == "100000" }
+            let unskewed = ["kx", "ky"].allSatisfy { (effect.attribute($0) ?? "0") == "0" }
+            return unstretched && unskewed
+        default:
+            return false
+        }
     }
 
     /// An `a:gradFill`'s stops, in order, and which way it runs.
@@ -497,7 +521,7 @@ public enum DrawingObjectReader: Sendable {
             // A gradient out to a rectangle or the shape's own path is drawn as one out to a circle.
             if let path = properties.firstChild(named: "gradFill")?.firstChild(named: "path"),
                path.attribute("path") != "circle" { return true }
-            if let list = properties.firstChild(named: "effectLst"), !list.children.isEmpty { return true }
+            if let list = properties.firstChild(named: "effectLst"), !list.children.allSatisfy(isDrawn(effect:)) { return true }
             if properties.firstChild(named: "effectDag") != nil { return true }
             if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
                !ShapeSpec.drawnGeometries.contains(geometry) { return true }
