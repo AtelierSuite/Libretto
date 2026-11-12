@@ -258,6 +258,9 @@ public enum DrawingObjectReader: Sendable {
     /// Fill and line, from the shape's own properties, else its style's theme references.
     private static func read(properties: XMLElement?, style: XMLElement?, into shape: inout ShapeSpec) {
         shape.geometry = properties?.firstChild(named: "prstGeom")?.attribute("prst") ?? "rect"
+        if let transform = properties?.firstChild(named: "xfrm") {
+            shape.rotation = (Double(transform.attribute("rot") ?? "") ?? 0) / 60_000
+        }
         if properties?.firstChild(named: "noFill") != nil {
             shape.fillHex = nil
         } else if let fill = properties?.firstChild(named: "solidFill") {
@@ -436,7 +439,9 @@ public enum DrawingObjectReader: Sendable {
             if properties.firstChild(named: "effectDag") != nil { return true }
             if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
                !ShapeSpec.drawnGeometries.contains(geometry) { return true }
-            if let transform = properties.firstChild(named: "xfrm"), isTurned(transform) { return true }
+            if let transform = properties.firstChild(named: "xfrm"),
+               ["1", "true"].contains(transform.attribute("flipH") ?? "")
+                || ["1", "true"].contains(transform.attribute("flipV") ?? "") { return true }
             if let line = properties.firstChild(named: "ln") {
                 if line.firstChild(named: "gradFill") != nil || line.firstChild(named: "pattFill") != nil { return true }
                 if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid" { return true }

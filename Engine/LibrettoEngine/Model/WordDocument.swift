@@ -751,10 +751,11 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, and text in its paragraphs' formatting. Gradient,
-///   pattern and picture fills, shadows, glows and other effects, 3-D, dashed
-///   lines and arrowheads, rotation and free-form outlines are drawn more
-///   simply. Text runs from one linked text box on into the next.
+///   solid fills and lines, and text in its paragraphs' formatting, turned
+///   with the shape. Gradient, pattern and picture fills, shadows, glows and
+///   other effects, 3-D, dashed lines and arrowheads, flips and free-form
+///   outlines are drawn more simply. Text runs from one linked text box on
+///   into the next.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
@@ -832,6 +833,8 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// The boxes the text runs through, when it is a text box linked to
     /// others: its `text` is all of theirs, and it shows its part of it.
     public var linkedText: LinkedText?
+    /// Degrees clockwise it is turned about its middle, its text with it: `a:xfrm`'s `rot`.
+    public var rotation: Double = 0
 
     public enum TextAnchor: String, Sendable {
         case top = "t", middle = "ctr", bottom = "b"

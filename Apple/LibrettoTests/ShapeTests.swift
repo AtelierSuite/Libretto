@@ -319,4 +319,41 @@ struct ShapeTests {
         let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
         return cgImage.cropping(to: pixels).map { UIImage(cgImage: $0, scale: scale, orientation: .up) } ?? image
     }
+
+    // MARK: - Turned and flipped
+
+    static let green = "<a:solidFill><a:srgbClr val=\"70AD47\"/></a:solidFill><a:ln><a:noFill/></a:ln>"
+
+    @Test("A turned shape is read, drawn turned about its middle, and reaches past its frame by its corners")
+    func turned() throws {
+        let graphic = Self.shape(properties: Self.green, transform: " rot=\"5400000\"", width: 1_270_000, height: 254_000)
+        let document = try Self.document(body: Self.anchored(graphic, width: 1_270_000, height: 254_000))
+        let shape = try Self.shapeSpec(document)
+        #expect(shape.rotation == 90)
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        // 100 by 20 points, turned a quarter: 20 wide and 100 tall about the same middle.
+        let object = DrawingObject.shape(shape)
+        let size = CGSize(width: 100, height: 20)
+        #expect(ObjectRenderer.overhang(for: object, size: size) == ObjectRenderer.Overhang(top: 40, bottom: 40))
+        let image = ObjectRenderer.image(for: object, size: size)
+        #expect(image.size == CGSize(width: 100, height: 100))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 5)), "70AD47"))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 5, y: 50)), "FFFFFF"))
+    }
+
+    @Test("A turned shape kept above and below text has room for its turned corners, and is drawn past its frame")
+    func turnedKeepsRoom() throws {
+        let graphic = Self.shape(properties: Self.green, transform: " rot=\"5400000\"", width: 1_270_000, height: 254_000)
+        let body = Self.paragraph("Caption") + Self.anchored(graphic, width: 1_270_000, height: 254_000) + Self.paragraph("After")
+        let controller = DocumentTextController(document: try Self.document(body: body), scheme: .light)
+        let layout = controller.layoutManager
+        let float = try #require(layout.placedFloats.first)
+        let lines = Self.lines(layout)
+        let caption = try #require(lines.first { $0.text.hasPrefix("Caption") }).rect
+        let after = try #require(lines.first { $0.text.hasPrefix("After") }).rect
+        #expect(float.frame.size == CGSize(width: 100, height: 100))
+        #expect(abs(float.frame.minY - caption.maxY) < 0.5)
+        #expect(after.minY >= float.frame.maxY)
+    }
 }

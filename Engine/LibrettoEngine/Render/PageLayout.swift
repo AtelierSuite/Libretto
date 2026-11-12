@@ -322,6 +322,17 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         picture.wrap == .topAndBottom && picture.verticalAnchor == .paragraph && picture.page == nil
     }
 
+    /// How far a floating object at `scale` is drawn past its frame, and how far text keeps clear past it.
+    private static func overhangs(_ picture: InlineImage, scale: CGFloat)
+        -> (drawn: ObjectRenderer.Overhang, kept: ObjectRenderer.Overhang) {
+        guard let object = picture.object else { return (.zero, .zero) }
+        let size = CGSize(width: picture.width, height: picture.height)
+        return (
+            ObjectRenderer.overhang(for: object, size: size).scaled(by: scale),
+            ObjectRenderer.overhang(for: object, size: size, effects: false).scaled(by: scale)
+        )
+    }
+
     /// A floating picture's size on a page: no larger than the page, if it
     /// is placed on the page, or than the text, if beside its paragraph.
     private func floatSize(_ picture: InlineImage, page: Int) -> CGSize {
@@ -359,8 +370,9 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         storage.enumerateAttribute(.attachment, in: paragraph) { value, _, _ in
             guard let attachment = value as? ImageAttachment, case .image(let picture) = attachment.inline.content,
                   Self.isReservedInParagraph(picture) else { return }
-            let height = floatSize(picture, page: page).height
-            reserve = max(reserve, picture.verticalOffset + height + picture.wrapDistances.bottom)
+            let size = floatSize(picture, page: page)
+            let kept = Self.overhangs(picture, scale: size.width / max(picture.width, 1)).kept
+            reserve = max(reserve, picture.verticalOffset + kept.top + size.height + kept.bottom + picture.wrapDistances.bottom)
         }
         guard reserve > 0 else {
             floatTops[start] = nil
@@ -403,6 +415,8 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                 ?? geometry.page(containing: reservedTop.map { $0 + 0.5 } ?? line.midY)
             let shape = geometry.shape(page)
             let size = floatSize(picture, page: page)
+            // A shape turned or with effects is drawn past its frame; text keeps clear of its turned corners.
+            let (drawn, kept) = Self.overhangs(picture, scale: size.width / max(picture.width, 1))
             // Across: from the margin, or the page's edge; the container starts at the text's leftmost edge.
             let origin = picture.isHorizontalFromPage ? 0 : shape.margins.left
             let span = picture.isHorizontalFromPage ? shape.size.width : shape.contentWidth
@@ -415,14 +429,16 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             }
             let y: CGFloat
             switch picture.verticalAnchor {
-            case .paragraph: y = (reservedTop ?? line.minY) + picture.verticalOffset
+            case .paragraph: y = reservedTop.map { $0 + kept.top } ?? line.minY + picture.verticalOffset
             case .margin: y = geometry.textTop(page) + picture.verticalOffset
             case .page: y = geometry.textTop(page) - shape.margins.top + picture.verticalOffset
             }
-            let frame = CGRect(x: pageX - geometry.textLeft, y: y, width: size.width, height: size.height)
+            let placed = CGRect(x: pageX - geometry.textLeft, y: y, width: size.width, height: size.height)
             floats.append(PlacedFloat(
-                frame: frame, page: page, image: image, behindText: picture.wrap == .behindText, location: range.location
+                frame: drawn.around(placed), page: page, image: image, behindText: picture.wrap == .behindText,
+                location: range.location
             ))
+            let frame = kept.around(placed)
             // Clear of the picture by the document's wrap distances.
             let distance = picture.wrapDistances
             let top = frame.minY - distance.top

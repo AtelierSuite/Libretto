@@ -75,7 +75,8 @@ struct DrawnDifferentlyTests {
     @Test("Shape properties drawn more simply are told apart from those drawn as Word does", arguments: [
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:effectLst/></wps:spPr><wps:bodyPr/>", false),
-        ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:xfrm flipH=\"1\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"heart\"/></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", true),

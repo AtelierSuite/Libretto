@@ -10,10 +10,14 @@ import AppKit
 /// the pages, the reader and the PDF to show.
 public enum ObjectRenderer: Sendable {
     /// An object drawn at a size; in the dark scheme, text of no colour of its own set straight on the page is light, as the body's is.
+    /// The picture reaches past the object's frame as far as its `overhang`: what is turned, and its effects.
     public static func image(for object: DrawingObject, size: CGSize, scheme: ColorScheme = .light) -> PlatformImage {
-        let canvas = CGSize(width: max(1, size.width), height: max(1, size.height))
+        let frame = CGSize(width: max(1, size.width), height: max(1, size.height))
+        let past = overhang(for: object, size: frame)
+        let canvas = CGSize(width: frame.width + past.left + past.right, height: frame.height + past.top + past.bottom)
         return PlatformImage.drawn(size: canvas) { context in
-            let bounds = CGRect(origin: .zero, size: canvas)
+            context.translateBy(x: past.left, y: past.top)
+            let bounds = CGRect(origin: .zero, size: frame)
             switch object {
             case .shape(let shape):
                 draw(shape, in: bounds, context: context, scheme: scheme)
@@ -35,6 +39,72 @@ public enum ObjectRenderer: Sendable {
         )
     }
 
+    // MARK: - Past the frame
+
+    /// How far an object is drawn past each edge of its frame, in points.
+    public struct Overhang: Equatable, Sendable {
+        public var top: CGFloat = 0, left: CGFloat = 0, bottom: CGFloat = 0, right: CGFloat = 0
+
+        public static let zero = Overhang()
+
+        public init(top: CGFloat = 0, left: CGFloat = 0, bottom: CGFloat = 0, right: CGFloat = 0) {
+            self.top = top
+            self.left = left
+            self.bottom = bottom
+            self.right = right
+        }
+
+        /// The same, for the object drawn `scale` times as large.
+        public func scaled(by scale: CGFloat) -> Overhang {
+            Overhang(top: top * scale, left: left * scale, bottom: bottom * scale, right: right * scale)
+        }
+
+        /// A frame grown by this much on each side.
+        public func around(_ frame: CGRect) -> CGRect {
+            CGRect(x: frame.minX - left, y: frame.minY - top, width: frame.width + left + right, height: frame.height + top + bottom)
+        }
+    }
+
+    /// How far an object at a size is drawn past its frame: the corners of a turned shape, and
+    /// with `effects`, its shadow and glow and the heads on its line's ends. Text keeps clear
+    /// of a turned shape's corners, as in Word, but not of its effects.
+    public static func overhang(for object: DrawingObject, size: CGSize, effects: Bool = true) -> Overhang {
+        let bounds = CGRect(origin: .zero, size: size)
+        let drawn: CGRect
+        switch object {
+        case .shape(let shape):
+            drawn = drawnBounds(of: shape, in: bounds, effects: effects)
+        case .group(let group):
+            let scaleX = size.width / max(group.width, 0.01)
+            let scaleY = size.height / max(group.height, 0.01)
+            drawn = group.shapes.reduce(bounds) { union, shape in
+                guard let frame = shape.frame else { return union }
+                let rect = CGRect(x: frame.x * scaleX, y: frame.y * scaleY, width: frame.width * scaleX, height: frame.height * scaleY)
+                return union.union(drawnBounds(of: shape, in: rect, effects: effects))
+            }
+        case .chart, .diagram:
+            return .zero
+        }
+        func past(_ value: CGFloat) -> CGFloat { value > 0.01 ? ceil(value * 4) / 4 : 0 }
+        return Overhang(
+            top: past(bounds.minY - drawn.minY), left: past(bounds.minX - drawn.minX),
+            bottom: past(drawn.maxY - bounds.maxY), right: past(drawn.maxX - bounds.maxX)
+        )
+    }
+
+    /// Where a shape in a frame is drawn, turned and with its effects.
+    static func drawnBounds(of shape: ShapeSpec, in rect: CGRect, effects: Bool) -> CGRect {
+        rect.applying(turn(shape, in: rect))
+    }
+
+    /// How a shape is turned about its middle.
+    static func turn(_ shape: ShapeSpec, in rect: CGRect) -> CGAffineTransform {
+        guard shape.rotation.truncatingRemainder(dividingBy: 360) != 0 else { return .identity }
+        return CGAffineTransform(translationX: rect.midX, y: rect.midY)
+            .rotated(by: shape.rotation * .pi / 180)
+            .translatedBy(x: -rect.midX, y: -rect.midY)
+    }
+
     // MARK: - Shapes
 
     /// Where a shape's outline runs within its picture: in from each edge by half its line, so
@@ -45,7 +115,15 @@ public enum ObjectRenderer: Sendable {
         return rect.insetBy(dx: min(margin, rect.width / 2), dy: min(margin, rect.height / 2))
     }
 
+    /// A shape in a frame, turned about its middle with its text, as its own transform says.
     public static func draw(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme = .light) {
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.concatenate(turn(shape, in: rect))
+        drawUnturned(shape, in: rect, context: context, scheme: scheme)
+    }
+
+    private static func drawUnturned(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
         let inset = outlineRect(for: shape, in: rect)
         let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
         if let fill = shape.fillHex {

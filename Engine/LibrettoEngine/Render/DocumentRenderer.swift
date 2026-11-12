@@ -239,10 +239,15 @@ public enum DocumentRenderer: Sendable {
                 ?? CGRect(x: 0, y: 0, width: 0.01, height: 0.01)
             return attachment
         }
-        // Never wider than the text, nor taller than a page, or it could not be laid out at all.
+        // Never wider than the text, nor taller than a page, or it could not be laid out at all. An object
+        // drawn past its frame, turned or with effects, takes that room in its line too, as in Word.
+        let past = image.object.map { ObjectRenderer.overhang(for: $0, size: CGSize(width: image.width, height: image.height)) }
+            ?? .zero
+        let width = image.width + past.left + past.right
+        let height = image.height + past.top + past.bottom
         let tallest = maximumHeight ?? context.contentHeight * 0.75
-        let scale = min(1, context.contentWidth / max(image.width, 1), tallest / max(image.height, 1))
-        attachment.bounds = CGRect(x: 0, y: 0, width: image.width * scale, height: image.height * scale)
+        let scale = min(1, context.contentWidth / max(width, 1), tallest / max(height, 1))
+        attachment.bounds = CGRect(x: 0, y: 0, width: width * scale, height: height * scale)
         return attachment
     }
 
