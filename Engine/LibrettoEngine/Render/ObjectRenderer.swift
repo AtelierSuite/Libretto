@@ -151,7 +151,12 @@ public enum ObjectRenderer: Sendable {
     private static func drawOutline(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
         let inset = outlineRect(for: shape, in: rect)
         let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
-        if let fill = shape.fillHex {
+        if let gradient = shape.gradient {
+            context.saveGState()
+            path.addClip()
+            fill(gradient, of: shape, in: rect, context: context)
+            context.restoreGState()
+        } else if let fill = shape.fillHex {
             color(fill).setFill()
             path.fill()
         }
@@ -159,6 +164,50 @@ public enum ObjectRenderer: Sendable {
             color(line).setStroke()
             path.lineWidth = max(0.5, shape.lineWidth)
             path.stroke()
+        }
+    }
+
+    /// A gradient across a shape's frame, in whatever it is clipped to.
+    private static func fill(_ gradient: ShapeGradient, of shape: ShapeSpec, in rect: CGRect, context: CGContext) {
+        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let colors = gradient.stops.map { stop -> CGColor in
+            let value = Int(stop.colorHex, radix: 16) ?? 0
+            return CGColor(
+                srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
+                blue: CGFloat(value & 0xFF) / 255, alpha: CGFloat(stop.alpha)
+            )
+        }
+        var locations = gradient.stops.map { CGFloat($0.position) }
+        guard let drawn = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: &locations) else { return }
+        // One that doesn't turn with its shape is drawn unturned.
+        if !gradient.turnsWithShape { context.concatenate(turn(shape, in: rect).inverted()) }
+        let ends: CGGradientDrawingOptions = [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        switch gradient.kind {
+        case .linear(let angle, let scaled):
+            var box = rect
+            if scaled {
+                // At its angle in a square, the square then stretched to the frame.
+                context.translateBy(x: rect.minX, y: rect.minY)
+                context.scaleBy(x: max(rect.width, 0.01), y: max(rect.height, 0.01))
+                box = CGRect(x: 0, y: 0, width: 1, height: 1)
+            }
+            let radians = angle * .pi / 180
+            let direction = CGPoint(x: cos(radians), y: sin(radians))
+            // From corner to corner along it, so the first and last colours just reach the frame's corners.
+            let half = (abs(direction.x) * box.width + abs(direction.y) * box.height) / 2
+            let start = CGPoint(x: box.midX - direction.x * half, y: box.midY - direction.y * half)
+            let end = CGPoint(x: box.midX + direction.x * half, y: box.midY + direction.y * half)
+            context.drawLinearGradient(drawn, start: start, end: end, options: ends)
+        case .path(let focus, _):
+            // Out from the middle of the focus to the farthest corner, stretched with the frame.
+            context.translateBy(x: rect.minX, y: rect.minY)
+            context.scaleBy(x: max(rect.width, 0.01), y: max(rect.height, 0.01))
+            let center = CGPoint(x: (focus.left + 1 - focus.right) / 2, y: (focus.top + 1 - focus.bottom) / 2)
+            let radius = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)]
+                .map { hypot($0.x - center.x, $0.y - center.y) }.max() ?? 1
+            context.drawRadialGradient(
+                drawn, startCenter: center, startRadius: 0, endCenter: center, endRadius: max(radius, 0.01), options: ends
+            )
         }
     }
 

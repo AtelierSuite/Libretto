@@ -411,4 +411,53 @@ struct ShapeTests {
             #expect(ink.height > 30, "\(vertical): \(ink)")
         }
     }
+
+    // MARK: - Fills
+
+    static let threeStops = """
+        <a:gsLst><a:gs pos="0"><a:srgbClr val="1F4E79"/></a:gs><a:gs pos="50000"><a:srgbClr val="5B9BD5"/></a:gs>\
+        <a:gs pos="100000"><a:srgbClr val="DEEBF7"><a:alpha val="80000"/></a:srgbClr></a:gs></a:gsLst>
+        """
+
+    @Test("A linear gradient is read with its stops and angle, and drawn from edge to edge along it")
+    func linearGradient() throws {
+        let fill = "<a:gradFill rotWithShape=\"1\">\(Self.threeStops)<a:lin ang=\"5400000\" scaled=\"0\"/></a:gradFill><a:ln><a:noFill/></a:ln>"
+        let document = try Self.document(body: Self.anchored(Self.shape(properties: fill)))
+        let shape = try Self.shapeSpec(document)
+        let gradient = try #require(shape.gradient)
+        #expect(gradient.stops == [
+            .init(position: 0, colorHex: "1F4E79"), .init(position: 0.5, colorHex: "5B9BD5"),
+            .init(position: 1, colorHex: "DEEBF7", alpha: 0.8),
+        ])
+        #expect(gradient.kind == .linear(angle: 90, scaled: false))
+        #expect(shape.fillHex == "1F4E79")
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        // Down the shape: dark at the top, the middle stop halfway, light at the foot.
+        let image = ObjectRenderer.image(for: .shape(shape), size: CGSize(width: 100, height: 100))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 2)), "1F4E79", by: 16))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 50)), "5B9BD5", by: 16))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 97)), "E5EFF9", by: 16))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 3, y: 50)), "5B9BD5", by: 16))
+    }
+
+    @Test("A gradient out from the middle is read with its focus, and drawn from the first colour there to the last at the corners")
+    func radialGradient() throws {
+        let fill = """
+            <a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFD966"/></a:gs><a:gs pos="100000"><a:srgbClr val="C55A11"/></a:gs>\
+            </a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path></a:gradFill>
+            """
+        let document = try Self.document(body: Self.anchored(Self.shape("ellipse", properties: fill)))
+        let shape = try Self.shapeSpec(document)
+        let half = ShapeInsets(left: 0.5, top: 0.5, right: 0.5, bottom: 0.5)
+        #expect(shape.gradient?.kind == .path(focus: half, isCircle: true))
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        var square = shape
+        square.geometry = "rect"
+        square.lineHex = nil
+        let image = ObjectRenderer.image(for: .shape(square), size: CGSize(width: 100, height: 100))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 50)), "FFD966", by: 16))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 2, y: 2)), "C55A11", by: 24))
+    }
 }

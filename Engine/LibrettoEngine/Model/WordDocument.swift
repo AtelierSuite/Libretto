@@ -751,11 +751,13 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, and text in its paragraphs' formatting, across,
-///   or up or down (but not stacked), turned and flipped with the shape. Gradient, pattern and picture fills, shadows,
-///   glows and other effects, 3-D, dashed lines and arrowheads, and free-form
-///   outlines are drawn more simply. Text runs from one linked text box on
-///   into the next.
+///   solid fills and lines, linear and circular gradient fills, and text in
+///   its paragraphs' formatting, across, or up or down, turned and flipped
+///   with the shape. Text runs from one linked text box on into the next.
+///   Gradients out to a rectangle or the shape's own path (drawn as circular
+///   ones), pattern and picture fills, shadows, glows and other effects, 3-D,
+///   dashed lines and arrowheads, stacked text and free-form outlines are
+///   drawn more simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
@@ -841,6 +843,8 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var flipsVertically = false
     /// Which way its text runs: `wps:bodyPr`'s `vert`.
     public var textDirection: TextDirection = .horizontal
+    /// A gradient it is filled with in place of `fillHex`, which holds its first colour.
+    public var gradient: ShapeGradient?
 
     public enum TextDirection: String, Sendable {
         /// Across, as usual.
@@ -942,6 +946,44 @@ public struct ShapeOutline: Equatable, Hashable, Sendable {
         self.width = width
         self.height = height
         self.elements = elements
+    }
+}
+
+/// A gradient fill: `a:gradFill`.
+public struct ShapeGradient: Equatable, Hashable, Sendable {
+    public struct Stop: Equatable, Hashable, Sendable {
+        /// From 0 to 1 along the gradient.
+        public var position: Double
+        public var colorHex: String
+        /// From 0, clear, to 1, solid.
+        public var alpha: Double
+
+        public init(position: Double, colorHex: String, alpha: Double = 1) {
+            self.position = position
+            self.colorHex = colorHex
+            self.alpha = alpha
+        }
+    }
+
+    public enum Kind: Equatable, Hashable, Sendable {
+        /// Along a line at `angle` degrees clockwise from across (`a:lin`); `scaled`, at
+        /// that angle in a square then stretched to the shape, as its `scaled` says.
+        case linear(angle: Double, scaled: Bool)
+        /// Out from `focus` (`a:path`'s `a:fillToRect`, as fractions in from the left, top,
+        /// right and bottom) to the shape's corners; `isCircle` for `path="circle"`, else a
+        /// rectangle's or the shape's own path, drawn as a circle's.
+        case path(focus: ShapeInsets, isCircle: Bool)
+    }
+
+    public var stops: [Stop]
+    public var kind: Kind
+    /// Whether it turns with the shape: `rotWithShape`.
+    public var turnsWithShape: Bool
+
+    public init(stops: [Stop], kind: Kind, turnsWithShape: Bool = true) {
+        self.stops = stops
+        self.kind = kind
+        self.turnsWithShape = turnsWithShape
     }
 }
 

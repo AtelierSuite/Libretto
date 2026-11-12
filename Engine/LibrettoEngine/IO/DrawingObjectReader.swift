@@ -272,6 +272,9 @@ public enum DrawingObjectReader: Sendable {
             shape.fillHex = nil
         } else if let fill = properties?.firstChild(named: "solidFill") {
             shape.fillHex = color(in: fill)
+        } else if let fill = properties?.firstChild(named: "gradFill"), let read = gradient(fill) {
+            shape.gradient = read
+            shape.fillHex = read.stops.first?.colorHex
         } else if let reference = style?.firstChild(named: "fillRef") {
             shape.fillHex = color(in: reference)
         }
@@ -288,6 +291,43 @@ public enum DrawingObjectReader: Sendable {
             shape.lineHex = color(in: reference)
         }
         if let font = style?.firstChild(named: "fontRef") { shape.textColorHex = color(in: font) }
+    }
+
+    /// An `a:gradFill`'s stops, in order, and which way it runs.
+    static func gradient(_ fill: XMLElement) -> ShapeGradient? {
+        let stops = fill.firstChild(named: "gsLst")?.children(named: "gs").compactMap { stop -> ShapeGradient.Stop? in
+            guard let hex = color(in: stop) else { return nil }
+            let position = (Double(stop.attribute("pos") ?? "") ?? 0) / 100_000
+            return ShapeGradient.Stop(position: min(1, max(0, position)), colorHex: hex, alpha: alpha(in: stop))
+        }.sorted { $0.position < $1.position } ?? []
+        guard !stops.isEmpty else { return nil }
+        let kind: ShapeGradient.Kind
+        if let path = fill.firstChild(named: "path") {
+            let rect = path.firstChild(named: "fillToRect")
+            func fraction(_ name: String) -> Double { (Double(rect?.attribute(name) ?? "") ?? 0) / 100_000 }
+            kind = .path(
+                focus: ShapeInsets(left: fraction("l"), top: fraction("t"), right: fraction("r"), bottom: fraction("b")),
+                isCircle: path.attribute("path") == "circle"
+            )
+        } else {
+            let line = fill.firstChild(named: "lin")
+            kind = .linear(
+                angle: (Double(line?.attribute("ang") ?? "") ?? 0) / 60_000,
+                scaled: ["1", "true"].contains(line?.attribute("scaled") ?? "")
+            )
+        }
+        let turns = !["0", "false"].contains(fill.attribute("rotWithShape") ?? "1")
+        return ShapeGradient(stops: stops, kind: kind, turnsWithShape: turns)
+    }
+
+    /// How solid the colour an element holds is: its `a:alpha`, from 0 to 1.
+    public static func alpha(in element: XMLElement?) -> Double {
+        guard let element else { return 1 }
+        for child in element.children where ["srgbClr", "schemeClr", "sysClr", "prstClr", "scrgbClr", "hslClr"].contains(child.name) {
+            guard let value = child.firstChild(named: "alpha")?.attribute("val").flatMap(Double.init) else { return 1 }
+            return min(1, max(0, value / 100_000))
+        }
+        return 1
     }
 
     /// The Office theme's colours, which shapes refer to by role.
@@ -440,8 +480,11 @@ public enum DrawingObjectReader: Sendable {
     /// A shape's fills, effects, outline and text that Libretto draws more simply.
     static func isSimplified(shape: XMLElement) -> Bool {
         if let properties = shape.firstChild(named: "spPr") {
-            let effects: Set<String> = ["gradFill", "pattFill", "blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
+            let effects: Set<String> = ["pattFill", "blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
             if properties.children.contains(where: { effects.contains($0.name) }) { return true }
+            // A gradient out to a rectangle or the shape's own path is drawn as one out to a circle.
+            if let path = properties.firstChild(named: "gradFill")?.firstChild(named: "path"),
+               path.attribute("path") != "circle" { return true }
             if let list = properties.firstChild(named: "effectLst"), !list.children.isEmpty { return true }
             if properties.firstChild(named: "effectDag") != nil { return true }
             if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
