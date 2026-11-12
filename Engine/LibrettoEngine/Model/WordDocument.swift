@@ -751,13 +751,14 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, linear and circular gradient fills, and text in
+///   solid fills and lines, linear and circular gradient fills, Word's line,
+///   grid, check and shade patterns (`ShapePattern.isForeground`), and text in
 ///   its paragraphs' formatting, across, or up or down, turned and flipped
 ///   with the shape. Text runs from one linked text box on into the next.
 ///   Gradients out to a rectangle or the shape's own path (drawn as circular
-///   ones), pattern and picture fills, shadows, glows and other effects, 3-D,
-///   dashed lines and arrowheads, stacked text and free-form outlines are
-///   drawn more simply.
+///   ones), other patterns (drawn as their two colours mixed), picture fills,
+///   shadows, glows and other effects, 3-D, dashed lines and arrowheads,
+///   stacked text and free-form outlines are drawn more simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
@@ -845,6 +846,8 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var textDirection: TextDirection = .horizontal
     /// A gradient it is filled with in place of `fillHex`, which holds its first colour.
     public var gradient: ShapeGradient?
+    /// A pattern it is filled with in place of `fillHex`, which holds its background colour.
+    public var pattern: ShapePattern?
 
     public enum TextDirection: String, Sendable {
         /// Across, as usual.
@@ -984,6 +987,57 @@ public struct ShapeGradient: Equatable, Hashable, Sendable {
         self.stops = stops
         self.kind = kind
         self.turnsWithShape = turnsWithShape
+    }
+}
+
+/// A pattern fill: `a:pattFill`, one of Word's preset 8 by 8 tiles in two colours.
+public struct ShapePattern: Equatable, Hashable, Sendable {
+    /// `prst`: `pct50`, `horz`, `wdDnDiag` and the rest.
+    public var preset: String
+    public var foregroundHex: String
+    public var backgroundHex: String
+
+    public init(preset: String, foregroundHex: String, backgroundHex: String) {
+        self.preset = preset
+        self.foregroundHex = foregroundHex
+        self.backgroundHex = backgroundHex
+    }
+
+    /// Whether a tile pixel, `x` across and `y` down from 0 to 7, is in the foreground colour;
+    /// `nil` for a preset not drawn as Word draws it.
+    public static func isForeground(_ preset: String, x: Int, y: Int) -> Bool? {
+        func lines(_ position: Int, period: Int, width: Int) -> Bool { position % period < width }
+        switch preset {
+        case "horz": return lines(y, period: 8, width: 1)
+        case "vert": return lines(x, period: 8, width: 1)
+        case "ltHorz": return lines(y, period: 4, width: 1)
+        case "ltVert": return lines(x, period: 4, width: 1)
+        case "narHorz": return lines(y, period: 2, width: 1)
+        case "narVert": return lines(x, period: 2, width: 1)
+        case "dkHorz": return lines(y, period: 4, width: 2)
+        case "dkVert": return lines(x, period: 4, width: 2)
+        // Down to the right, and up to the right.
+        case "dnDiag": return lines(x - y + 8, period: 8, width: 1)
+        case "upDiag": return lines(x + y, period: 8, width: 1)
+        case "ltDnDiag": return lines(x - y + 8, period: 4, width: 1)
+        case "ltUpDiag": return lines(x + y, period: 4, width: 1)
+        case "dkDnDiag": return lines(x - y + 8, period: 4, width: 2)
+        case "dkUpDiag": return lines(x + y, period: 4, width: 2)
+        case "wdDnDiag": return lines(x - y + 8, period: 8, width: 3)
+        case "wdUpDiag": return lines(x + y, period: 8, width: 3)
+        case "cross", "lgGrid": return lines(x, period: 8, width: 1) || lines(y, period: 8, width: 1)
+        case "smGrid": return lines(x, period: 4, width: 1) || lines(y, period: 4, width: 1)
+        case "diagCross": return lines(x - y + 8, period: 8, width: 1) || lines(x + y, period: 8, width: 1)
+        case "smCheck": return (x / 2 + y / 2) % 2 == 0
+        case "lgCheck": return (x / 4 + y / 4) % 2 == 0
+        default:
+            // So much in a hundred, spread as evenly as an ordered dither spreads it.
+            guard preset.hasPrefix("pct"), let percent = Int(preset.dropFirst(3)) else { return nil }
+            let order = [0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38,
+                         60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25,
+                         15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21]
+            return order[(y % 8) * 8 + x % 8] < (percent * 64 + 50) / 100
+        }
     }
 }
 

@@ -156,6 +156,11 @@ public enum ObjectRenderer: Sendable {
             path.addClip()
             fill(gradient, of: shape, in: rect, context: context)
             context.restoreGState()
+        } else if let pattern = shape.pattern {
+            context.saveGState()
+            path.addClip()
+            fill(pattern, in: rect, context: context)
+            context.restoreGState()
         } else if let fill = shape.fillHex {
             color(fill).setFill()
             path.fill()
@@ -209,6 +214,36 @@ public enum ObjectRenderer: Sendable {
                 drawn, startCenter: center, startRadius: 0, endCenter: center, endRadius: max(radius, 0.01), options: ends
             )
         }
+    }
+
+    /// How large a pattern's pixel is, in points: as on a screen at 96 to the inch.
+    static let patternPixel: CGFloat = 0.75
+
+    /// A pattern's tile, over and over from the frame's top left corner, in whatever it is clipped to.
+    /// A preset not drawn as Word draws it is filled with its two colours mixed half and half.
+    private static func fill(_ pattern: ShapePattern, in rect: CGRect, context: CGContext) {
+        color(pattern.backgroundHex).setFill()
+        PlatformGraphics.fill(rect)
+        let unit = patternPixel
+        let columns = Int(ceil(rect.width / unit)), rows = Int(ceil(rect.height / unit))
+        let path = CGMutablePath()
+        for row in 0..<rows {
+            var run: Int?
+            for column in 0...columns {
+                let on = column < columns
+                    && (ShapePattern.isForeground(pattern.preset, x: column % 8, y: row % 8) ?? ShapePattern.isForeground(
+                        "pct50", x: column % 8, y: row % 8) ?? false)
+                if on, run == nil { run = column }
+                if !on, let start = run {
+                    path.addRect(CGRect(x: rect.minX + CGFloat(start) * unit, y: rect.minY + CGFloat(row) * unit,
+                                        width: CGFloat(column - start) * unit, height: unit))
+                    run = nil
+                }
+            }
+        }
+        context.addPath(path)
+        context.setFillColor(color(pattern.foregroundHex).cgColor)
+        context.fillPath()
     }
 
     /// A shape's text, in its own area, or its part of the text its linked boxes share.

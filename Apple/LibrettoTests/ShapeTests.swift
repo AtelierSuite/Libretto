@@ -460,4 +460,44 @@ struct ShapeTests {
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 50)), "FFD966", by: 16))
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 2, y: 2)), "C55A11", by: 24))
     }
+
+    @Test("Word's preset patterns are tiles of lines, grids, checks and shades, and others are not drawn as Word draws them")
+    func patternTiles() {
+        // Wide stripes down to the right: three pixels in eight, a pixel further right each row.
+        #expect((0..<8).filter { ShapePattern.isForeground("wdDnDiag", x: $0, y: 0) == true } == [0, 1, 2])
+        #expect((0..<8).filter { ShapePattern.isForeground("wdDnDiag", x: $0, y: 1) == true } == [1, 2, 3])
+        #expect((0..<8).filter { ShapePattern.isForeground("ltUpDiag", x: $0, y: 1) == true } == [3, 7])
+        #expect((0..<8).filter { ShapePattern.isForeground("dkHorz", x: 0, y: $0) == true } == [0, 1, 4, 5])
+        func share(_ preset: String) -> Int {
+            (0..<64).filter { ShapePattern.isForeground(preset, x: $0 % 8, y: $0 / 8) == true }.count
+        }
+        #expect(share("pct5") == 3)
+        #expect(share("pct50") == 32)
+        #expect(share("pct90") == 58)
+        #expect(ShapePattern.isForeground("weave", x: 0, y: 0) == nil)
+    }
+
+    @Test("A pattern fill is read with its colours and drawn as its tile, over and over")
+    func patternFill() throws {
+        let fill = """
+            <a:pattFill prst="wdDnDiag"><a:fgClr><a:srgbClr val="C00000"/></a:fgClr><a:bgClr><a:srgbClr val="FFF2CC"/></a:bgClr>\
+            </a:pattFill><a:ln><a:noFill/></a:ln>
+            """
+        let document = try Self.document(body: Self.anchored(Self.shape(properties: fill)))
+        let shape = try Self.shapeSpec(document)
+        #expect(shape.pattern == ShapePattern(preset: "wdDnDiag", foregroundHex: "C00000", backgroundHex: "FFF2CC"))
+        #expect(shape.fillHex == "FFF2CC")
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        // Each tile pixel three quarters of a point: the third row's third pixel is in the stripe, its seventh not;
+        // and so on, a tile (six points) further on.
+        let image = ObjectRenderer.image(for: .shape(shape), size: CGSize(width: 48, height: 48))
+        for offset in [0.0, 6, 12] {
+            #expect(Self.isNear(Self.color(image, at: CGPoint(x: 1.9 + offset, y: 1.9 + offset)), "C00000", by: 20))
+            #expect(Self.isNear(Self.color(image, at: CGPoint(x: 4.9 + offset, y: 1.9 + offset)), "FFF2CC", by: 20))
+        }
+
+        let other = try Self.document(body: Self.anchored(Self.shape(properties: fill.replacingOccurrences(of: "wdDnDiag", with: "weave"))))
+        #expect(other.unsupportedFeatures.features.contains(.simplifiedObjects))
+    }
 }

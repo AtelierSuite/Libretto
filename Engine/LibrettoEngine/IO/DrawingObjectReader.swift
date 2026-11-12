@@ -275,6 +275,14 @@ public enum DrawingObjectReader: Sendable {
         } else if let fill = properties?.firstChild(named: "gradFill"), let read = gradient(fill) {
             shape.gradient = read
             shape.fillHex = read.stops.first?.colorHex
+        } else if let fill = properties?.firstChild(named: "pattFill") {
+            // Word's own colours, black on white, where it gives none.
+            let foreground = color(in: fill.firstChild(named: "fgClr")) ?? "000000"
+            let background = color(in: fill.firstChild(named: "bgClr")) ?? "FFFFFF"
+            shape.pattern = ShapePattern(
+                preset: fill.attribute("prst") ?? "pct5", foregroundHex: foreground, backgroundHex: background
+            )
+            shape.fillHex = background
         } else if let reference = style?.firstChild(named: "fillRef") {
             shape.fillHex = color(in: reference)
         }
@@ -480,8 +488,10 @@ public enum DrawingObjectReader: Sendable {
     /// A shape's fills, effects, outline and text that Libretto draws more simply.
     static func isSimplified(shape: XMLElement) -> Bool {
         if let properties = shape.firstChild(named: "spPr") {
-            let effects: Set<String> = ["pattFill", "blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
+            let effects: Set<String> = ["blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
             if properties.children.contains(where: { effects.contains($0.name) }) { return true }
+            if let pattern = properties.firstChild(named: "pattFill"),
+               ShapePattern.isForeground(pattern.attribute("prst") ?? "pct5", x: 0, y: 0) == nil { return true }
             // A gradient out to a rectangle or the shape's own path is drawn as one out to a circle.
             if let path = properties.firstChild(named: "gradFill")?.firstChild(named: "path"),
                path.attribute("path") != "circle" { return true }
