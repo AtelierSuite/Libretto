@@ -462,7 +462,7 @@ private final class ReadContext {
     /// A drawing that is not a picture, as an object to draw: a shape, a chart, a diagram.
     private func object(from drawing: XMLElement, keeping kept: XMLElement) -> InlineImage? {
         guard let container = drawing.children.first(where: { $0.name == "inline" || $0.name == "anchor" }),
-              let object = DrawingObjectReader.object(in: container, package: drawings) else { return nil }
+              let object = DrawingObjectReader.object(in: container, package: drawings, text: shapeText) else { return nil }
         let extent = container.firstChild(named: "extent")
         let width = Double(extent?.attribute("cx") ?? "") ?? 0
         let height = Double(extent?.attribute("cy") ?? "") ?? 0
@@ -475,6 +475,11 @@ private final class ReadContext {
         if container.name == "anchor" { placeFloating(&image, from: container) }
         if DrawingObjectReader.isDrawnSimplified(container, package: drawings) { report.insert(.simplifiedObjects) }
         return image
+    }
+
+    /// A text box's paragraphs, in the formatting they and their styles give them.
+    private func shapeText(_ content: XMLElement) -> [ShapeParagraph] {
+        PagesConverter.shapeParagraphs(blocks(from: content.children).blocks, styles: styles)
     }
 
     /// The picture an `mc:AlternateContent`'s fallback keeps of the object its choice holds, sized and

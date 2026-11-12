@@ -130,4 +130,54 @@ struct ShapeTests {
         let after = try #require(Self.lines(layout).first { $0.text.hasPrefix("After") }).rect
         #expect(after.minY >= float.frame.maxY)
     }
+
+    /// The objects a document's body holds, in order.
+    static func objects(_ document: WordDocument) -> [DrawingObject] {
+        document.allParagraphs.flatMap(\.inlines).compactMap { inline in
+            if case .image(let image) = inline.content { image.object } else { nil }
+        }
+    }
+
+    static func shapeSpec(_ document: WordDocument) throws -> ShapeSpec {
+        guard case .shape(let shape)? = objects(document).first else { throw ShapeError.none }
+        return shape
+    }
+
+    enum ShapeError: Error { case none }
+
+    // MARK: - Text
+
+    @Test("A shape's text is read in its paragraphs' formatting, and set where its body says")
+    func textInItsFormatting() throws {
+        let content = """
+            <wps:txbx><w:txbxContent><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr>\
+            <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:color w:val="FFFFFF"/><w:sz w:val="20"/></w:rPr>\
+            <w:t>Centred</w:t></w:r></w:p><w:p><w:r><w:t>Plain</w:t></w:r></w:p></w:txbxContent></wps:txbx>\
+            <wps:bodyPr lIns="0" tIns="25400" anchor="b"/>
+            """
+        let graphic = Self.shape(properties: "<a:solidFill><a:srgbClr val=\"70AD47\"/></a:solidFill>", body: content)
+        let shape = try Self.shapeSpec(try Self.document(body: Self.anchored(graphic)))
+        #expect(shape.text == "Centred\nPlain")
+        #expect(shape.textAnchor == .bottom)
+        #expect(shape.textInsets == ShapeInsets(left: 0, top: 2, right: 7.2, bottom: 3.6))
+        let paragraphs = try #require(shape.formattedParagraphs)
+        #expect(paragraphs.map(\.alignment) == [.center, .leading])
+        let run = try #require(paragraphs.first?.runs.first)
+        #expect(run.style.fontName == "Arial")
+        #expect(run.style.fontSize == 20)
+        #expect(run.style.colorHex == "FFFFFF")
+        // The second paragraph's runs have the document's own size.
+        #expect(paragraphs[1].runs.first?.style.fontSize != nil)
+
+        // Set at the foot, in from the edges by the insets.
+        let area = ObjectRenderer.textArea(for: shape, in: CGRect(x: 0, y: 0, width: 100, height: 50))
+        #expect(area == CGRect(x: 0, y: 2, width: 92.8, height: 44.4))
+    }
+
+    @Test("A shape whose body says nothing keeps Libretto's own insets and anchor")
+    func textDefaults() throws {
+        let shape = try Self.shapeSpec(try Self.document(body: Self.anchored(Self.shape(text: "Hi"))))
+        #expect(shape.textAnchor == nil)
+        #expect(shape.textInsets == nil)
+    }
 }

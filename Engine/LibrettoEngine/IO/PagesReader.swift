@@ -702,10 +702,23 @@ public struct PagesConverter {
         return InlineImage(relationshipID: "", width: max(width, 1), height: max(height, 1), object: .shape(spec))
     }
 
-    /// Paragraphs as a shape draws them: their text, in their runs' formatting.
-    static func shapeParagraphs(_ blocks: [Block]) -> [ShapeParagraph] {
+    /// Paragraphs as a shape draws them: their text, in their runs' formatting. With `styles`, the
+    /// formatting their styles give them too, theme fonts named, and a paragraph that says nothing
+    /// of its alignment set from the leading edge, as a Word text box sets it.
+    static func shapeParagraphs(_ blocks: [Block], styles: StyleSheet? = nil) -> [ShapeParagraph] {
         blocks.flatMap(\.paragraphs).map { paragraph in
             var runs: [ShapeRun] = []
+            let properties = styles?.resolvedParagraphProperties(paragraph.properties) ?? paragraph.properties
+            func look(_ style: RunStyle) -> RunStyle {
+                guard let styles else { return style }
+                var resolved = styles.resolvedRunStyle(style, paragraphStyleID: paragraph.properties.styleID)
+                switch resolved.fontName {
+                case RunStyle.minorThemeFont?: resolved.fontName = styles.minorFont
+                case RunStyle.majorThemeFont?: resolved.fontName = styles.majorFont
+                default: break
+                }
+                return resolved
+            }
             for inline in paragraph.inlines {
                 let text: String
                 switch inline.content {
@@ -715,19 +728,19 @@ public struct PagesConverter {
                 case .runChild(_, let display?), .paragraphChild(_, let display?): text = display
                 default: continue
                 }
-                if let last = runs.last, last.style == inline.format.style {
+                let style = look(inline.format.style)
+                if let last = runs.last, last.style == style {
                     runs[runs.count - 1].text += text
                 } else {
-                    runs.append(ShapeRun(text: text, style: inline.format.style))
+                    runs.append(ShapeRun(text: text, style: style))
                 }
             }
-            let properties = paragraph.properties
             var multiple: Double?
             if let spacing = properties.lineSpacing, spacing.rule == .auto, spacing.line != 240 {
                 multiple = Double(spacing.line) / 240
             }
             return ShapeParagraph(
-                runs: runs, alignment: properties.alignment, spaceBefore: Double(properties.spacingBefore ?? 0) / 20,
+                runs: runs, alignment: properties.alignment ?? (styles == nil ? nil : .leading), spaceBefore: Double(properties.spacingBefore ?? 0) / 20,
                 spaceAfter: Double(properties.spacingAfter ?? 0) / 20, lineHeightMultiple: multiple
             )
         }

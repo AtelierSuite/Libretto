@@ -804,6 +804,16 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var paragraphs: [ShapeParagraph]?
     /// An outline of its own, drawn in place of the preset geometry's.
     public var outline: ShapeOutline?
+    /// Where the text sits up and down: `wps:bodyPr`'s `anchor`. `nil` for
+    /// Libretto's own: a text box's from the top, a shape's in its middle.
+    public var textAnchor: TextAnchor?
+    /// How far the text keeps in from each edge, in points: `wps:bodyPr`'s
+    /// `lIns`, `tIns`, `rIns` and `bIns`. `nil` for Libretto's own.
+    public var textInsets: ShapeInsets?
+
+    public enum TextAnchor: String, Sendable {
+        case top = "t", middle = "ctr", bottom = "b"
+    }
 
     /// The formatted paragraphs, while they still say what the text does.
     public var formattedParagraphs: [ShapeParagraph]? {
@@ -892,6 +902,20 @@ public struct ShapeOutline: Equatable, Hashable, Sendable {
         self.width = width
         self.height = height
         self.elements = elements
+    }
+}
+
+public struct ShapeInsets: Equatable, Hashable, Sendable {
+    public var left, top, right, bottom: Double
+
+    /// Word's own: a tenth of an inch either side, a twentieth above and below.
+    public static let word = ShapeInsets(left: 7.2, top: 3.6, right: 7.2, bottom: 3.6)
+
+    public init(left: Double, top: Double, right: Double, bottom: Double) {
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
     }
 }
 

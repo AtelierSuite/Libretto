@@ -69,13 +69,27 @@ public enum ObjectRenderer: Sendable {
                 .paragraphStyle: style,
             ])
         }
-        let area = inset.insetBy(dx: 7, dy: 4)
+        let area = textArea(for: shape, in: rect)
         let height = ceil(text.boundingRect(with: CGSize(width: area.width, height: .greatestFiniteMagnitude),
                                             options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
-        // A text box's text runs from the top; a shape's sits in its middle.
-        let top = shape.isTextBox ? area.minY : area.midY - min(height, area.height) / 2
+        // Where the document says; else a text box's text runs from the top, and a shape's sits in its middle.
+        let top: CGFloat
+        switch shape.textAnchor ?? (shape.isTextBox ? .top : .middle) {
+        case .top: top = area.minY
+        case .middle: top = area.midY - min(height, area.height) / 2
+        case .bottom: top = area.maxY - min(height, area.height)
+        }
         text.draw(with: CGRect(x: area.minX, y: top, width: area.width, height: min(height, area.height)),
                   options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine], context: nil)
+    }
+
+    /// Where a shape's text goes: in from its edges by the document's insets, else by Libretto's own from its outline.
+    public static func textArea(for shape: ShapeSpec, in rect: CGRect) -> CGRect {
+        guard let insets = shape.textInsets else { return outlineRect(for: shape, in: rect).insetBy(dx: 7, dy: 4) }
+        return CGRect(
+            x: rect.minX + insets.left, y: rect.minY + insets.top,
+            width: max(1, rect.width - insets.left - insets.right), height: max(1, rect.height - insets.top - insets.bottom)
+        )
     }
 
     /// A shape's text in the formatting each of its paragraphs and runs has.

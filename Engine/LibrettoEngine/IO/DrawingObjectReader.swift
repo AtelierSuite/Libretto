@@ -30,12 +30,16 @@ public enum DrawingObjectReader: Sendable {
         }
     }
 
-    /// The object an `wp:inline` or `wp:anchor` holds, if it is one Libretto can draw.
-    public static func object(in container: XMLElement, package: Package) -> DrawingObject? {
+    /// Reads a text box's `w:txbxContent` into paragraphs in their formatting.
+    public typealias TextReader = (XMLElement) -> [ShapeParagraph]
+
+    /// The object an `wp:inline` or `wp:anchor` holds, if it is one Libretto can draw;
+    /// its shapes' text in its formatting, if there is a `text` reader to read it.
+    public static func object(in container: XMLElement, package: Package, text: TextReader? = nil) -> DrawingObject? {
         guard let data = descendant("graphicData", in: container) else { return nil }
         switch data.attribute("uri") {
         case shapeURI?:
-            return data.firstChild(named: "wsp").map { .shape(shape($0)) }
+            return data.firstChild(named: "wsp").map { .shape(shape($0, text: text)) }
         case chartURI?:
             guard let id = data.firstChild(named: "chart")?.attribute("id"), let chart = package.part(id) else { return nil }
             return self.chart(chart).map { .chart($0) }
@@ -53,7 +57,7 @@ public enum DrawingObjectReader: Sendable {
 
     // MARK: - Shapes
 
-    public static func shape(_ wsp: XMLElement) -> ShapeSpec {
+    public static func shape(_ wsp: XMLElement, text: TextReader? = nil) -> ShapeSpec {
         var shape = ShapeSpec()
         let properties = wsp.firstChild(named: "spPr")
         let style = wsp.firstChild(named: "style")
@@ -65,9 +69,29 @@ public enum DrawingObjectReader: Sendable {
                 shape.textColorHex = rPr.firstChild(named: "color")?.attribute("val").flatMap { $0 == "auto" ? nil : $0.uppercased() }
                 shape.fontSize = rPr.firstChild(named: "sz")?.attribute("val").flatMap(Double.init).map { $0 / 2 }
             }
+            // In its own formatting, where its paragraphs read as the text does.
+            if let paragraphs = text?(content), !paragraphs.isEmpty,
+               paragraphs.map(\.text).joined(separator: "\n") == shape.text {
+                shape.paragraphs = paragraphs
+            }
         }
+        if let body = wsp.firstChild(named: "bodyPr") { readBody(body, into: &shape) }
         shape.originalText = shape.text
         return shape
+    }
+
+    /// Where a shape's text sits, and how far in from its edges.
+    static func readBody(_ body: XMLElement, into shape: inout ShapeSpec) {
+        shape.textAnchor = body.attribute("anchor").flatMap(ShapeSpec.TextAnchor.init(rawValue:))
+        let names = ["lIns", "tIns", "rIns", "bIns"]
+        if names.contains(where: { body.attribute($0) != nil }) {
+            let word = ShapeInsets.word
+            let defaults = [word.left, word.top, word.right, word.bottom]
+            let values = zip(names, defaults).map { name, fallback in
+                body.attribute(name).flatMap(Double.init).map { max(0, $0) / 12_700 } ?? fallback
+            }
+            shape.textInsets = ShapeInsets(left: values[0], top: values[1], right: values[2], bottom: values[3])
+        }
     }
 
     private static func diagramShape(_ sp: XMLElement) -> ShapeSpec {

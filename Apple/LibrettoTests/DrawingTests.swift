@@ -60,8 +60,16 @@ struct DrawingTests {
         #expect(xml.contains("<w:txbxContent><w:p><w:r><w:t xml:space=\"preserve\">Note</w:t></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">well</w:t></w:r></w:p></w:txbxContent>"))
         #expect(xml.contains("xmlns:wps=\"\(Self.wps)\""))
         let (image, object) = try #require(object(try DOCXReader.document(fromParts: written)))
-        #expect(object == .shape(ShapeSpec(geometry: "rect", fillHex: "FFFFFF", lineHex: "000000", lineWidth: 0.75,
-                                           text: "Note\nwell", isTextBox: true, originalText: "Note\nwell")))
+        guard case .shape(var read) = object else { Issue.record("not a shape"); return }
+        // Its text in its paragraphs' formatting, set from the top, in from the edges as Word sets it.
+        #expect(read.formattedParagraphs?.map(\.text) == ["Note", "well"])
+        #expect(read.textAnchor == .top)
+        #expect(read.textInsets == .word)
+        read.paragraphs = nil
+        read.textAnchor = nil
+        read.textInsets = nil
+        #expect(read == ShapeSpec(geometry: "rect", fillHex: "FFFFFF", lineHex: "000000", lineWidth: 0.75,
+                                  text: "Note\nwell", isTextBox: true, originalText: "Note\nwell"))
         #expect(image.wrap == .square)
         #expect(controller.layoutManager.placedFloats.count == 1)
     }
