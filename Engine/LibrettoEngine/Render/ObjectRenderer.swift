@@ -122,19 +122,28 @@ public enum ObjectRenderer: Sendable {
     }
 
     /// Casts a shadow from what is drawn next, set off and blurred as much on the page as it says.
-    /// Core Graphics measures a shadow in the context's base space, so it is turned and scaled there,
-    /// from the page's space: the context's, less the shape's own turn.
+    /// Core Graphics measures a shadow in the context's base space, so it is set there, from the
+    /// page's space: the context's, less the shape's own turn.
     private static func castShadow(_ shadow: ShapeShadow, of shape: ShapeSpec, in rect: CGRect, context: CGContext) {
         let offset = shadowOffset(shadow, of: shape)
         let ctm = turn(shape, in: rect).inverted().concatenating(context.ctm)
-        var base = CGSize(width: offset.width * ctm.a + offset.height * ctm.c, height: offset.width * ctm.b + offset.height * ctm.d)
-        #if canImport(UIKit)
-        // UIKit's contexts set shadows off down their own flipped space, not up the base space.
-        base.height = -base.height
-        #endif
-        let scale = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        let (base, scale) = baseSpace(offset, ctm: ctm)
         let ink = color(shadow.colorHex).withAlphaComponent(CGFloat(shadow.alpha)).cgColor
         context.setShadow(offset: base, blur: CGFloat(shadow.blur) * scale, color: ink)
+    }
+
+    /// An offset in the space a transform draws from, in the context's base space, where shadows are
+    /// measured, and how many base units a point is there. A UIKit context's base space is its own
+    /// points, down the page; any other's, its pixels, up it.
+    static func baseSpace(_ offset: CGSize, ctm: CGAffineTransform) -> (offset: CGSize, scale: CGFloat) {
+        var scale = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        var base = CGSize(width: offset.width * ctm.a + offset.height * ctm.c, height: offset.width * ctm.b + offset.height * ctm.d)
+        #if canImport(UIKit)
+        let pixels = max(scale, 0.0001)
+        base = CGSize(width: base.width / pixels, height: -base.height / pixels)
+        scale = 1
+        #endif
+        return (base, scale)
     }
 
     /// How a shape is turned about its middle.
@@ -208,8 +217,7 @@ public enum ObjectRenderer: Sendable {
     /// A glow around a path: its silhouette in the glow's colour, a little wider, blurred out as far as
     /// the glow reaches, and cleared again inside the outline, so only the glow around it is seen.
     private static func draw(_ glow: ShapeGlow, around path: PlatformBezierPath, context: CGContext) {
-        let ctm = context.ctm
-        let scale = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        let scale = baseSpace(.zero, ctm: context.ctm).scale
         let ink = color(glow.colorHex).withAlphaComponent(CGFloat(glow.alpha))
         context.saveGState()
         context.beginTransparencyLayer(auxiliaryInfo: nil)

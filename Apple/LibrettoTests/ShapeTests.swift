@@ -548,6 +548,18 @@ struct ShapeTests {
         #expect(Self.isNear(Self.color(turnedImage, at: CGPoint(x: 65, y: 44)), "000000", by: 30))
         #expect(Self.isNear(Self.color(turnedImage, at: CGPoint(x: 3, y: 44)), "FFFFFF"))
 
+        // Set off as far as it says, not as far on the screen's pixels: 10 points straight down.
+        var down = shape
+        down.shadow?.direction = 90
+        let below = ObjectRenderer.image(for: .shape(down), size: CGSize(width: 60, height: 20))
+        #expect(below.size == CGSize(width: 60, height: 30))
+        #expect(Self.isNear(Self.color(below, at: CGPoint(x: 30, y: 26)), "000000", by: 30))
+        #expect(Self.isNear(Self.color(below, at: CGPoint(x: 30, y: 15)), "70AD47"))
+        // Blurred as much as it says: a soft edge a few points wide, not a wide haze.
+        down.shadow?.blur = 4
+        let soft = ObjectRenderer.image(for: .shape(down), size: CGSize(width: 60, height: 20))
+        #expect(Self.isNear(Self.color(soft, at: CGPoint(x: 30, y: 26)), "000000", by: 90))
+
         let stretched = effects.replacingOccurrences(of: "rotWithShape=\"0\"", with: "sx=\"90000\"")
         #expect(try Self.document(body: Self.anchored(Self.shape(properties: stretched))).unsupportedFeatures.features
             .contains(.simplifiedObjects))
