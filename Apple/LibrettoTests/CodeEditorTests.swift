@@ -144,6 +144,28 @@ struct CodeEditorTests {
         #expect(fragments == 2)
     }
 
+    @Test("Typing on the widest line widens the text without laying out the rest of it again")
+    func typingOnWidestLine() {
+        let lines = ["let long = \"" + String(repeating: "x", count: 100) + "\""] + (0..<2000).map { "let value\($0) = \($0)" }
+        let (controller, _) = makeEditor(lines.joined(separator: "\n"))
+        let textView = controller.view.textView
+        let layoutManager = textView.layoutManager
+        let length = (textView.text as NSString).length
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: length))
+        let width = textView.frame.width
+
+        textView.selectedRange = NSRange(location: (lines[0] as NSString).length, length: 0)
+        for key in ["a", "b", "c", "d"] { type(key, in: controller) }
+        #expect(textView.frame.width > width)
+        // Laid out still, past what was typed: the lines under it were not laid out again.
+        #expect(layoutManager.firstUnlaidCharacterIndex() > length)
+        // And the widest line is still one line, not wrapped.
+        let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: 0, length: (lines[0] as NSString).length + 4), actualCharacterRange: nil)
+        var fragments = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, _, _ in fragments += 1 }
+        #expect(fragments == 1)
+    }
+
     @Test("A document changed elsewhere, as by an undo, replaces the text")
     func update() {
         let (controller, _) = makeEditor("let a = 1")

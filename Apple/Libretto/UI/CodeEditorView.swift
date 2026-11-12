@@ -344,7 +344,7 @@ final class CodeEditorContainer: UIView {
         let layoutManager = NSLayoutManager()
         layoutManager.allowsNonContiguousLayout = true
         storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer()
+        let container = UnwrappedTextContainer()
         layoutManager.addTextContainer(container)
         textView = CodeTextView(frame: .zero, textContainer: container)
         super.init(frame: frame)
@@ -375,7 +375,7 @@ final class CodeEditorContainer: UIView {
         let gutterWidth = gutter.preferredWidth
         gutter.frame = CGRect(x: 0, y: 0, width: gutterWidth, height: bounds.height)
         sideways.frame = CGRect(x: gutterWidth, y: 0, width: bounds.width - gutterWidth, height: bounds.height)
-        // A character to spare, so the widest line never wraps for want of a fraction of a point.
+        // A character to spare, for the caret after the end of the widest line.
         let inset = textView.textContainerInset
         let needed = ceil(widestLine + characterWidth + inset.left + inset.right
             + textView.textContainer.lineFragmentPadding * 2)
@@ -581,6 +581,17 @@ final class CodeEditorContainer: UIView {
         }
         endLine(at: string.length)
         return widest
+    }
+}
+
+/// Lays the text out with no width to wrap at, whatever width the text view
+/// gives it. The text view widens with the widest line as it is typed, and
+/// were the lines laid out to its width, every character typed on that line
+/// would lay the whole text out again.
+final class UnwrappedTextContainer: NSTextContainer {
+    override var size: CGSize {
+        get { super.size }
+        set { super.size = CGSize(width: .greatestFiniteMagnitude, height: newValue.height) }
     }
 }
 
