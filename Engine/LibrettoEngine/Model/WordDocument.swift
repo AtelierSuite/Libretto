@@ -751,8 +751,8 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, and text in its paragraphs' formatting, turned
-///   and flipped with the shape. Gradient, pattern and picture fills, shadows,
+///   solid fills and lines, and text in its paragraphs' formatting, across,
+///   or up or down (but not stacked), turned and flipped with the shape. Gradient, pattern and picture fills, shadows,
 ///   glows and other effects, 3-D, dashed lines and arrowheads, and free-form
 ///   outlines are drawn more simply. Text runs from one linked text box on
 ///   into the next.
@@ -839,6 +839,17 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// and `flipV`. Its text is not mirrored, but flipped top to bottom it is upside down.
     public var flipsHorizontally = false
     public var flipsVertically = false
+    /// Which way its text runs: `wps:bodyPr`'s `vert`.
+    public var textDirection: TextDirection = .horizontal
+
+    public enum TextDirection: String, Sendable {
+        /// Across, as usual.
+        case horizontal
+        /// Top to bottom, turned a quarter clockwise: `vert` and `eaVert`.
+        case down
+        /// Bottom to top, turned a quarter the other way: `vert270`.
+        case up
+    }
 
     public enum TextAnchor: String, Sendable {
         case top = "t", middle = "ctr", bottom = "b"

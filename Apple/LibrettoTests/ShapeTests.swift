@@ -377,4 +377,38 @@ struct ShapeTests {
         #expect(Self.isNear(Self.color(flipped, at: CGPoint(x: 95, y: 15)), "70AD47"))
         #expect(Self.isNear(Self.color(flipped, at: CGPoint(x: 5, y: 25)), "70AD47"))
     }
+
+    /// Where a picture's dark pixels are, in points.
+    static func inkBounds(_ image: UIImage) -> CGRect {
+        guard let cgImage = image.cgImage else { return .null }
+        let scale = CGFloat(cgImage.width) / image.size.width
+        let pixels = PageSnapshots.pixels(cgImage)
+        var bounds = CGRect.null
+        for y in 0..<cgImage.height {
+            for x in 0..<cgImage.width {
+                let at = (y * cgImage.width + x) * 4
+                if Int(pixels[at]) + Int(pixels[at + 1]) + Int(pixels[at + 2]) < 300 {
+                    bounds = bounds.union(CGRect(x: CGFloat(x) / scale, y: CGFloat(y) / scale, width: 1 / scale, height: 1 / scale))
+                }
+            }
+        }
+        return bounds
+    }
+
+    @Test("Text set running up or down is read and drawn a quarter turned, along the shape's height")
+    func verticalText() throws {
+        for (vertical, direction) in [("vert270", ShapeSpec.TextDirection.up), ("vert", .down), ("eaVert", .down)] {
+            let body = "<wps:bodyPr vert=\"\(vertical)\" lIns=\"0\" tIns=\"0\" rIns=\"0\" bIns=\"0\" anchor=\"ctr\"/>"
+            let graphic = Self.shape(properties: "<a:noFill/><a:ln><a:noFill/></a:ln>", text: "Sideways", body: body)
+            let document = try Self.document(body: Self.anchored(graphic))
+            let shape = try Self.shapeSpec(document)
+            #expect(shape.textDirection == direction)
+            #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+            // In a box 30 points wide and 150 tall, the word runs along its height in one line.
+            let ink = Self.inkBounds(ObjectRenderer.image(for: .shape(shape), size: CGSize(width: 30, height: 150)))
+            #expect(ink.width < 18, "\(vertical): \(ink)")
+            #expect(ink.height > 30, "\(vertical): \(ink)")
+        }
+    }
 }

@@ -177,7 +177,13 @@ public enum ObjectRenderer: Sendable {
                 .paragraphStyle: style,
             ])
         }
-        let area = textArea(for: shape, in: rect)
+        var area = textArea(for: shape, in: rect)
+        // Text running down or up is set across the area's height, and turned a quarter about its middle.
+        if shape.textDirection != .horizontal {
+            context.translateBy(x: area.midX, y: area.midY)
+            context.rotate(by: shape.textDirection == .down ? .pi / 2 : -.pi / 2)
+            area = CGRect(x: -area.height / 2, y: -area.width / 2, width: area.height, height: area.width)
+        }
         if let linked = shape.linkedText, linked.areas.indices.contains(linked.index) {
             drawLinked(text, linked, in: area)
             return

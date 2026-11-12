@@ -141,6 +141,11 @@ public enum DrawingObjectReader: Sendable {
     /// Where a shape's text sits, and how far in from its edges.
     static func readBody(_ body: XMLElement, into shape: inout ShapeSpec) {
         shape.textAnchor = body.attribute("anchor").flatMap(ShapeSpec.TextAnchor.init(rawValue:))
+        switch body.attribute("vert") {
+        case "vert"?, "eaVert"?: shape.textDirection = .down
+        case "vert270"?: shape.textDirection = .up
+        default: shape.textDirection = .horizontal
+        }
         let names = ["lIns", "tIns", "rIns", "bIns"]
         if names.contains(where: { body.attribute($0) != nil }) {
             let word = ShapeInsets.word
@@ -453,7 +458,7 @@ public enum DrawingObjectReader: Sendable {
         // Text set sideways or turned.
         if let body = shape.firstChild(named: "bodyPr") {
             if (Int(body.attribute("rot") ?? "") ?? 0) != 0 { return true }
-            if let vertical = body.attribute("vert"), vertical != "horz" { return true }
+            if let vertical = body.attribute("vert"), !["horz", "vert", "vert270", "eaVert"].contains(vertical) { return true }
         }
         return false
     }

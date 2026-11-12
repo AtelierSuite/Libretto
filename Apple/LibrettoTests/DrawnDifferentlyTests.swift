@@ -80,7 +80,8 @@ struct DrawnDifferentlyTests {
         ("<wps:spPr><a:prstGeom prst=\"heart\"/></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"wordArtVert\"/>", true),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", false),
     ])
     func simplifiedShapes(content: String, simplified: Bool) throws {
