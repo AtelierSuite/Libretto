@@ -272,6 +272,7 @@ public enum DrawingObjectReader: Sendable {
             shape.fillHex = nil
         } else if let fill = properties?.firstChild(named: "solidFill") {
             shape.fillHex = color(in: fill)
+            shape.fillAlpha = alpha(in: fill)
         } else if let fill = properties?.firstChild(named: "gradFill"), let read = gradient(fill) {
             shape.gradient = read
             shape.fillHex = read.stops.first?.colorHex
@@ -292,6 +293,7 @@ public enum DrawingObjectReader: Sendable {
                 shape.lineHex = nil
             } else if let fill = line.firstChild(named: "solidFill") {
                 shape.lineHex = color(in: fill)
+                shape.lineAlpha = alpha(in: fill)
             } else if let reference = style?.firstChild(named: "lnRef") {
                 shape.lineHex = color(in: reference)
             }

@@ -500,4 +500,19 @@ struct ShapeTests {
         let other = try Self.document(body: Self.anchored(Self.shape(properties: fill.replacingOccurrences(of: "wdDnDiag", with: "weave"))))
         #expect(other.unsupportedFeatures.features.contains(.simplifiedObjects))
     }
+
+    @Test("A fill or line partly see-through is read and drawn so, the page showing through")
+    func transparency() throws {
+        let fill = """
+            <a:solidFill><a:srgbClr val="70AD47"><a:alpha val="50000"/></a:srgbClr></a:solidFill>\
+            <a:ln w="76200"><a:solidFill><a:srgbClr val="2F528F"><a:alpha val="25000"/></a:srgbClr></a:solidFill></a:ln>
+            """
+        let shape = try Self.shapeSpec(try Self.document(body: Self.anchored(Self.shape(properties: fill))))
+        #expect(shape.fillAlpha == 0.5)
+        #expect(shape.lineAlpha == 0.25)
+        let image = ObjectRenderer.image(for: .shape(shape), size: CGSize(width: 100, height: 50))
+        // Half the green on white in the middle; a quarter of the blue over it at the 6-point line's edge.
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 50, y: 25)), "B7D6A3", by: 8))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 1, y: 25)), "CBD4E3", by: 10))
+    }
 }

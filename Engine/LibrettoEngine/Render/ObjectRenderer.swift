@@ -162,11 +162,11 @@ public enum ObjectRenderer: Sendable {
             fill(pattern, in: rect, context: context)
             context.restoreGState()
         } else if let fill = shape.fillHex {
-            color(fill).setFill()
+            color(fill).withAlphaComponent(CGFloat(shape.fillAlpha)).setFill()
             path.fill()
         }
         if let line = shape.lineHex {
-            color(line).setStroke()
+            color(line).withAlphaComponent(CGFloat(shape.lineAlpha)).setStroke()
             path.lineWidth = max(0.5, shape.lineWidth)
             path.stroke()
         }

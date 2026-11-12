@@ -751,7 +751,7 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, linear and circular gradient fills, Word's line,
+///   solid fills and lines, see-through or not, linear and circular gradient fills, Word's line,
 ///   grid, check and shade patterns (`ShapePattern.isForeground`), and text in
 ///   its paragraphs' formatting, across, or up or down, turned and flipped
 ///   with the shape. Text runs from one linked text box on into the next.
@@ -811,6 +811,9 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// Six-digit RGB, or `nil` for none.
     public var fillHex: String? = "4472C4"
     public var lineHex: String? = "2F528F"
+    /// How solid the fill and the line are, from 0, clear, to 1: their colours' `a:alpha`.
+    public var fillAlpha: Double = 1
+    public var lineAlpha: Double = 1
     /// Points.
     public var lineWidth: Double = 1
     public var text = ""
