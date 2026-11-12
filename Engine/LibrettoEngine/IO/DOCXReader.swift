@@ -38,6 +38,7 @@ public enum DOCXReader: Sendable {
             namespaces: root.namespaceDeclarations, relationships: relationships, styles: styles,
             drawings: DrawingObjectReader.Package(parts: parts, relationships: relationships, documentPath: documentPath)
         )
+        context.textBoxChains = DrawingObjectReader.textBoxChains(in: root)
         // Some writers split the body in two. Rather than lose what the
         // later ones hold, Libretto reads them as one, ending with the last
         // one's section; it writes back the single body the format allows.
@@ -135,6 +136,8 @@ private final class ReadContext {
     let styles: StyleSheet
     /// What charts and diagrams are read from.
     let drawings: DrawingObjectReader.Package
+    /// The document's linked text boxes, by the `id` they share.
+    var textBoxChains: [String: (content: XMLElement?, areas: [Int: ShapeFrame])] = [:]
     var report = UnsupportedFeatureReport()
 
     init(
@@ -462,7 +465,10 @@ private final class ReadContext {
     /// A drawing that is not a picture, as an object to draw: a shape, a chart, a diagram.
     private func object(from drawing: XMLElement, keeping kept: XMLElement) -> InlineImage? {
         guard let container = drawing.children.first(where: { $0.name == "inline" || $0.name == "anchor" }),
-              let object = DrawingObjectReader.object(in: container, package: drawings, text: shapeText) else { return nil }
+              let object = DrawingObjectReader.object(
+                  in: container, package: drawings,
+                  text: DrawingObjectReader.TextReader(paragraphs: shapeText, linked: linkedText)
+              ) else { return nil }
         let extent = container.firstChild(named: "extent")
         let width = Double(extent?.attribute("cx") ?? "") ?? 0
         let height = Double(extent?.attribute("cy") ?? "") ?? 0
@@ -480,6 +486,23 @@ private final class ReadContext {
     /// A text box's paragraphs, in the formatting they and their styles give them.
     private func shapeText(_ content: XMLElement) -> [ShapeParagraph] {
         PagesConverter.shapeParagraphs(blocks(from: content.children).blocks, styles: styles)
+    }
+
+    /// The text that runs through the boxes a text box is linked to, and which of them it is.
+    private func linkedText(_ wsp: XMLElement) -> (content: XMLElement, flow: LinkedText)? {
+        let id: String?
+        let place: Int?
+        if let box = wsp.firstChild(named: "txbx") {
+            (id, place) = (box.attribute("id"), 0)
+        } else if let link = wsp.firstChild(named: "linkedTxbx") {
+            (id, place) = (link.attribute("id"), link.attribute("seq").flatMap { Int($0) })
+        } else {
+            return nil
+        }
+        guard let id, let place, let chain = textBoxChains[id], let content = chain.content, chain.areas.count > 1 else { return nil }
+        let order = chain.areas.keys.sorted()
+        guard let index = order.firstIndex(of: place) else { return nil }
+        return (content, LinkedText(areas: order.compactMap { chain.areas[$0] }, index: index))
     }
 
     /// The picture an `mc:AlternateContent`'s fallback keeps of the object its choice holds, sized and

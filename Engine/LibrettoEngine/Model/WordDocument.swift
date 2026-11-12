@@ -751,10 +751,10 @@ public struct InlineImage: Equatable, Sendable {
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, and plain text in one size and colour. Gradient,
+///   solid fills and lines, and text in its paragraphs' formatting. Gradient,
 ///   pattern and picture fills, shadows, glows and other effects, 3-D, dashed
-///   lines and arrowheads, rotation, free-form outlines and text that flows
-///   between linked boxes are drawn more simply.
+///   lines and arrowheads, rotation and free-form outlines are drawn more
+///   simply. Text runs from one linked text box on into the next.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
@@ -829,6 +829,9 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// How far the text keeps in from each edge, in points: `wps:bodyPr`'s
     /// `lIns`, `tIns`, `rIns` and `bIns`. `nil` for Libretto's own.
     public var textInsets: ShapeInsets?
+    /// The boxes the text runs through, when it is a text box linked to
+    /// others: its `text` is all of theirs, and it shows its part of it.
+    public var linkedText: LinkedText?
 
     public enum TextAnchor: String, Sendable {
         case top = "t", middle = "ctr", bottom = "b"
@@ -921,6 +924,19 @@ public struct ShapeOutline: Equatable, Hashable, Sendable {
         self.width = width
         self.height = height
         self.elements = elements
+    }
+}
+
+/// Text that runs from one text box on into the next (`wps:txbx` and the
+/// `wps:linkedTxbx` boxes after it): how large each box's text area is, in
+/// points, in the order the text runs through them, and which this box is.
+public struct LinkedText: Equatable, Hashable, Sendable {
+    public var areas: [ShapeFrame]
+    public var index: Int
+
+    public init(areas: [ShapeFrame], index: Int) {
+        self.areas = areas
+        self.index = index
     }
 }
 

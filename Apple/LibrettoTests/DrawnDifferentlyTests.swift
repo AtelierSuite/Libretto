@@ -80,7 +80,7 @@ struct DrawnDifferentlyTests {
         ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", false),
     ])
     func simplifiedShapes(content: String, simplified: Bool) throws {
         let shape = try XMLLite.parse(Data("<wps:wsp xmlns:wps=\"\(Self.wps)\" xmlns:a=\"\(OOXML.drawingMainNamespace)\">\(content)</wps:wsp>".utf8))

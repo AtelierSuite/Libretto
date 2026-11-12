@@ -252,4 +252,71 @@ struct ShapeTests {
         let document = try Self.document(body: Self.anchored(turned, width: 2_540_000, height: 1_270_000))
         #expect(document.unsupportedFeatures.features.contains(.simplifiedObjects))
     }
+
+    // MARK: - Linked text boxes
+
+    /// How many pixels of a picture are dark: its text, on a white box.
+    static func darkPixels(_ image: UIImage) -> Int {
+        guard let cgImage = image.cgImage else { return 0 }
+        let pixels = PageSnapshots.pixels(cgImage)
+        return stride(from: 0, to: pixels.count, by: 4).filter { Int(pixels[$0]) + Int(pixels[$0 + 1]) + Int(pixels[$0 + 2]) < 300 }.count
+    }
+
+    /// Two text boxes 150 by 50 points side by side, the text of the first running on into the second.
+    static func linkedBoxes(lines: Int) -> String {
+        let paragraphs = (1...lines).map { "<w:p><w:r><w:rPr><w:sz w:val=\"20\"/></w:rPr><w:t>Line \($0) of the run</w:t></w:r></w:p>" }
+        let first = """
+            <a:graphicData uri="\(wps)"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/>\
+            <a:ext cx="1905000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln>\
+            </wps:spPr><wps:txbx id="1"><w:txbxContent>\(paragraphs.joined())</w:txbxContent></wps:txbx>\
+            <wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/></wps:wsp></a:graphicData>
+            """
+        let second = """
+            <a:graphicData uri="\(wps)"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/>\
+            <a:ext cx="1905000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln>\
+            </wps:spPr><wps:linkedTxbx id="1" seq="1"/><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/></wps:wsp></a:graphicData>
+            """
+        let wrap = "<wp:wrapSquare wrapText=\"bothSides\"/>"
+        return anchored(first, width: 1_905_000, height: 635_000, wrap: wrap, align: "left")
+            + anchored(second, width: 1_905_000, height: 635_000, wrap: wrap, align: "right")
+    }
+
+    @Test("Linked text boxes each hold the text that runs through them, and know which of the run they are")
+    func readsLinkedBoxes() throws {
+        let document = try Self.document(body: Self.linkedBoxes(lines: 8))
+        let shapes = Self.objects(document).compactMap { object -> ShapeSpec? in
+            if case .shape(let shape) = object { shape } else { nil }
+        }
+        try #require(shapes.count == 2)
+        let areas = [ShapeFrame(x: 0, y: 0, width: 150, height: 50), ShapeFrame(x: 0, y: 0, width: 150, height: 50)]
+        #expect(shapes.map(\.linkedText) == [LinkedText(areas: areas, index: 0), LinkedText(areas: areas, index: 1)])
+        #expect(shapes[1].text == shapes[0].text)
+        #expect(shapes[1].text.hasSuffix("Line 8 of the run"))
+        #expect(shapes[1].isTextBox)
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+    }
+
+    @Test("Text that overflows the first linked box is drawn in the next, and only there")
+    func drawsLinkedBoxes() throws {
+        let shapes = Self.objects(try Self.document(body: Self.linkedBoxes(lines: 8)))
+        try #require(shapes.count == 2)
+        let size = CGSize(width: 150, height: 50)
+        let first = ObjectRenderer.image(for: shapes[0], size: size)
+        let second = ObjectRenderer.image(for: shapes[1], size: size)
+        #expect(Self.darkPixels(first) > 50)
+        #expect(Self.darkPixels(second) > 50)
+        // The second box's part starts at its top.
+        #expect(Self.darkPixels(Self.crop(second, CGRect(x: 0, y: 0, width: 150, height: 10))) > 0)
+
+        // With little enough text to fit the first box, the second is empty.
+        let short = Self.objects(try Self.document(body: Self.linkedBoxes(lines: 2)))
+        #expect(Self.darkPixels(ObjectRenderer.image(for: short[1], size: size)) == 0)
+    }
+
+    static func crop(_ image: UIImage, _ rect: CGRect) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let scale = CGFloat(cgImage.width) / image.size.width
+        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+        return cgImage.cropping(to: pixels).map { UIImage(cgImage: $0, scale: scale, orientation: .up) } ?? image
+    }
 }

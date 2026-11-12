@@ -31,8 +31,60 @@ public enum DrawingObjectReader: Sendable {
         }
     }
 
-    /// Reads a text box's `w:txbxContent` into paragraphs in their formatting.
-    public typealias TextReader = (XMLElement) -> [ShapeParagraph]
+    /// How a shape's text is read: a text box's `w:txbxContent` into paragraphs
+    /// in their formatting, and the text a linked box shows, with the boxes it runs through.
+    public struct TextReader {
+        public var paragraphs: (XMLElement) -> [ShapeParagraph]
+        public var linked: (XMLElement) -> (content: XMLElement, flow: LinkedText)?
+
+        public init(
+            paragraphs: @escaping (XMLElement) -> [ShapeParagraph],
+            linked: @escaping (XMLElement) -> (content: XMLElement, flow: LinkedText)? = { _ in nil }
+        ) {
+            self.paragraphs = paragraphs
+            self.linked = linked
+        }
+    }
+
+    /// A document's linked text boxes, by the `id` their `wps:txbx` and `wps:linkedTxbx` share:
+    /// the text that runs through them, and each box's text area, by its place (`seq`) in the run.
+    public static func textBoxChains(in root: XMLElement) -> [String: (content: XMLElement?, areas: [Int: ShapeFrame])] {
+        var chains: [String: (content: XMLElement?, areas: [Int: ShapeFrame])] = [:]
+        for wsp in descendants("wsp", in: root) {
+            if let box = wsp.firstChild(named: "txbx"), let id = box.attribute("id") {
+                chains[id, default: (nil, [:])].content = box.firstChild(named: "txbxContent")
+                chains[id, default: (nil, [:])].areas[0] = textArea(of: wsp)
+            } else if let link = wsp.firstChild(named: "linkedTxbx"), let id = link.attribute("id"),
+                      let place = link.attribute("seq").flatMap({ Int($0) }) {
+                chains[id, default: (nil, [:])].areas[place] = textArea(of: wsp)
+            }
+        }
+        return chains
+    }
+
+    /// How large a shape's text area is, in points: its frame, or its drawing's, less its insets.
+    static func textArea(of wsp: XMLElement) -> ShapeFrame {
+        var width = 0.0, height = 0.0
+        if let transform = wsp.firstChild(named: "spPr")?.firstChild(named: "xfrm") {
+            (_, _, width, height) = frame(transform)
+        }
+        var ancestor = wsp.parent
+        while width <= 0 || height <= 0, let container = ancestor {
+            if container.name == "anchor" || container.name == "inline", let extent = container.firstChild(named: "extent") {
+                width = Double(extent.attribute("cx") ?? "") ?? 0
+                height = Double(extent.attribute("cy") ?? "") ?? 0
+                break
+            }
+            ancestor = container.parent
+        }
+        var shape = ShapeSpec()
+        if let body = wsp.firstChild(named: "bodyPr") { readBody(body, into: &shape) }
+        let insets = shape.textInsets ?? .word
+        return ShapeFrame(
+            x: 0, y: 0, width: max(1, width / 12_700 - insets.left - insets.right),
+            height: max(1, height / 12_700 - insets.top - insets.bottom)
+        )
+    }
 
     /// The object an `wp:inline` or `wp:anchor` holds, if it is one Libretto can draw;
     /// its shapes' text in its formatting, if there is a `text` reader to read it.
@@ -65,7 +117,10 @@ public enum DrawingObjectReader: Sendable {
         let properties = wsp.firstChild(named: "spPr")
         let style = wsp.firstChild(named: "style")
         read(properties: properties, style: style, into: &shape)
-        if let content = descendant("txbxContent", in: wsp) {
+        // A linked box shows its part of the text that runs through the boxes it is linked to.
+        let linked = text?.linked(wsp)
+        shape.linkedText = linked?.flow
+        if let content = linked?.content ?? descendant("txbxContent", in: wsp) {
             shape.isTextBox = true
             shape.text = content.children(named: "p").map { HeaderFooterReader.plainText(of: $0) }.joined(separator: "\n")
             if let rPr = descendant("rPr", in: content) {
@@ -73,7 +128,7 @@ public enum DrawingObjectReader: Sendable {
                 shape.fontSize = rPr.firstChild(named: "sz")?.attribute("val").flatMap(Double.init).map { $0 / 2 }
             }
             // In its own formatting, where its paragraphs read as the text does.
-            if let paragraphs = text?(content), !paragraphs.isEmpty,
+            if let paragraphs = text?.paragraphs(content), !paragraphs.isEmpty,
                paragraphs.map(\.text).joined(separator: "\n") == shape.text {
                 shape.paragraphs = paragraphs
             }
@@ -391,13 +446,11 @@ public enum DrawingObjectReader: Sendable {
                 }
             }
         }
-        // Text set sideways or turned, and text flowing from one linked box into the next.
+        // Text set sideways or turned.
         if let body = shape.firstChild(named: "bodyPr") {
             if (Int(body.attribute("rot") ?? "") ?? 0) != 0 { return true }
             if let vertical = body.attribute("vert"), vertical != "horz" { return true }
         }
-        if shape.firstChild(named: "linkedTxbx") != nil { return true }
-        if shape.firstChild(named: "txbx")?.attribute("id") != nil { return true }
         return false
     }
 

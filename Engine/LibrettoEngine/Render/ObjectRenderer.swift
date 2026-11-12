@@ -72,6 +72,10 @@ public enum ObjectRenderer: Sendable {
             ])
         }
         let area = textArea(for: shape, in: rect)
+        if let linked = shape.linkedText, linked.areas.indices.contains(linked.index) {
+            drawLinked(text, linked, in: area)
+            return
+        }
         let height = ceil(text.boundingRect(with: CGSize(width: area.width, height: .greatestFiniteMagnitude),
                                             options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
         // Where the document says; else a text box's text runs from the top, and a shape's sits in its middle.
@@ -83,6 +87,24 @@ public enum ObjectRenderer: Sendable {
         }
         text.draw(with: CGRect(x: area.minX, y: top, width: area.width, height: min(height, area.height)),
                   options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine], context: nil)
+    }
+
+    /// A linked text box's part of the text that runs through its boxes: what is left after the
+    /// boxes before it are full, as much as fits in its own area, from the top.
+    private static func drawLinked(_ text: NSAttributedString, _ linked: LinkedText, in area: CGRect) {
+        let storage = NSTextStorage(attributedString: text)
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        for (index, frame) in linked.areas.enumerated() {
+            let size = index == linked.index ? area.size : CGSize(width: frame.width, height: frame.height)
+            let container = NSTextContainer(size: size)
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container)
+        }
+        let container = layout.textContainers[linked.index]
+        let glyphs = layout.glyphRange(for: container)
+        guard glyphs.length > 0 else { return }
+        layout.drawGlyphs(forGlyphRange: glyphs, at: area.origin)
     }
 
     /// Where a shape's text goes: in from its edges by the document's insets, else by Libretto's own from its outline.
