@@ -81,7 +81,7 @@ struct DrawnDifferentlyTests {
         ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:xfrm flipH=\"1\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"heart\"/></wps:spPr><wps:bodyPr/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:custDash><a:ds d=\"1\" sp=\"1\"/></a:custDash></a:ln></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", false),

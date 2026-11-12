@@ -750,18 +750,17 @@ public struct InlineImage: Equatable, Sendable {
 
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
-/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills, solid and dashed lines, see-through or not, linear and
-///   circular gradient fills, Word's line,
-///   grid, check and shade patterns (`ShapePattern.isForeground`), outer
-///   shadows, glows, and text in
-///   its paragraphs' formatting, across, or up or down, turned and flipped
-///   with the shape. Text runs from one linked text box on into the next.
-///   Gradients out to a rectangle or the shape's own path (drawn as circular
-///   ones), other patterns (drawn as their two colours mixed), picture fills,
-///   stretched or skewed shadows, inner shadows and other effects, 3-D,
-///   arrowheads, stacked text and free-form outlines are
-///   drawn more simply.
+/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`;
+///   solid, linear and circular gradient fills and Word's line, grid, check
+///   and shade patterns (`ShapePattern.isForeground`); solid and dashed lines
+///   with heads at their ends; all see-through or not; outer shadows and
+///   glows; turned and flipped. Text in its paragraphs' formatting, across,
+///   or up or down, turns with the shape and runs from one linked text box on
+///   into the next. Gradients out to a rectangle or the shape's own path
+///   (drawn as circular ones), other patterns (drawn as their two colours
+///   mixed), picture fills, stretched or skewed shadows, inner shadows and
+///   other effects, 3-D, stacked text and free-form outlines are drawn more
+///   simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
@@ -822,6 +821,9 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var lineDashes: [Double]?
     /// Whether the line's ends, and its dashes', are round: `a:ln`'s `cap="rnd"`.
     public var hasRoundCaps = false
+    /// What a line has at its start and at its end: `a:headEnd` and `a:tailEnd`.
+    public var lineStart: ShapeLineEnd?
+    public var lineEnd: ShapeLineEnd?
     /// Points.
     public var lineWidth: Double = 1
     public var text = ""
@@ -1096,6 +1098,25 @@ public struct ShapeGlow: Equatable, Hashable, Sendable {
         self.radius = radius
         self.colorHex = colorHex
         self.alpha = alpha
+    }
+}
+
+/// A head at one end of a line: `a:headEnd` or `a:tailEnd`.
+public struct ShapeLineEnd: Equatable, Hashable, Sendable {
+    public enum Kind: String, Sendable {
+        /// A filled triangle; one notched at its back; an open arrow of two strokes; a diamond and an oval on the end.
+        case triangle, stealth, arrow, diamond, oval
+    }
+
+    public var kind: Kind
+    /// How wide and how long it is, in widths of the line: 2, 3 or 5, for `sm`, `med` and `lg`.
+    public var width: Double
+    public var length: Double
+
+    public init(kind: Kind, width: Double = 3, length: Double = 3) {
+        self.kind = kind
+        self.width = width
+        self.length = length
     }
 }
 

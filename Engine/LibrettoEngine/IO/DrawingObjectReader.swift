@@ -291,6 +291,8 @@ public enum DrawingObjectReader: Sendable {
             if let width = line.attribute("w").flatMap(Double.init) { shape.lineWidth = width / 12_700 }
             shape.lineDashes = dashes(of: line)
             shape.hasRoundCaps = line.attribute("cap") == "rnd"
+            shape.lineStart = line.firstChild(named: "headEnd").flatMap(lineEnd)
+            shape.lineEnd = line.firstChild(named: "tailEnd").flatMap(lineEnd)
             if line.firstChild(named: "noFill") != nil {
                 shape.lineHex = nil
             } else if let fill = line.firstChild(named: "solidFill") {
@@ -333,6 +335,13 @@ public enum DrawingObjectReader: Sendable {
         default:
             return false
         }
+    }
+
+    /// An `a:headEnd` or `a:tailEnd`, unless it is none.
+    static func lineEnd(_ element: XMLElement) -> ShapeLineEnd? {
+        guard let kind = element.attribute("type").flatMap(ShapeLineEnd.Kind.init(rawValue:)) else { return nil }
+        func size(_ name: String) -> Double { ["sm": 2, "lg": 5][element.attribute(name) ?? ""] ?? 3 }
+        return ShapeLineEnd(kind: kind, width: size("w"), length: size("len"))
     }
 
     /// Word's preset dashes, each dash and gap in widths of the line.
@@ -557,7 +566,8 @@ public enum DrawingObjectReader: Sendable {
                 if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid",
                    presetDashes[dash] == nil { return true }
                 for end in ["headEnd", "tailEnd"] {
-                    if let type = line.firstChild(named: end)?.attribute("type"), type != "none" { return true }
+                    if let type = line.firstChild(named: end)?.attribute("type"), type != "none",
+                       ShapeLineEnd.Kind(rawValue: type) == nil { return true }
                 }
             }
         }

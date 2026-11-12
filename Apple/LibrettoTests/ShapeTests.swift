@@ -604,4 +604,31 @@ struct ShapeTests {
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 12.5, y: 1.5)), "FFFFFF", by: 20))
         #expect(Self.isNear(Self.color(image, at: CGPoint(x: 19.5, y: 1.5)), "C00000", by: 20))
     }
+
+    @Test("A line's heads are read with their sizes, and drawn at its ends, reaching past its frame")
+    func arrowheads() throws {
+        let properties = """
+            <a:ln w="25400"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:headEnd type="triangle"/>\
+            <a:tailEnd type="arrow" w="lg" len="sm"/></a:ln>
+            """
+        let graphic = Self.shape("straightConnector1", properties: properties, width: 1_270_000, height: 0)
+        let document = try Self.document(body: Self.anchored(graphic, width: 1_270_000, height: 12_700))
+        let shape = try Self.shapeSpec(document)
+        #expect(shape.lineStart == ShapeLineEnd(kind: .triangle))
+        #expect(shape.lineEnd == ShapeLineEnd(kind: .arrow, width: 5, length: 2))
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        // A 2-point line 100 points long: the heads reach five widths' half, and the line's width, past it.
+        let size = CGSize(width: 100, height: 1)
+        let past = ObjectRenderer.overhang(for: .shape(shape), size: size)
+        #expect(past == ObjectRenderer.Overhang(top: 7, left: 7, bottom: 7, right: 7))
+        let image = ObjectRenderer.image(for: .shape(shape), size: size)
+        func dark(_ rect: CGRect) -> Int { Self.darkPixels(Self.crop(image, rect)) }
+        // Above the line, only at its ends; the filled triangle solid near its base.
+        let above = { (x: CGFloat) in CGRect(x: x, y: 3, width: 8, height: 3.5) }
+        #expect(dark(above(10)) > 0)
+        #expect(dark(above(98)) > 0)
+        #expect(dark(above(50)) == 0)
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 13, y: 6)), "000000", by: 40))
+    }
 }

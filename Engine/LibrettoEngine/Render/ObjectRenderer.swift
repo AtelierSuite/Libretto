@@ -104,6 +104,12 @@ public enum ObjectRenderer: Sendable {
         if let glow = shape.glow {
             drawn = drawn.union(turned.insetBy(dx: -glow.radius, dy: -glow.radius))
         }
+        // A line's heads reach out either side of it, and past its ends if they sit on them.
+        let heads = [shape.lineStart, shape.lineEnd].compactMap { $0 }
+        if shape.lineHex != nil, isLine(shape), !heads.isEmpty {
+            let reach = heads.map { max($0.width, $0.length) }.max()! * max(0.5, shape.lineWidth) / 2 + shape.lineWidth
+            drawn = drawn.union(turned.insetBy(dx: -reach, dy: -reach))
+        }
         return drawn
     }
 
@@ -220,9 +226,84 @@ public enum ObjectRenderer: Sendable {
         context.restoreGState()
     }
 
+    /// The preset outlines drawn as a line from corner to corner, with heads at their ends if they have any.
+    static func isLine(_ shape: ShapeSpec) -> Bool {
+        shape.outline == nil && ["line", "straightConnector1", "bentConnector3", "curvedConnector3"].contains(shape.geometry)
+    }
+
+    /// How far a line stops short of its end so it doesn't show past the head there.
+    private static func shortfall(of head: ShapeLineEnd?, lineWidth: CGFloat) -> CGFloat {
+        switch head?.kind {
+        case .triangle?, .stealth?: return CGFloat(head!.length) * lineWidth / 2
+        default: return 0
+        }
+    }
+
+    /// A line's head at its end `tip`, the line running in `direction` into it.
+    private static func draw(_ head: ShapeLineEnd, at tip: CGPoint, direction: CGPoint, lineWidth: CGFloat) {
+        let length = CGFloat(head.length) * lineWidth, width = CGFloat(head.width) * lineWidth
+        let along = direction, across = CGPoint(x: -direction.y, y: direction.x)
+        func point(_ back: CGFloat, _ side: CGFloat) -> CGPoint {
+            CGPoint(x: tip.x - along.x * back + across.x * side, y: tip.y - along.y * back + across.y * side)
+        }
+        let path = PlatformBezierPath()
+        switch head.kind {
+        case .triangle:
+            path.move(to: tip)
+            path.addLine(to: point(length, width / 2))
+            path.addLine(to: point(length, -width / 2))
+            path.close()
+            path.fill()
+        case .stealth:
+            path.move(to: tip)
+            path.addLine(to: point(length, width / 2))
+            path.addLine(to: point(length * 0.6, 0))
+            path.addLine(to: point(length, -width / 2))
+            path.close()
+            path.fill()
+        case .diamond:
+            path.move(to: point(-length / 2, 0))
+            path.addLine(to: point(0, width / 2))
+            path.addLine(to: point(length / 2, 0))
+            path.addLine(to: point(0, -width / 2))
+            path.close()
+            path.fill()
+        case .oval:
+            // An ellipse about the end, as long as the head along the line and as wide across it.
+            let steps = 24
+            for step in 0...steps {
+                let angle = CGFloat(step) / CGFloat(steps) * 2 * .pi
+                let at = point(-cos(angle) * length / 2, sin(angle) * width / 2)
+                if step == 0 { path.move(to: at) } else { path.addLine(to: at) }
+            }
+            path.close()
+            path.fill()
+        case .arrow:
+            path.move(to: point(length, width / 2))
+            path.addLine(to: tip)
+            path.addLine(to: point(length, -width / 2))
+            path.lineWidth = lineWidth
+            path.stroke()
+        }
+    }
+
     /// A shape's fill and its line.
     private static func drawOutline(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
-        let path = outlinePath(shape, in: rect)
+        var path = outlinePath(shape, in: rect)
+        // A line with heads runs from corner to corner, stopping short where a head covers its end.
+        let heads = shape.lineHex != nil && isLine(shape) && (shape.lineStart != nil || shape.lineEnd != nil)
+        let inset = outlineRect(for: shape, in: rect)
+        let start = CGPoint(x: inset.minX, y: inset.minY), end = CGPoint(x: inset.maxX, y: inset.maxY)
+        let span = hypot(end.x - start.x, end.y - start.y)
+        let direction = span > 0 ? CGPoint(x: (end.x - start.x) / span, y: (end.y - start.y) / span) : CGPoint(x: 1, y: 0)
+        if heads {
+            let width = max(0.5, CGFloat(shape.lineWidth))
+            let back = min(span / 2, shortfall(of: shape.lineStart, lineWidth: width))
+            let forward = min(span / 2, shortfall(of: shape.lineEnd, lineWidth: width))
+            path = PlatformBezierPath()
+            path.move(to: CGPoint(x: start.x + direction.x * back, y: start.y + direction.y * back))
+            path.addLine(to: CGPoint(x: end.x - direction.x * forward, y: end.y - direction.y * forward))
+        }
         if let gradient = shape.gradient {
             context.saveGState()
             path.addClip()
@@ -246,6 +327,17 @@ public enum ObjectRenderer: Sendable {
                 path.setLineDash(lengths, count: lengths.count, phase: 0)
             }
             path.stroke()
+            if heads {
+                // Solid, in the line's colour, whatever its dashes.
+                let ink = color(line).withAlphaComponent(CGFloat(shape.lineAlpha))
+                ink.setFill()
+                ink.setStroke()
+                let width = path.lineWidth
+                if let head = shape.lineStart {
+                    draw(head, at: start, direction: CGPoint(x: -direction.x, y: -direction.y), lineWidth: width)
+                }
+                if let head = shape.lineEnd { draw(head, at: end, direction: direction, lineWidth: width) }
+            }
         }
     }
 
