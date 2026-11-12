@@ -296,6 +296,7 @@ final class CodeEditorController: NSObject, UITextViewDelegate, @MainActor NSTex
         // Colouring changes attributes only, which leave the colouring as it is.
         guard editedMask.contains(.editedCharacters) else { return }
         coloring.noteEdit(editedRange, changeInLength: delta)
+        view.noteEdit(editedRange, changeInLength: delta)
     }
 }
 
@@ -310,6 +311,13 @@ final class CodeEditorContainer: UIView {
     private let sideways = UIScrollView()
     /// Points, from the text's leading edge to the end of its widest line.
     private var widestLine: CGFloat = 0
+    /// Where the widest line is, its line break left out, kept in step with edits so that one
+    /// elsewhere has only its own lines measured.
+    private var widestLineRange = NSRange(location: 0, length: 0)
+    /// What the edit since the text was last measured left, unless the whole text is to be measured:
+    /// as it is at first, after more than one edit, and after one that may have made the widest line narrower.
+    private var unmeasuredEdit: NSRange?
+    private var measuresWholeText = true
     /// The editor runs under the keyboard; its text scrolls clear of it.
     private lazy var keyboard = KeyboardOverlap(view: self)
     /// The brackets marked as a pair, and what marks them, behind the text.
@@ -344,7 +352,7 @@ final class CodeEditorContainer: UIView {
         let layoutManager = NSLayoutManager()
         layoutManager.allowsNonContiguousLayout = true
         storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer()
+        let container = UnwrappedTextContainer()
         layoutManager.addTextContainer(container)
         textView = CodeTextView(frame: .zero, textContainer: container)
         super.init(frame: frame)
@@ -375,7 +383,7 @@ final class CodeEditorContainer: UIView {
         let gutterWidth = gutter.preferredWidth
         gutter.frame = CGRect(x: 0, y: 0, width: gutterWidth, height: bounds.height)
         sideways.frame = CGRect(x: gutterWidth, y: 0, width: bounds.width - gutterWidth, height: bounds.height)
-        // A character to spare, so the widest line never wraps for want of a fraction of a point.
+        // A character to spare, for the caret after the end of the widest line.
         let inset = textView.textContainerInset
         let needed = ceil(widestLine + characterWidth + inset.left + inset.right
             + textView.textContainer.lineFragmentPadding * 2)
@@ -489,7 +497,9 @@ final class CodeEditorContainer: UIView {
         )
         storage.endEditing()
         textView.typingAttributes = attributes
-        widestLine = measureWidestLine()
+        (widestLine, widestLineRange) = measureWidestLine()
+        measuresWholeText = false
+        unmeasuredEdit = nil
         setNeedsLayout()
         layoutIfNeeded()
         gutter.setNeedsDisplay()
@@ -498,11 +508,38 @@ final class CodeEditorContainer: UIView {
 
     // MARK: Changes
 
+    /// Notes an edit to the text's characters, `range` being what it left and `delta` how much
+    /// longer it made the text, so that only the lines it changed are measured again.
+    func noteEdit(_ range: NSRange, changeInLength delta: Int) {
+        guard !measuresWholeText else { return }
+        guard unmeasuredEdit == nil else {
+            measuresWholeText = true
+            return
+        }
+        unmeasuredEdit = range
+        // Where the edit was, before it.
+        let replaced = NSRange(location: range.location, length: range.length - delta)
+        let widest = widestLineRange
+        if NSMaxRange(replaced) <= widest.location, replaced.location < widest.location || replaced.length == 0 {
+            // Before the widest line, or typed at its start: it moves along. Lines joined onto it are measured.
+            widestLineRange.location += delta
+        } else if replaced.location >= NSMaxRange(widest) {
+            // After it, where it stays. Lines joined onto it are measured.
+        } else if replaced.length == 0, !(textView.textStorage.string as NSString)
+            .substring(with: range).contains(where: \.isNewline) {
+            // Typed within it, which can only make it wider.
+            widestLineRange.length += delta
+        } else {
+            // Something of it taken away, or broken onto another line: it may no longer be the widest.
+            measuresWholeText = true
+        }
+    }
+
     func textDidChange() {
         let gutterWidth = gutter.preferredWidth
         let widest = widestLine
         gutter.textDidChange()
-        widestLine = measureWidestLine()
+        measureEditedLines()
         if gutter.preferredWidth != gutterWidth || widestLine != widest {
             setNeedsLayout()
             layoutIfNeeded()
@@ -547,29 +584,55 @@ final class CodeEditorContainer: UIView {
         }
     }
 
-    /// The widest line's width. Columns times the width of a character, the
+    /// Measures the lines changed since they were last measured, or the
+    /// whole text where an edit may have made the widest line narrower.
+    private func measureEditedLines() {
+        defer {
+            measuresWholeText = false
+            unmeasuredEdit = nil
+        }
+        guard !measuresWholeText else {
+            (widestLine, widestLineRange) = measureWidestLine()
+            return
+        }
+        guard let edit = unmeasuredEdit else { return }
+        let string = textView.textStorage.string as NSString
+        guard NSMaxRange(edit) <= string.length else {
+            (widestLine, widestLineRange) = measureWidestLine()
+            return
+        }
+        let edited = measureWidestLine(in: string.lineRange(for: edit))
+        if edited.width >= widestLine { (widestLine, widestLineRange) = edited }
+    }
+
+    /// The widest line of the lines in `range`, all of them when it is
+    /// `nil`, and where it is. Columns times the width of a character, the
     /// font being monospaced, except on lines with characters beyond ASCII,
     /// which may be wider and are measured.
-    private func measureWidestLine() -> CGFloat {
-        let string = textView.text as NSString
+    private func measureWidestLine(in range: NSRange? = nil) -> (width: CGFloat, range: NSRange) {
+        let string = textView.textStorage.string as NSString
+        let range = range ?? NSRange(location: 0, length: string.length)
         let tabColumns = 4
-        var widest: CGFloat = 0
+        var widest: (width: CGFloat, range: NSRange) = (0, NSRange(location: range.location, length: 0))
         var columns = 0
-        var lineStart = 0
+        var lineStart = range.location
         var isASCII = true
         func endLine(at end: Int) {
+            let line = NSRange(location: lineStart, length: end - lineStart)
+            let width: CGFloat
             if isASCII {
-                widest = max(widest, CGFloat(columns) * characterWidth)
+                width = CGFloat(columns) * characterWidth
             } else {
-                let line = string.substring(with: NSRange(location: lineStart, length: end - lineStart))
+                let text = string.substring(with: line)
                     .replacingOccurrences(of: "\t", with: String(repeating: " ", count: tabColumns))
-                widest = max(widest, (line as NSString).size(withAttributes: [.font: font]).width)
+                width = (text as NSString).size(withAttributes: [.font: font]).width
             }
+            if width > widest.width { widest = (width, line) }
             columns = 0
             isASCII = true
             lineStart = end + 1
         }
-        for index in 0..<string.length {
+        for index in range.location..<NSMaxRange(range) {
             switch string.character(at: index) {
             case 0x0A: endLine(at: index)
             case 0x09: columns += tabColumns - columns % tabColumns
@@ -579,8 +642,19 @@ final class CodeEditorContainer: UIView {
             default: columns += 1
             }
         }
-        endLine(at: string.length)
+        endLine(at: NSMaxRange(range))
         return widest
+    }
+}
+
+/// Lays the text out with no width to wrap at, whatever width the text view
+/// gives it. The text view widens with the widest line as it is typed, and
+/// were the lines laid out to its width, every character typed on that line
+/// would lay the whole text out again.
+final class UnwrappedTextContainer: NSTextContainer {
+    override var size: CGSize {
+        get { super.size }
+        set { super.size = CGSize(width: .greatestFiniteMagnitude, height: newValue.height) }
     }
 }
 

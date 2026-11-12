@@ -252,11 +252,17 @@ public struct SyntaxColoring: Sendable {
     /// Colours `text` as `SyntaxHighlighter.apply` does, scanning only
     /// around the edits since it was last coloured when it can: when the
     /// language and scheme are the same, and the edits are all accounted for.
+    /// With no edit since, it leaves the text as it is.
     public mutating func apply(
         _ language: SourceLanguage, to text: NSMutableAttributedString, scheme: ColorScheme, plainColor: PlatformColor
     ) {
         let edit = self.edit
         self.edit = nil
+        if edit == nil, let highlights, highlights.language == language, self.scheme == scheme,
+           highlights.length == text.length {
+            // Nothing has changed since it was last coloured, as when a keyboard commits the text it was composing.
+            return
+        }
         if let edit, var highlights, highlights.language == language, self.scheme == scheme,
            highlights.length + edit.changeInLength == text.length, NSMaxRange(edit.range) <= text.length {
             // Held only here while it changes, so it changes in place.
