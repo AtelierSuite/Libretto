@@ -69,8 +69,8 @@ struct FallbackPictureTests {
         <wp:extent cx="2540000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="3" name="Rectangle 3"/>\
         <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:spPr>\
         <a:prstGeom prst="rect"/><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs>\
-        <a:gs pos="100000"><a:srgbClr val="0000FF"/></a:gs></a:gsLst></a:gradFill>\
-        <a:effectLst><a:outerShdw blurRad="50800" dist="38100"><a:srgbClr val="000000"/></a:outerShdw></a:effectLst>\
+        <a:gs pos="100000"><a:srgbClr val="0000FF"/></a:gs></a:gsLst><a:path path="rect"/></a:gradFill>\
+        <a:effectLst><a:innerShdw blurRad="50800" dist="38100"><a:srgbClr val="000000"/></a:innerShdw></a:effectLst>\
         </wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing>
         """
 
@@ -143,7 +143,7 @@ struct FallbackPictureTests {
         #expect(!changed)
     }
 
-    @Test("A shape with a gradient and shadow is drawn from its fallback picture, placed as the shape is")
+    @Test("A shape with effects drawn more simply, a rectangular gradient and an inner shadow, is drawn from its fallback picture, placed as the shape is")
     func shapeFallbackPicture() throws {
         let body = """
             <w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps">\(fancyShape)</mc:Choice><mc:Fallback>\
