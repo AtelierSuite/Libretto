@@ -753,12 +753,12 @@ public struct InlineImage: Equatable, Sendable {
 /// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
 ///   solid fills and lines, see-through or not, linear and circular gradient fills, Word's line,
 ///   grid, check and shade patterns (`ShapePattern.isForeground`), outer
-///   shadows, and text in
+///   shadows, glows, and text in
 ///   its paragraphs' formatting, across, or up or down, turned and flipped
 ///   with the shape. Text runs from one linked text box on into the next.
 ///   Gradients out to a rectangle or the shape's own path (drawn as circular
 ///   ones), other patterns (drawn as their two colours mixed), picture fills,
-///   stretched or skewed shadows, inner shadows, glows and other effects, 3-D,
+///   stretched or skewed shadows, inner shadows and other effects, 3-D,
 ///   dashed lines and arrowheads, stacked text and free-form outlines are
 ///   drawn more simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
@@ -855,6 +855,8 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var pattern: ShapePattern?
     /// The shadow it casts behind it: `a:outerShdw`.
     public var shadow: ShapeShadow?
+    /// The soft colour it glows with around its outline: `a:glow`.
+    public var glow: ShapeGlow?
 
     public enum TextDirection: String, Sendable {
         /// Across, as usual.
@@ -1074,6 +1076,20 @@ public struct ShapeShadow: Equatable, Hashable, Sendable {
     public var offset: (x: Double, y: Double) {
         let radians = direction * .pi / 180
         return (distance * cos(radians), distance * sin(radians))
+    }
+}
+
+/// A soft colour around a shape's outline: `a:glow`.
+public struct ShapeGlow: Equatable, Hashable, Sendable {
+    /// How far out it reaches, in points.
+    public var radius: Double
+    public var colorHex: String
+    public var alpha: Double
+
+    public init(radius: Double, colorHex: String, alpha: Double = 1) {
+        self.radius = radius
+        self.colorHex = colorHex
+        self.alpha = alpha
     }
 }
 

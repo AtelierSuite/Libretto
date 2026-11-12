@@ -552,4 +552,26 @@ struct ShapeTests {
         #expect(try Self.document(body: Self.anchored(Self.shape(properties: stretched))).unsupportedFeatures.features
             .contains(.simplifiedObjects))
     }
+
+    @Test("A glow is read, and drawn softly around the shape's outline, as far out as its radius")
+    func glow() throws {
+        let effects = """
+            <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln><a:noFill/></a:ln><a:effectLst>\
+            <a:glow rad="127000"><a:srgbClr val="FF0000"><a:alpha val="60000"/></a:srgbClr></a:glow></a:effectLst>
+            """
+        let document = try Self.document(body: Self.anchored(Self.shape(properties: effects)))
+        let shape = try Self.shapeSpec(document)
+        #expect(shape.glow == ShapeGlow(radius: 10, colorHex: "FF0000", alpha: 0.6))
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+
+        let size = CGSize(width: 40, height: 40)
+        #expect(ObjectRenderer.overhang(for: .shape(shape), size: size) == ObjectRenderer.Overhang(top: 10, left: 10, bottom: 10, right: 10))
+        let image = ObjectRenderer.image(for: .shape(shape), size: size)
+        #expect(image.size == CGSize(width: 60, height: 60))
+        // Red just outside the outline, fading out; the shape itself as it is.
+        let near = Self.color(image, at: CGPoint(x: 30, y: 9))
+        #expect(near.red > 240 && near.green < 230 && near.blue < 230, "\(near)")
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 30, y: 30)), "FFFFFF"))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 1, y: 1)), "FFFFFF", by: 20))
+    }
 }

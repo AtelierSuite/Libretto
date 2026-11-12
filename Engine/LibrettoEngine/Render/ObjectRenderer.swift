@@ -101,6 +101,9 @@ public enum ObjectRenderer: Sendable {
             let offset = shadowOffset(shadow, of: shape)
             drawn = drawn.union(turned.offsetBy(dx: offset.width, dy: offset.height).insetBy(dx: -shadow.blur, dy: -shadow.blur))
         }
+        if let glow = shape.glow {
+            drawn = drawn.union(turned.insetBy(dx: -glow.radius, dy: -glow.radius))
+        }
         return drawn
     }
 
@@ -156,6 +159,12 @@ public enum ObjectRenderer: Sendable {
 
     private static func drawUnturned(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
         context.saveGState()
+        if let glow = shape.glow {
+            context.saveGState()
+            context.concatenate(mirror(shape, in: rect))
+            draw(glow, around: outlinePath(shape, in: rect), context: context)
+            context.restoreGState()
+        }
         // The fill and line cast one shadow together; the text, none of its own.
         if let shadow = shape.shadow {
             castShadow(shadow, of: shape, in: rect, context: context)
@@ -184,10 +193,36 @@ public enum ObjectRenderer: Sendable {
             .translatedBy(x: -rect.midX, y: -rect.midY)
     }
 
+    /// The path a shape's outline runs along.
+    static func outlinePath(_ shape: ShapeSpec, in rect: CGRect) -> PlatformBezierPath {
+        let inset = outlineRect(for: shape, in: rect)
+        return shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
+    }
+
+    /// A glow around a path: its silhouette in the glow's colour, a little wider, blurred out as far as
+    /// the glow reaches, and cleared again inside the outline, so only the glow around it is seen.
+    private static func draw(_ glow: ShapeGlow, around path: PlatformBezierPath, context: CGContext) {
+        let ctm = context.ctm
+        let scale = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        let ink = color(glow.colorHex).withAlphaComponent(CGFloat(glow.alpha))
+        context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setShadow(offset: .zero, blur: CGFloat(glow.radius) * scale, color: ink.cgColor)
+        ink.setFill()
+        ink.setStroke()
+        path.lineWidth = CGFloat(glow.radius) * 0.6
+        path.fill()
+        path.stroke()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.setBlendMode(.clear)
+        path.fill()
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
     /// A shape's fill and its line.
     private static func drawOutline(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
-        let inset = outlineRect(for: shape, in: rect)
-        let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
+        let path = outlinePath(shape, in: rect)
         if let gradient = shape.gradient {
             context.saveGState()
             path.addClip()

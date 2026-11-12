@@ -311,6 +311,10 @@ public enum DrawingObjectReader: Sendable {
                     turnsWithShape: ["1", "true"].contains(shadow.attribute("rotWithShape") ?? "")
                 )
             }
+            if let glow = effects.firstChild(named: "glow"), let hex = color(in: glow) {
+                let radius = (Double(glow.attribute("rad") ?? "") ?? 0) / 12_700
+                if radius > 0 { shape.glow = ShapeGlow(radius: radius, colorHex: hex, alpha: alpha(in: glow)) }
+            }
         }
     }
 
@@ -322,6 +326,8 @@ public enum DrawingObjectReader: Sendable {
             let unstretched = ["sx", "sy"].allSatisfy { (effect.attribute($0) ?? "100000") == "100000" }
             let unskewed = ["kx", "ky"].allSatisfy { (effect.attribute($0) ?? "0") == "0" }
             return unstretched && unskewed
+        case "glow":
+            return true
         default:
             return false
         }
