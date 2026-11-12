@@ -86,4 +86,48 @@ struct ShapeTests {
         #expect(abs(lines[1].rect.height - lines[0].rect.height) < 0.5)
         #expect(lines[2].rect.minY >= lines[0].rect.maxY + lines[0].rect.height - 0.5)
     }
+
+    @Test("Shapes kept above and below text, each in an empty paragraph under its caption, stack down the page")
+    func topAndBottomUnderCaptions() throws {
+        let body = [
+            Self.paragraph("First caption"), Self.anchored(Self.shape()),
+            Self.paragraph("Second caption"), Self.anchored(Self.shape("ellipse"), height: 1_016_000),
+            Self.paragraph("After"),
+        ].joined()
+        let controller = DocumentTextController(document: try Self.document(body: body), scheme: .light)
+        let layout = controller.layoutManager
+        let lines = Self.lines(layout)
+        func line(_ text: String) throws -> CGRect { try #require(lines.first { $0.text.hasPrefix(text) }).rect }
+        let floats = layout.placedFloats.sorted { $0.frame.minY < $1.frame.minY }
+        try #require(floats.count == 2)
+
+        // Each shape is under its caption, and the text after it under the shape and its paragraph's own line.
+        #expect(abs(floats[0].frame.minY - (try line("First caption")).maxY) < 0.5)
+        #expect(floats[0].frame.size == CGSize(width: 100, height: 50))
+        #expect((try line("Second caption")).minY >= floats[0].frame.maxY + 6)
+        #expect(abs(floats[1].frame.minY - (try line("Second caption")).maxY) < 0.5)
+        #expect((try line("After")).minY >= floats[1].frame.maxY + 6)
+        // Centred across the text.
+        #expect(abs(floats[0].frame.midX - controller.geometry.contentWidth / 2) < 0.5)
+        // Settled: laid out again, nothing moves.
+        let before = floats.map(\.frame)
+        layout.layOutPages(in: controller.textView.textContainer, startingWith: 1)
+        #expect(layout.placedFloats.sorted { $0.frame.minY < $1.frame.minY }.map(\.frame) == before)
+    }
+
+    @Test("A shape kept above and below text that doesn't fit at the foot of a page starts the next one")
+    func topAndBottomOnToNextPage() throws {
+        let filler = (0..<10).map { Self.paragraph("Line \($0)") }.joined()
+        let body = filler + Self.anchored(Self.shape(), height: 6_350_000) + Self.paragraph("After")
+        let controller = DocumentTextController(document: try Self.document(body: body), scheme: .light)
+        let layout = controller.layoutManager
+        let geometry = controller.geometry
+        let float = try #require(layout.placedFloats.first)
+        let last = try #require(Self.lines(layout).first { $0.text.hasPrefix("Line 9") }).rect
+        #expect(geometry.page(containing: last.midY) == 0)
+        #expect(float.page == 1)
+        #expect(abs(float.frame.minY - geometry.textTop(1)) < 0.5)
+        let after = try #require(Self.lines(layout).first { $0.text.hasPrefix("After") }).rect
+        #expect(after.minY >= float.frame.maxY)
+    }
 }
