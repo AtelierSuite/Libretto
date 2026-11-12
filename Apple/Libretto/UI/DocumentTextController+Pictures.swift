@@ -31,7 +31,8 @@ extension DocumentTextController {
         let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle
         attributes[.attachment] = DocumentRenderer.imageAttachment(
             picture, inline: inline, context: context,
-            maximumHeight: DocumentRenderer.maximumImageHeight(in: paragraphStyle, context: context)
+            maximumHeight: DocumentRenderer.maximumImageHeight(in: paragraphStyle, context: context),
+            font: attributes[.font] as? PlatformFont
         )
         storage.replaceCharacters(in: range, with: NSAttributedString(string: TextCharacters.attachment, attributes: attributes))
         textView.selectedRange = range
@@ -62,7 +63,9 @@ extension DocumentTextController {
         let selection = textView.selectedRange
         let inline = Inline(.image(picture), format: runBox(forTypingAt: selection.location).format)
         var attributes = typingAttributes(at: selection.location)
-        attributes[.attachment] = DocumentRenderer.imageAttachment(picture, inline: inline, context: context)
+        attributes[.attachment] = DocumentRenderer.imageAttachment(
+            picture, inline: inline, context: context, font: attributes[.font] as? PlatformFont
+        )
         insert(NSAttributedString(string: TextCharacters.attachment, attributes: attributes), at: selection, selecting: selection.location)
         textView.selectedRange = NSRange(location: selection.location, length: 1)
         selectionDidChange()
