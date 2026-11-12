@@ -761,6 +761,9 @@ public struct InlineImage: Equatable, Sendable {
 ///   legend at a side. 3-D, data labels, gradient fills, trend lines, error bars,
 ///   secondary axes, legends in a corner or over the plot, and bubble, stock and
 ///   bar-of-pie charts (drawn as scatter, line and pie charts) are drawn more simply.
+/// - Groups: their shapes, groups within them too, as shapes are drawn, each
+///   where the group sets it. A group turned or flipped as a whole is drawn
+///   unturned, and pictures, charts and ink in a group are left out.
 /// - SmartArt: the shapes Word last laid the diagram out as, as shapes are drawn.
 ///
 /// Where the document keeps a picture of such an object, that picture is
@@ -771,6 +774,22 @@ public enum DrawingObject: Equatable, Hashable, Sendable {
     case chart(ChartSpec)
     /// A diagram's shapes, each placed in the diagram's own frame, in points.
     case diagram([ShapeSpec])
+    /// A group's shapes (`wpg:wgp`), each placed in the group's frame.
+    case group(ShapeGroup)
+}
+
+/// The shapes of a group, each with its `frame` in points from the group's
+/// top left corner, as large as they are in a group `width` by `height`.
+public struct ShapeGroup: Equatable, Hashable, Sendable {
+    public var width: Double
+    public var height: Double
+    public var shapes: [ShapeSpec]
+
+    public init(width: Double, height: Double, shapes: [ShapeSpec]) {
+        self.width = width
+        self.height = height
+        self.shapes = shapes
+    }
 }
 
 /// A DrawingML shape: its outline's form, fill and line, and its text.
@@ -795,7 +814,7 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// Points; `nil` for the document's body size.
     public var fontSize: Double?
     public var isTextBox = false
-    /// Where it sits within a diagram, in points; `nil` for a shape of its own.
+    /// Where it sits within a diagram or group, in points; `nil` for a shape of its own.
     public var frame: ShapeFrame?
     /// The text as read, to tell whether it has been edited.
     public var originalText: String?

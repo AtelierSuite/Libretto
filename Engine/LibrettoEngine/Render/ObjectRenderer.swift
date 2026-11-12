@@ -19,6 +19,8 @@ public enum ObjectRenderer: Sendable {
                 draw(shape, in: bounds, context: context, scheme: scheme)
             case .diagram(let shapes):
                 drawDiagram(shapes, in: bounds, context: context)
+            case .group(let group):
+                drawGroup(group, in: bounds, context: context, scheme: scheme)
             case .chart(let chart):
                 ChartDrawing(chart: chart, bounds: bounds).draw()
             }
@@ -215,6 +217,22 @@ public enum ObjectRenderer: Sendable {
             return path
         default:
             return PlatformBezierPath(rect: rect)
+        }
+    }
+
+    // MARK: - Groups
+
+    /// A group's shapes, each in its frame, the group stretched to fill the picture as Word stretches it.
+    private static func drawGroup(_ group: ShapeGroup, in bounds: CGRect, context: CGContext, scheme: ColorScheme) {
+        let scaleX = bounds.width / max(group.width, 0.01)
+        let scaleY = bounds.height / max(group.height, 0.01)
+        for shape in group.shapes {
+            guard let frame = shape.frame else { continue }
+            let rect = CGRect(
+                x: bounds.minX + frame.x * scaleX, y: bounds.minY + frame.y * scaleY,
+                width: frame.width * scaleX, height: frame.height * scaleY
+            )
+            draw(shape, in: rect, context: context, scheme: scheme)
         }
     }
 

@@ -205,6 +205,9 @@ struct WebRenderer {
             case .diagram(let shapes):
                 output["obj"] = "diagram"
                 output["text"] = shapes.map(\.text).filter { !$0.isEmpty }.joined(separator: " · ")
+            case .group(let group):
+                output["obj"] = "diagram"
+                output["text"] = group.shapes.map(\.text).filter { !$0.isEmpty }.joined(separator: " · ")
             }
         } else {
             pictures.insert(image.relationshipID)

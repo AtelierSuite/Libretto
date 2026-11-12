@@ -180,4 +180,76 @@ struct ShapeTests {
         #expect(shape.textAnchor == nil)
         #expect(shape.textInsets == nil)
     }
+
+    /// The colour of a picture at a point, in points from its top left corner, on white.
+    static func color(_ image: UIImage, at point: CGPoint) -> (red: Int, green: Int, blue: Int) {
+        guard let cgImage = image.cgImage else { return (-1, -1, -1) }
+        let scale = CGFloat(cgImage.width) / image.size.width
+        let pixels = PageSnapshots.pixels(cgImage)
+        let x = min(cgImage.width - 1, max(0, Int(point.x * scale)))
+        let y = min(cgImage.height - 1, max(0, Int(point.y * scale)))
+        let at = (y * cgImage.width + x) * 4
+        return (Int(pixels[at]), Int(pixels[at + 1]), Int(pixels[at + 2]))
+    }
+
+    /// Whether a colour is within a few steps of a six-digit hex one.
+    static func isNear(_ color: (red: Int, green: Int, blue: Int), _ hex: String, by tolerance: Int = 12) -> Bool {
+        let value = Int(hex, radix: 16) ?? 0
+        return abs(color.red - (value >> 16 & 0xFF)) <= tolerance && abs(color.green - (value >> 8 & 0xFF)) <= tolerance
+            && abs(color.blue - (value & 0xFF)) <= tolerance
+    }
+
+    // MARK: - Groups
+
+    static func groupShape(_ geometry: String, x: Int, y: Int, width: Int, height: Int, fill: String, text: String? = nil) -> String {
+        let box = text.map { "<wps:txbx><w:txbxContent><w:p><w:r><w:t>\($0)</w:t></w:r></w:p></w:txbxContent></wps:txbx>" } ?? ""
+        return """
+            <wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="\(x)" y="\(y)"/><a:ext cx="\(width)" cy="\(height)"/></a:xfrm>\
+            <a:prstGeom prst="\(geometry)"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="\(fill)"/></a:solidFill>\
+            </wps:spPr>\(box)<wps:bodyPr/></wps:wsp>
+            """
+    }
+
+    /// A group 200 by 100 points whose children are set in units twice as small, holding an
+    /// ellipse on its right half and, in a group of its own, a rectangle at its top left.
+    static let group = """
+        <a:graphicData uri="\(wpg)"><wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/>\
+        <a:ext cx="2540000" cy="1270000"/><a:chOff x="1000" y="2000"/><a:chExt cx="5080000" cy="2540000"/></a:xfrm>\
+        </wpg:grpSpPr>\(groupShape("ellipse", x: 2_541_000, y: 2000, width: 2_540_000, height: 2_540_000, fill: "4472C4", text: "1"))\
+        <wpg:grpSp><wpg:grpSpPr><a:xfrm><a:off x="1000" y="2000"/><a:ext cx="2540000" cy="1270000"/>\
+        <a:chOff x="0" y="0"/><a:chExt cx="2540000" cy="1270000"/></a:xfrm></wpg:grpSpPr>\
+        \(groupShape("rect", x: 0, y: 0, width: 1_270_000, height: 635_000, fill: "ED7D31"))</wpg:grpSp></wpg:wgp></a:graphicData>
+        """
+
+    @Test("A group's shapes are read, each framed by its children's offset and extent, groups within it too")
+    func readsGroup() throws {
+        let document = try Self.document(body: Self.anchored(Self.group, width: 2_540_000, height: 1_270_000))
+        guard case .group(let group)? = Self.objects(document).first else { Issue.record("no group"); return }
+        #expect(group.width == 200 && group.height == 100)
+        #expect(group.shapes.map(\.geometry) == ["ellipse", "rect"])
+        #expect(group.shapes.map(\.frame) == [
+            ShapeFrame(x: 100, y: 0, width: 100, height: 100), ShapeFrame(x: 0, y: 0, width: 50, height: 25),
+        ])
+        #expect(group.shapes.first?.text == "1")
+        // Drawn as it is, so neither a placeholder nor drawn more simply.
+        #expect(!document.unsupportedFeatures.features.contains(.shapes))
+        #expect(!document.unsupportedFeatures.features.contains(.simplifiedObjects))
+    }
+
+    @Test("A group's shapes are drawn where they are in it")
+    func drawsGroup() throws {
+        let document = try Self.document(body: Self.anchored(Self.group, width: 2_540_000, height: 1_270_000))
+        let object = try #require(Self.objects(document).first)
+        let image = ObjectRenderer.image(for: object, size: CGSize(width: 200, height: 100))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 150, y: 20)), "4472C4"))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 20, y: 12)), "ED7D31"))
+        #expect(Self.isNear(Self.color(image, at: CGPoint(x: 70, y: 70)), "FFFFFF"))
+    }
+
+    @Test("A group turned as a whole, or holding a picture, is drawn more simply")
+    func groupSimplified() throws {
+        let turned = Self.group.replacingOccurrences(of: "<a:xfrm><a:off x=\"0\" y=\"0\"/>", with: "<a:xfrm rot=\"5400000\"><a:off x=\"0\" y=\"0\"/>")
+        let document = try Self.document(body: Self.anchored(turned, width: 2_540_000, height: 1_270_000))
+        #expect(document.unsupportedFeatures.features.contains(.simplifiedObjects))
+    }
 }

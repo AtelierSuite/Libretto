@@ -4,6 +4,7 @@ import Foundation
 /// SmartArt diagrams — into descriptions Libretto can draw.
 public enum DrawingObjectReader: Sendable {
     public static let shapeURI = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+    public static let groupURI = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
     public static let chartURI = "http://schemas.openxmlformats.org/drawingml/2006/chart"
     public static let diagramURI = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     public static let diagramDrawingType = "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing"
@@ -40,6 +41,8 @@ public enum DrawingObjectReader: Sendable {
         switch data.attribute("uri") {
         case shapeURI?:
             return data.firstChild(named: "wsp").map { .shape(shape($0, text: text)) }
+        case groupURI?:
+            return data.firstChild(named: "wgp").flatMap { group($0, text: text) }.map { .group($0) }
         case chartURI?:
             guard let id = data.firstChild(named: "chart")?.attribute("id"), let chart = package.part(id) else { return nil }
             return self.chart(chart).map { .chart($0) }
@@ -92,6 +95,84 @@ public enum DrawingObjectReader: Sendable {
             }
             shape.textInsets = ShapeInsets(left: values[0], top: values[1], right: values[2], bottom: values[3])
         }
+    }
+
+    // MARK: - Groups
+
+    /// A point in a group's own units and where it is in its parent's: `x' = scale × x + offset`.
+    struct GroupMapping {
+        var scaleX = 1.0, offsetX = 0.0, scaleY = 1.0, offsetY = 0.0
+
+        /// A frame in this group's units, in its parent's.
+        func frame(x: Double, y: Double, width: Double, height: Double) -> (x: Double, y: Double, width: Double, height: Double) {
+            (scaleX * x + offsetX, scaleY * y + offsetY, scaleX * width, scaleY * height)
+        }
+
+        /// A group within this one, whose `a:xfrm` sets its children's units (`chOff`, `chExt`)
+        /// into the frame it has in this one's (`off`, `ext`).
+        func child(_ transform: XMLElement?) -> GroupMapping {
+            guard let transform else { return self }
+            let (x, y, width, height) = DrawingObjectReader.frame(transform)
+            let childX = number(transform.firstChild(named: "chOff"), "x") ?? x
+            let childY = number(transform.firstChild(named: "chOff"), "y") ?? y
+            let childWidth = number(transform.firstChild(named: "chExt"), "cx") ?? width
+            let childHeight = number(transform.firstChild(named: "chExt"), "cy") ?? height
+            let inner = GroupMapping(
+                scaleX: childWidth > 0 ? width / childWidth : 1, offsetX: x - childX * (childWidth > 0 ? width / childWidth : 1),
+                scaleY: childHeight > 0 ? height / childHeight : 1, offsetY: y - childY * (childHeight > 0 ? height / childHeight : 1)
+            )
+            return GroupMapping(
+                scaleX: scaleX * inner.scaleX, offsetX: scaleX * inner.offsetX + offsetX,
+                scaleY: scaleY * inner.scaleY, offsetY: scaleY * inner.offsetY + offsetY
+            )
+        }
+
+        private func number(_ element: XMLElement?, _ name: String) -> Double? {
+            element?.attribute(name).flatMap(Double.init)
+        }
+    }
+
+    /// An `a:xfrm`'s offset and extent, in EMUs.
+    static func frame(_ transform: XMLElement) -> (x: Double, y: Double, width: Double, height: Double) {
+        func value(_ element: XMLElement?, _ name: String) -> Double { element?.attribute(name).flatMap(Double.init) ?? 0 }
+        let offset = transform.firstChild(named: "off")
+        let extent = transform.firstChild(named: "ext")
+        return (value(offset, "x"), value(offset, "y"), value(extent, "cx"), value(extent, "cy"))
+    }
+
+    /// A `wpg:wgp`'s shapes, those of the groups within it too, each framed in points
+    /// from the group's corner by its children's offset and extent (`chOff`, `chExt`).
+    public static func group(_ wgp: XMLElement, text: TextReader? = nil) -> ShapeGroup? {
+        guard let transform = wgp.firstChild(named: "grpSpPr")?.firstChild(named: "xfrm") else { return nil }
+        let (_, _, width, height) = frame(transform)
+        guard width > 0, height > 0 else { return nil }
+        // The group's own frame from its corner; its children's units into it.
+        var mapping = GroupMapping().child(transform)
+        let (x, y, _, _) = frame(transform)
+        mapping.offsetX -= x
+        mapping.offsetY -= y
+        var shapes: [ShapeSpec] = []
+        func collect(_ group: XMLElement, _ mapping: GroupMapping) {
+            for child in group.children {
+                switch child.name {
+                case "wsp":
+                    var shape = shape(child, text: text)
+                    guard let transform = child.firstChild(named: "spPr")?.firstChild(named: "xfrm") else { continue }
+                    let (x, y, width, height) = frame(transform)
+                    let placed = mapping.frame(x: x, y: y, width: width, height: height)
+                    shape.frame = ShapeFrame(
+                        x: placed.x / 12_700, y: placed.y / 12_700, width: placed.width / 12_700, height: placed.height / 12_700
+                    )
+                    shapes.append(shape)
+                case "grpSp":
+                    collect(child, mapping.child(child.firstChild(named: "grpSpPr")?.firstChild(named: "xfrm")))
+                default:
+                    continue
+                }
+            }
+        }
+        collect(wgp, mapping)
+        return shapes.isEmpty ? nil : ShapeGroup(width: width / 12_700, height: height / 12_700, shapes: shapes)
     }
 
     private static func diagramShape(_ sp: XMLElement) -> ShapeSpec {
@@ -276,6 +357,8 @@ public enum DrawingObjectReader: Sendable {
         switch data.attribute("uri") {
         case shapeURI?:
             return data.firstChild(named: "wsp").map(isSimplified(shape:)) ?? false
+        case groupURI?:
+            return data.firstChild(named: "wgp").map(isSimplified(group:)) ?? false
         case chartURI?:
             guard let id = data.firstChild(named: "chart")?.attribute("id"), let chart = package.part(id) else { return false }
             return isSimplified(chart: chart)
@@ -298,10 +381,7 @@ public enum DrawingObjectReader: Sendable {
             if properties.firstChild(named: "effectDag") != nil { return true }
             if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
                !ShapeSpec.drawnGeometries.contains(geometry) { return true }
-            if let transform = properties.firstChild(named: "xfrm"),
-               (Int(transform.attribute("rot") ?? "") ?? 0) != 0
-                || ["1", "true"].contains(transform.attribute("flipH") ?? "")
-                || ["1", "true"].contains(transform.attribute("flipV") ?? "") { return true }
+            if let transform = properties.firstChild(named: "xfrm"), isTurned(transform) { return true }
             if let line = properties.firstChild(named: "ln") {
                 if line.firstChild(named: "gradFill") != nil || line.firstChild(named: "pattFill") != nil { return true }
                 if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid" { return true }
@@ -319,6 +399,31 @@ public enum DrawingObjectReader: Sendable {
         if shape.firstChild(named: "linkedTxbx") != nil { return true }
         if shape.firstChild(named: "txbx")?.attribute("id") != nil { return true }
         return false
+    }
+
+    /// A group's shapes drawn more simply, and what it holds that is not drawn: pictures, charts,
+    /// ink. A group turned or flipped as a whole is drawn unturned.
+    static func isSimplified(group: XMLElement) -> Bool {
+        for child in group.children {
+            switch child.name {
+            case "wsp":
+                if isSimplified(shape: child) { return true }
+            case "grpSp":
+                if isSimplified(group: child) { return true }
+            case "grpSpPr", "cNvGrpSpPr", "cNvPr", "nvGrpSpPr":
+                if let transform = child.firstChild(named: "xfrm"), isTurned(transform) { return true }
+            default:
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Whether an `a:xfrm` turns or flips what it frames.
+    static func isTurned(_ transform: XMLElement) -> Bool {
+        (Int(transform.attribute("rot") ?? "") ?? 0) != 0
+            || ["1", "true"].contains(transform.attribute("flipH") ?? "")
+            || ["1", "true"].contains(transform.attribute("flipV") ?? "")
     }
 
     /// A chart's kinds, 3-D, labels, fills, lines and legend that Libretto draws more simply.
