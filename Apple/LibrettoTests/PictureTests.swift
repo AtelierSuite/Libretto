@@ -176,8 +176,9 @@ struct PictureTests {
         }
         let layout = controller.layoutManager
         let placed = try #require(layout.placedFloats.first)
+        // The text itself, which its paragraph's first line sets below the room it makes for the picture.
         let below = (1..<layout.numberOfGlyphs).lazy
-            .map { layout.lineFragmentRect(forGlyphAt: $0, effectiveRange: nil) }
+            .map { layout.lineFragmentUsedRect(forGlyphAt: $0, effectiveRange: nil) }
             .first { $0.minY >= placed.frame.minY }
         #expect(try #require(below).minY >= placed.frame.maxY + 24 - 0.5)
     }

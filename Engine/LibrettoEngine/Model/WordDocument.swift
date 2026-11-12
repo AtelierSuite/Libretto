@@ -750,17 +750,26 @@ public struct InlineImage: Equatable, Sendable {
 
 /// What Libretto draws of an object, and what it draws as Word does.
 ///
-/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`,
-///   solid fills and lines, and plain text in one size and colour. Gradient,
-///   pattern and picture fills, shadows, glows and other effects, 3-D, dashed
-///   lines and arrowheads, rotation, free-form outlines and text that flows
-///   between linked boxes are drawn more simply.
+/// - Shapes and text boxes: the preset outlines in `ShapeSpec.drawnGeometries`;
+///   solid, linear and circular gradient fills and Word's line, grid, check
+///   and shade patterns (`ShapePattern.isForeground`); solid and dashed lines
+///   with heads at their ends; all see-through or not; outer shadows and
+///   glows; turned and flipped. Text in its paragraphs' formatting, across,
+///   or up or down, turns with the shape and runs from one linked text box on
+///   into the next. Gradients out to a rectangle or the shape's own path
+///   (drawn as circular ones), other patterns (drawn as their two colours
+///   mixed), picture fills, stretched or skewed shadows, inner shadows and
+///   other effects, 3-D, stacked text and free-form outlines are drawn more
+///   simply.
 /// - Charts: column, bar, line, area, pie, doughnut, scatter and radar charts,
 ///   and column, line and area charts combined, from their cached values, with
 ///   their title, categories, solid series and slice colours, stacking and a
 ///   legend at a side. 3-D, data labels, gradient fills, trend lines, error bars,
 ///   secondary axes, legends in a corner or over the plot, and bubble, stock and
 ///   bar-of-pie charts (drawn as scatter, line and pie charts) are drawn more simply.
+/// - Groups: their shapes, groups within them too, as shapes are drawn, each
+///   where the group sets it. A group turned or flipped as a whole is drawn
+///   unturned, and pictures, charts and ink in a group are left out.
 /// - SmartArt: the shapes Word last laid the diagram out as, as shapes are drawn.
 ///
 /// Where the document keeps a picture of such an object, that picture is
@@ -771,6 +780,22 @@ public enum DrawingObject: Equatable, Hashable, Sendable {
     case chart(ChartSpec)
     /// A diagram's shapes, each placed in the diagram's own frame, in points.
     case diagram([ShapeSpec])
+    /// A group's shapes (`wpg:wgp`), each placed in the group's frame.
+    case group(ShapeGroup)
+}
+
+/// The shapes of a group, each with its `frame` in points from the group's
+/// top left corner, as large as they are in a group `width` by `height`.
+public struct ShapeGroup: Equatable, Hashable, Sendable {
+    public var width: Double
+    public var height: Double
+    public var shapes: [ShapeSpec]
+
+    public init(width: Double, height: Double, shapes: [ShapeSpec]) {
+        self.width = width
+        self.height = height
+        self.shapes = shapes
+    }
 }
 
 /// A DrawingML shape: its outline's form, fill and line, and its text.
@@ -788,6 +813,17 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// Six-digit RGB, or `nil` for none.
     public var fillHex: String? = "4472C4"
     public var lineHex: String? = "2F528F"
+    /// How solid the fill and the line are, from 0, clear, to 1: their colours' `a:alpha`.
+    public var fillAlpha: Double = 1
+    public var lineAlpha: Double = 1
+    /// The line's dashes and the gaps between them, in turn, in widths of the line: `a:prstDash`
+    /// or `a:custDash`. `nil` for a solid line.
+    public var lineDashes: [Double]?
+    /// Whether the line's ends, and its dashes', are round: `a:ln`'s `cap="rnd"`.
+    public var hasRoundCaps = false
+    /// What a line has at its start and at its end: `a:headEnd` and `a:tailEnd`.
+    public var lineStart: ShapeLineEnd?
+    public var lineEnd: ShapeLineEnd?
     /// Points.
     public var lineWidth: Double = 1
     public var text = ""
@@ -795,7 +831,7 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     /// Points; `nil` for the document's body size.
     public var fontSize: Double?
     public var isTextBox = false
-    /// Where it sits within a diagram, in points; `nil` for a shape of its own.
+    /// Where it sits within a diagram or group, in points; `nil` for a shape of its own.
     public var frame: ShapeFrame?
     /// The text as read, to tell whether it has been edited.
     public var originalText: String?
@@ -804,6 +840,44 @@ public struct ShapeSpec: Equatable, Hashable, Sendable {
     public var paragraphs: [ShapeParagraph]?
     /// An outline of its own, drawn in place of the preset geometry's.
     public var outline: ShapeOutline?
+    /// Where the text sits up and down: `wps:bodyPr`'s `anchor`. `nil` for
+    /// Libretto's own: a text box's from the top, a shape's in its middle.
+    public var textAnchor: TextAnchor?
+    /// How far the text keeps in from each edge, in points: `wps:bodyPr`'s
+    /// `lIns`, `tIns`, `rIns` and `bIns`. `nil` for Libretto's own.
+    public var textInsets: ShapeInsets?
+    /// The boxes the text runs through, when it is a text box linked to
+    /// others: its `text` is all of theirs, and it shows its part of it.
+    public var linkedText: LinkedText?
+    /// Degrees clockwise it is turned about its middle, its text with it: `a:xfrm`'s `rot`.
+    public var rotation: Double = 0
+    /// Mirrored left to right, or top to bottom, before it is turned: `a:xfrm`'s `flipH`
+    /// and `flipV`. Its text is not mirrored, but flipped top to bottom it is upside down.
+    public var flipsHorizontally = false
+    public var flipsVertically = false
+    /// Which way its text runs: `wps:bodyPr`'s `vert`.
+    public var textDirection: TextDirection = .horizontal
+    /// A gradient it is filled with in place of `fillHex`, which holds its first colour.
+    public var gradient: ShapeGradient?
+    /// A pattern it is filled with in place of `fillHex`, which holds its background colour.
+    public var pattern: ShapePattern?
+    /// The shadow it casts behind it: `a:outerShdw`.
+    public var shadow: ShapeShadow?
+    /// The soft colour it glows with around its outline: `a:glow`.
+    public var glow: ShapeGlow?
+
+    public enum TextDirection: String, Sendable {
+        /// Across, as usual.
+        case horizontal
+        /// Top to bottom, turned a quarter clockwise: `vert` and `eaVert`.
+        case down
+        /// Bottom to top, turned a quarter the other way: `vert270`.
+        case up
+    }
+
+    public enum TextAnchor: String, Sendable {
+        case top = "t", middle = "ctr", bottom = "b"
+    }
 
     /// The formatted paragraphs, while they still say what the text does.
     public var formattedParagraphs: [ShapeParagraph]? {
@@ -892,6 +966,184 @@ public struct ShapeOutline: Equatable, Hashable, Sendable {
         self.width = width
         self.height = height
         self.elements = elements
+    }
+}
+
+/// A gradient fill: `a:gradFill`.
+public struct ShapeGradient: Equatable, Hashable, Sendable {
+    public struct Stop: Equatable, Hashable, Sendable {
+        /// From 0 to 1 along the gradient.
+        public var position: Double
+        public var colorHex: String
+        /// From 0, clear, to 1, solid.
+        public var alpha: Double
+
+        public init(position: Double, colorHex: String, alpha: Double = 1) {
+            self.position = position
+            self.colorHex = colorHex
+            self.alpha = alpha
+        }
+    }
+
+    public enum Kind: Equatable, Hashable, Sendable {
+        /// Along a line at `angle` degrees clockwise from across (`a:lin`); `scaled`, at
+        /// that angle in a square then stretched to the shape, as its `scaled` says.
+        case linear(angle: Double, scaled: Bool)
+        /// Out from `focus` (`a:path`'s `a:fillToRect`, as fractions in from the left, top,
+        /// right and bottom) to the shape's corners; `isCircle` for `path="circle"`, else a
+        /// rectangle's or the shape's own path, drawn as a circle's.
+        case path(focus: ShapeInsets, isCircle: Bool)
+    }
+
+    public var stops: [Stop]
+    public var kind: Kind
+    /// Whether it turns with the shape: `rotWithShape`.
+    public var turnsWithShape: Bool
+
+    public init(stops: [Stop], kind: Kind, turnsWithShape: Bool = true) {
+        self.stops = stops
+        self.kind = kind
+        self.turnsWithShape = turnsWithShape
+    }
+}
+
+/// A pattern fill: `a:pattFill`, one of Word's preset 8 by 8 tiles in two colours.
+public struct ShapePattern: Equatable, Hashable, Sendable {
+    /// `prst`: `pct50`, `horz`, `wdDnDiag` and the rest.
+    public var preset: String
+    public var foregroundHex: String
+    public var backgroundHex: String
+
+    public init(preset: String, foregroundHex: String, backgroundHex: String) {
+        self.preset = preset
+        self.foregroundHex = foregroundHex
+        self.backgroundHex = backgroundHex
+    }
+
+    /// Whether a tile pixel, `x` across and `y` down from 0 to 7, is in the foreground colour;
+    /// `nil` for a preset not drawn as Word draws it.
+    public static func isForeground(_ preset: String, x: Int, y: Int) -> Bool? {
+        func lines(_ position: Int, period: Int, width: Int) -> Bool { position % period < width }
+        switch preset {
+        case "horz": return lines(y, period: 8, width: 1)
+        case "vert": return lines(x, period: 8, width: 1)
+        case "ltHorz": return lines(y, period: 4, width: 1)
+        case "ltVert": return lines(x, period: 4, width: 1)
+        case "narHorz": return lines(y, period: 2, width: 1)
+        case "narVert": return lines(x, period: 2, width: 1)
+        case "dkHorz": return lines(y, period: 4, width: 2)
+        case "dkVert": return lines(x, period: 4, width: 2)
+        // Down to the right, and up to the right.
+        case "dnDiag": return lines(x - y + 8, period: 8, width: 1)
+        case "upDiag": return lines(x + y, period: 8, width: 1)
+        case "ltDnDiag": return lines(x - y + 8, period: 4, width: 1)
+        case "ltUpDiag": return lines(x + y, period: 4, width: 1)
+        case "dkDnDiag": return lines(x - y + 8, period: 4, width: 2)
+        case "dkUpDiag": return lines(x + y, period: 4, width: 2)
+        case "wdDnDiag": return lines(x - y + 8, period: 8, width: 3)
+        case "wdUpDiag": return lines(x + y, period: 8, width: 3)
+        case "cross", "lgGrid": return lines(x, period: 8, width: 1) || lines(y, period: 8, width: 1)
+        case "smGrid": return lines(x, period: 4, width: 1) || lines(y, period: 4, width: 1)
+        case "diagCross": return lines(x - y + 8, period: 8, width: 1) || lines(x + y, period: 8, width: 1)
+        case "smCheck": return (x / 2 + y / 2) % 2 == 0
+        case "lgCheck": return (x / 4 + y / 4) % 2 == 0
+        default:
+            // So much in a hundred, spread as evenly as an ordered dither spreads it.
+            guard preset.hasPrefix("pct"), let percent = Int(preset.dropFirst(3)) else { return nil }
+            let order = [0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38,
+                         60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25,
+                         15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21]
+            return order[(y % 8) * 8 + x % 8] < (percent * 64 + 50) / 100
+        }
+    }
+}
+
+/// A shadow a shape casts: `a:outerShdw`, blurred, set off from the shape.
+public struct ShapeShadow: Equatable, Hashable, Sendable {
+    /// Points.
+    public var blur: Double
+    public var distance: Double
+    /// Degrees clockwise from across, the way it is set off.
+    public var direction: Double
+    public var colorHex: String
+    public var alpha: Double
+    /// Whether it is set off the way the shape is turned, rather than across the page: `rotWithShape`.
+    public var turnsWithShape: Bool
+
+    public init(blur: Double, distance: Double, direction: Double, colorHex: String = "000000", alpha: Double = 1,
+                turnsWithShape: Bool = false) {
+        self.blur = blur
+        self.distance = distance
+        self.direction = direction
+        self.colorHex = colorHex
+        self.alpha = alpha
+        self.turnsWithShape = turnsWithShape
+    }
+
+    /// How far it is set off across and down, in points.
+    public var offset: (x: Double, y: Double) {
+        let radians = direction * .pi / 180
+        return (distance * cos(radians), distance * sin(radians))
+    }
+}
+
+/// A soft colour around a shape's outline: `a:glow`.
+public struct ShapeGlow: Equatable, Hashable, Sendable {
+    /// How far out it reaches, in points.
+    public var radius: Double
+    public var colorHex: String
+    public var alpha: Double
+
+    public init(radius: Double, colorHex: String, alpha: Double = 1) {
+        self.radius = radius
+        self.colorHex = colorHex
+        self.alpha = alpha
+    }
+}
+
+/// A head at one end of a line: `a:headEnd` or `a:tailEnd`.
+public struct ShapeLineEnd: Equatable, Hashable, Sendable {
+    public enum Kind: String, Sendable {
+        /// A filled triangle; one notched at its back; an open arrow of two strokes; a diamond and an oval on the end.
+        case triangle, stealth, arrow, diamond, oval
+    }
+
+    public var kind: Kind
+    /// How wide and how long it is, in widths of the line: 2, 3 or 5, for `sm`, `med` and `lg`.
+    public var width: Double
+    public var length: Double
+
+    public init(kind: Kind, width: Double = 3, length: Double = 3) {
+        self.kind = kind
+        self.width = width
+        self.length = length
+    }
+}
+
+/// Text that runs from one text box on into the next (`wps:txbx` and the
+/// `wps:linkedTxbx` boxes after it): how large each box's text area is, in
+/// points, in the order the text runs through them, and which this box is.
+public struct LinkedText: Equatable, Hashable, Sendable {
+    public var areas: [ShapeFrame]
+    public var index: Int
+
+    public init(areas: [ShapeFrame], index: Int) {
+        self.areas = areas
+        self.index = index
+    }
+}
+
+public struct ShapeInsets: Equatable, Hashable, Sendable {
+    public var left, top, right, bottom: Double
+
+    /// Word's own: a tenth of an inch either side, a twentieth above and below.
+    public static let word = ShapeInsets(left: 7.2, top: 3.6, right: 7.2, bottom: 3.6)
+
+    public init(left: Double, top: Double, right: Double, bottom: Double) {
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
     }
 }
 

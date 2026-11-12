@@ -75,12 +75,18 @@ struct DrawnDifferentlyTests {
     @Test("Shape properties drawn more simply are told apart from those drawn as Word does", arguments: [
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:effectLst/></wps:spPr><wps:bodyPr/>", false),
-        ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:gradFill><a:lin ang=\"0\"/></a:gradFill></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:gradFill><a:path path=\"circle\"/></a:gradFill></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:gradFill><a:path path=\"rect\"/></a:gradFill></wps:spPr><wps:bodyPr/>", true),
+        ("<wps:spPr><a:xfrm rot=\"5400000\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:xfrm flipH=\"1\"/><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr/>", false),
         ("<wps:spPr><a:prstGeom prst=\"heart\"/></wps:spPr><wps:bodyPr/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", true),
-        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"line\"/><a:ln><a:tailEnd type=\"triangle\"/></a:ln></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:prstDash val=\"dash\"/></a:ln></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:custDash><a:ds d=\"1\" sp=\"1\"/></a:custDash></a:ln></wps:spPr><wps:bodyPr/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"vert270\"/>", false),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:bodyPr vert=\"wordArtVert\"/>", true),
+        ("<wps:spPr><a:prstGeom prst=\"rect\"/></wps:spPr><wps:linkedTxbx id=\"1\" seq=\"1\"/><wps:bodyPr/>", false),
     ])
     func simplifiedShapes(content: String, simplified: Bool) throws {
         let shape = try XMLLite.parse(Data("<wps:wsp xmlns:wps=\"\(Self.wps)\" xmlns:a=\"\(OOXML.drawingMainNamespace)\">\(content)</wps:wsp>".utf8))

@@ -10,15 +10,21 @@ import AppKit
 /// the pages, the reader and the PDF to show.
 public enum ObjectRenderer: Sendable {
     /// An object drawn at a size; in the dark scheme, text of no colour of its own set straight on the page is light, as the body's is.
+    /// The picture reaches past the object's frame as far as its `overhang`: what is turned, and its effects.
     public static func image(for object: DrawingObject, size: CGSize, scheme: ColorScheme = .light) -> PlatformImage {
-        let canvas = CGSize(width: max(1, size.width), height: max(1, size.height))
+        let frame = CGSize(width: max(1, size.width), height: max(1, size.height))
+        let past = overhang(for: object, size: frame)
+        let canvas = CGSize(width: frame.width + past.left + past.right, height: frame.height + past.top + past.bottom)
         return PlatformImage.drawn(size: canvas) { context in
-            let bounds = CGRect(origin: .zero, size: canvas)
+            context.translateBy(x: past.left, y: past.top)
+            let bounds = CGRect(origin: .zero, size: frame)
             switch object {
             case .shape(let shape):
                 draw(shape, in: bounds, context: context, scheme: scheme)
             case .diagram(let shapes):
                 drawDiagram(shapes, in: bounds, context: context)
+            case .group(let group):
+                drawGroup(group, in: bounds, context: context, scheme: scheme)
             case .chart(let chart):
                 ChartDrawing(chart: chart, bounds: bounds).draw()
             }
@@ -33,6 +39,121 @@ public enum ObjectRenderer: Sendable {
         )
     }
 
+    // MARK: - Past the frame
+
+    /// How far an object is drawn past each edge of its frame, in points.
+    public struct Overhang: Equatable, Sendable {
+        public var top: CGFloat = 0, left: CGFloat = 0, bottom: CGFloat = 0, right: CGFloat = 0
+
+        public static let zero = Overhang()
+
+        public init(top: CGFloat = 0, left: CGFloat = 0, bottom: CGFloat = 0, right: CGFloat = 0) {
+            self.top = top
+            self.left = left
+            self.bottom = bottom
+            self.right = right
+        }
+
+        /// The same, for the object drawn `scale` times as large.
+        public func scaled(by scale: CGFloat) -> Overhang {
+            Overhang(top: top * scale, left: left * scale, bottom: bottom * scale, right: right * scale)
+        }
+
+        /// A frame grown by this much on each side.
+        public func around(_ frame: CGRect) -> CGRect {
+            CGRect(x: frame.minX - left, y: frame.minY - top, width: frame.width + left + right, height: frame.height + top + bottom)
+        }
+    }
+
+    /// How far an object at a size is drawn past its frame: the corners of a turned shape, and
+    /// with `effects`, its shadow and glow and the heads on its line's ends. Text keeps clear
+    /// of a turned shape's corners, as in Word, but not of its effects.
+    public static func overhang(for object: DrawingObject, size: CGSize, effects: Bool = true) -> Overhang {
+        let bounds = CGRect(origin: .zero, size: size)
+        let drawn: CGRect
+        switch object {
+        case .shape(let shape):
+            drawn = drawnBounds(of: shape, in: bounds, effects: effects)
+        case .group(let group):
+            let scaleX = size.width / max(group.width, 0.01)
+            let scaleY = size.height / max(group.height, 0.01)
+            drawn = group.shapes.reduce(bounds) { union, shape in
+                guard let frame = shape.frame else { return union }
+                let rect = CGRect(x: frame.x * scaleX, y: frame.y * scaleY, width: frame.width * scaleX, height: frame.height * scaleY)
+                return union.union(drawnBounds(of: shape, in: rect, effects: effects))
+            }
+        case .chart, .diagram:
+            return .zero
+        }
+        func past(_ value: CGFloat) -> CGFloat { value > 0.01 ? ceil(value * 4) / 4 : 0 }
+        return Overhang(
+            top: past(bounds.minY - drawn.minY), left: past(bounds.minX - drawn.minX),
+            bottom: past(drawn.maxY - bounds.maxY), right: past(drawn.maxX - bounds.maxX)
+        )
+    }
+
+    /// Where a shape in a frame is drawn, turned and with its effects.
+    static func drawnBounds(of shape: ShapeSpec, in rect: CGRect, effects: Bool) -> CGRect {
+        let turned = rect.applying(turn(shape, in: rect))
+        guard effects else { return turned }
+        var drawn = turned
+        if let shadow = shape.shadow {
+            let offset = shadowOffset(shadow, of: shape)
+            drawn = drawn.union(turned.offsetBy(dx: offset.width, dy: offset.height).insetBy(dx: -shadow.blur, dy: -shadow.blur))
+        }
+        if let glow = shape.glow {
+            drawn = drawn.union(turned.insetBy(dx: -glow.radius, dy: -glow.radius))
+        }
+        // A line's heads reach out either side of it, and past its ends if they sit on them.
+        let heads = [shape.lineStart, shape.lineEnd].compactMap { $0 }
+        if shape.lineHex != nil, isLine(shape), !heads.isEmpty {
+            let reach = heads.map { max($0.width, $0.length) }.max()! * max(0.5, shape.lineWidth) / 2 + shape.lineWidth
+            drawn = drawn.union(turned.insetBy(dx: -reach, dy: -reach))
+        }
+        return drawn
+    }
+
+    /// How far a shadow is set off on the page: the way the shape is turned too, if it turns with it.
+    static func shadowOffset(_ shadow: ShapeShadow, of shape: ShapeSpec) -> CGSize {
+        let offset = CGPoint(x: shadow.offset.x, y: shadow.offset.y)
+        guard shadow.turnsWithShape else { return CGSize(width: offset.x, height: offset.y) }
+        let turned = offset.applying(CGAffineTransform(rotationAngle: shape.rotation * .pi / 180))
+        return CGSize(width: turned.x, height: turned.y)
+    }
+
+    /// Casts a shadow from what is drawn next, set off and blurred as much on the page as it says.
+    /// Core Graphics measures a shadow in the context's base space, so it is set there, from the
+    /// page's space: the context's, less the shape's own turn.
+    private static func castShadow(_ shadow: ShapeShadow, of shape: ShapeSpec, in rect: CGRect, context: CGContext) {
+        let offset = shadowOffset(shadow, of: shape)
+        let ctm = turn(shape, in: rect).inverted().concatenating(context.ctm)
+        let (base, scale) = baseSpace(offset, ctm: ctm)
+        let ink = color(shadow.colorHex).withAlphaComponent(CGFloat(shadow.alpha)).cgColor
+        context.setShadow(offset: base, blur: CGFloat(shadow.blur) * scale, color: ink)
+    }
+
+    /// An offset in the space a transform draws from, in the context's base space, where shadows are
+    /// measured, and how many base units a point is there. A UIKit context's base space is its own
+    /// points, down the page; any other's, its pixels, up it.
+    static func baseSpace(_ offset: CGSize, ctm: CGAffineTransform) -> (offset: CGSize, scale: CGFloat) {
+        var scale = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        var base = CGSize(width: offset.width * ctm.a + offset.height * ctm.c, height: offset.width * ctm.b + offset.height * ctm.d)
+        #if canImport(UIKit)
+        let pixels = max(scale, 0.0001)
+        base = CGSize(width: base.width / pixels, height: -base.height / pixels)
+        scale = 1
+        #endif
+        return (base, scale)
+    }
+
+    /// How a shape is turned about its middle.
+    static func turn(_ shape: ShapeSpec, in rect: CGRect) -> CGAffineTransform {
+        guard shape.rotation.truncatingRemainder(dividingBy: 360) != 0 else { return .identity }
+        return CGAffineTransform(translationX: rect.midX, y: rect.midY)
+            .rotated(by: shape.rotation * .pi / 180)
+            .translatedBy(x: -rect.midX, y: -rect.midY)
+    }
+
     // MARK: - Shapes
 
     /// Where a shape's outline runs within its picture: in from each edge by half its line, so
@@ -43,19 +164,267 @@ public enum ObjectRenderer: Sendable {
         return rect.insetBy(dx: min(margin, rect.width / 2), dy: min(margin, rect.height / 2))
     }
 
+    /// A shape in a frame, turned about its middle with its text, as its own transform says.
     public static func draw(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme = .light) {
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.concatenate(turn(shape, in: rect))
+        drawUnturned(shape, in: rect, context: context, scheme: scheme)
+    }
+
+    private static func drawUnturned(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
+        context.saveGState()
+        if let glow = shape.glow {
+            context.saveGState()
+            context.concatenate(mirror(shape, in: rect))
+            draw(glow, around: outlinePath(shape, in: rect), context: context)
+            context.restoreGState()
+        }
+        // The fill and line cast one shadow together; the text, none of its own.
+        if let shadow = shape.shadow {
+            castShadow(shadow, of: shape, in: rect, context: context)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
+        context.concatenate(mirror(shape, in: rect))
+        drawOutline(shape, in: rect, context: context)
+        if shape.shadow != nil { context.endTransparencyLayer() }
+        context.restoreGState()
+        guard !shape.text.isEmpty else { return }
+        // Text is never mirrored; flipped top to bottom, it is upside down.
+        context.saveGState()
+        defer { context.restoreGState() }
+        if shape.flipsVertically {
+            context.concatenate(CGAffineTransform(translationX: rect.midX, y: rect.midY).rotated(by: .pi)
+                .translatedBy(x: -rect.midX, y: -rect.midY))
+        }
+        drawText(shape, in: rect, context: context, scheme: scheme)
+    }
+
+    /// How a shape's outline and fill are mirrored about its middle.
+    static func mirror(_ shape: ShapeSpec, in rect: CGRect) -> CGAffineTransform {
+        guard shape.flipsHorizontally || shape.flipsVertically else { return .identity }
+        return CGAffineTransform(translationX: rect.midX, y: rect.midY)
+            .scaledBy(x: shape.flipsHorizontally ? -1 : 1, y: shape.flipsVertically ? -1 : 1)
+            .translatedBy(x: -rect.midX, y: -rect.midY)
+    }
+
+    /// The path a shape's outline runs along.
+    static func outlinePath(_ shape: ShapeSpec, in rect: CGRect) -> PlatformBezierPath {
         let inset = outlineRect(for: shape, in: rect)
-        let path = shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
-        if let fill = shape.fillHex {
-            color(fill).setFill()
+        return shape.outline.map { self.path($0, in: inset) } ?? self.path(shape.geometry, in: inset)
+    }
+
+    /// A glow around a path: its silhouette in the glow's colour, a little wider, blurred out as far as
+    /// the glow reaches, and cleared again inside the outline, so only the glow around it is seen.
+    private static func draw(_ glow: ShapeGlow, around path: PlatformBezierPath, context: CGContext) {
+        let scale = baseSpace(.zero, ctm: context.ctm).scale
+        let ink = color(glow.colorHex).withAlphaComponent(CGFloat(glow.alpha))
+        context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setShadow(offset: .zero, blur: CGFloat(glow.radius) * scale, color: ink.cgColor)
+        ink.setFill()
+        ink.setStroke()
+        path.lineWidth = CGFloat(glow.radius) * 0.6
+        path.fill()
+        path.stroke()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.setBlendMode(.clear)
+        path.fill()
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
+    /// The preset outlines drawn as a line from corner to corner, with heads at their ends if they have any.
+    static func isLine(_ shape: ShapeSpec) -> Bool {
+        shape.outline == nil && ["line", "straightConnector1", "bentConnector3", "curvedConnector3"].contains(shape.geometry)
+    }
+
+    /// How far a line stops short of its end so it doesn't show past the head there.
+    private static func shortfall(of head: ShapeLineEnd?, lineWidth: CGFloat) -> CGFloat {
+        switch head?.kind {
+        case .triangle?, .stealth?: return CGFloat(head!.length) * lineWidth / 2
+        default: return 0
+        }
+    }
+
+    /// A line's head at its end `tip`, the line running in `direction` into it.
+    private static func draw(_ head: ShapeLineEnd, at tip: CGPoint, direction: CGPoint, lineWidth: CGFloat) {
+        let length = CGFloat(head.length) * lineWidth, width = CGFloat(head.width) * lineWidth
+        let along = direction, across = CGPoint(x: -direction.y, y: direction.x)
+        func point(_ back: CGFloat, _ side: CGFloat) -> CGPoint {
+            CGPoint(x: tip.x - along.x * back + across.x * side, y: tip.y - along.y * back + across.y * side)
+        }
+        let path = PlatformBezierPath()
+        switch head.kind {
+        case .triangle:
+            path.move(to: tip)
+            path.addLine(to: point(length, width / 2))
+            path.addLine(to: point(length, -width / 2))
+            path.close()
+            path.fill()
+        case .stealth:
+            path.move(to: tip)
+            path.addLine(to: point(length, width / 2))
+            path.addLine(to: point(length * 0.6, 0))
+            path.addLine(to: point(length, -width / 2))
+            path.close()
+            path.fill()
+        case .diamond:
+            path.move(to: point(-length / 2, 0))
+            path.addLine(to: point(0, width / 2))
+            path.addLine(to: point(length / 2, 0))
+            path.addLine(to: point(0, -width / 2))
+            path.close()
+            path.fill()
+        case .oval:
+            // An ellipse about the end, as long as the head along the line and as wide across it.
+            let steps = 24
+            for step in 0...steps {
+                let angle = CGFloat(step) / CGFloat(steps) * 2 * .pi
+                let at = point(-cos(angle) * length / 2, sin(angle) * width / 2)
+                if step == 0 { path.move(to: at) } else { path.addLine(to: at) }
+            }
+            path.close()
+            path.fill()
+        case .arrow:
+            path.move(to: point(length, width / 2))
+            path.addLine(to: tip)
+            path.addLine(to: point(length, -width / 2))
+            path.lineWidth = lineWidth
+            path.stroke()
+        }
+    }
+
+    /// A shape's fill and its line.
+    private static func drawOutline(_ shape: ShapeSpec, in rect: CGRect, context: CGContext) {
+        var path = outlinePath(shape, in: rect)
+        // A line with heads runs from corner to corner, stopping short where a head covers its end.
+        let heads = shape.lineHex != nil && isLine(shape) && (shape.lineStart != nil || shape.lineEnd != nil)
+        let inset = outlineRect(for: shape, in: rect)
+        let start = CGPoint(x: inset.minX, y: inset.minY), end = CGPoint(x: inset.maxX, y: inset.maxY)
+        let span = hypot(end.x - start.x, end.y - start.y)
+        let direction = span > 0 ? CGPoint(x: (end.x - start.x) / span, y: (end.y - start.y) / span) : CGPoint(x: 1, y: 0)
+        if heads {
+            let width = max(0.5, CGFloat(shape.lineWidth))
+            let back = min(span / 2, shortfall(of: shape.lineStart, lineWidth: width))
+            let forward = min(span / 2, shortfall(of: shape.lineEnd, lineWidth: width))
+            path = PlatformBezierPath()
+            path.move(to: CGPoint(x: start.x + direction.x * back, y: start.y + direction.y * back))
+            path.addLine(to: CGPoint(x: end.x - direction.x * forward, y: end.y - direction.y * forward))
+        }
+        if let gradient = shape.gradient {
+            context.saveGState()
+            path.addClip()
+            fill(gradient, of: shape, in: rect, context: context)
+            context.restoreGState()
+        } else if let pattern = shape.pattern {
+            context.saveGState()
+            path.addClip()
+            fill(pattern, in: rect, context: context)
+            context.restoreGState()
+        } else if let fill = shape.fillHex {
+            color(fill).withAlphaComponent(CGFloat(shape.fillAlpha)).setFill()
             path.fill()
         }
         if let line = shape.lineHex {
-            color(line).setStroke()
+            color(line).withAlphaComponent(CGFloat(shape.lineAlpha)).setStroke()
             path.lineWidth = max(0.5, shape.lineWidth)
+            if shape.hasRoundCaps { path.lineCapStyle = .round }
+            if let dashes = shape.lineDashes, !dashes.isEmpty {
+                let lengths = dashes.map { CGFloat($0) * path.lineWidth }
+                path.setLineDash(lengths, count: lengths.count, phase: 0)
+            }
             path.stroke()
+            if heads {
+                // Solid, in the line's colour, whatever its dashes.
+                let ink = color(line).withAlphaComponent(CGFloat(shape.lineAlpha))
+                ink.setFill()
+                ink.setStroke()
+                let width = path.lineWidth
+                if let head = shape.lineStart {
+                    draw(head, at: start, direction: CGPoint(x: -direction.x, y: -direction.y), lineWidth: width)
+                }
+                if let head = shape.lineEnd { draw(head, at: end, direction: direction, lineWidth: width) }
+            }
         }
-        guard !shape.text.isEmpty else { return }
+    }
+
+    /// A gradient across a shape's frame, in whatever it is clipped to.
+    private static func fill(_ gradient: ShapeGradient, of shape: ShapeSpec, in rect: CGRect, context: CGContext) {
+        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let colors = gradient.stops.map { stop -> CGColor in
+            let value = Int(stop.colorHex, radix: 16) ?? 0
+            return CGColor(
+                srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
+                blue: CGFloat(value & 0xFF) / 255, alpha: CGFloat(stop.alpha)
+            )
+        }
+        var locations = gradient.stops.map { CGFloat($0.position) }
+        guard let drawn = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: &locations) else { return }
+        // One that doesn't turn with its shape is drawn unturned.
+        if !gradient.turnsWithShape { context.concatenate(turn(shape, in: rect).inverted()) }
+        let ends: CGGradientDrawingOptions = [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        switch gradient.kind {
+        case .linear(let angle, let scaled):
+            var box = rect
+            if scaled {
+                // At its angle in a square, the square then stretched to the frame.
+                context.translateBy(x: rect.minX, y: rect.minY)
+                context.scaleBy(x: max(rect.width, 0.01), y: max(rect.height, 0.01))
+                box = CGRect(x: 0, y: 0, width: 1, height: 1)
+            }
+            let radians = angle * .pi / 180
+            let direction = CGPoint(x: cos(radians), y: sin(radians))
+            // From corner to corner along it, so the first and last colours just reach the frame's corners.
+            let half = (abs(direction.x) * box.width + abs(direction.y) * box.height) / 2
+            let start = CGPoint(x: box.midX - direction.x * half, y: box.midY - direction.y * half)
+            let end = CGPoint(x: box.midX + direction.x * half, y: box.midY + direction.y * half)
+            context.drawLinearGradient(drawn, start: start, end: end, options: ends)
+        case .path(let focus, _):
+            // Out from the middle of the focus to the farthest corner, stretched with the frame.
+            context.translateBy(x: rect.minX, y: rect.minY)
+            context.scaleBy(x: max(rect.width, 0.01), y: max(rect.height, 0.01))
+            let center = CGPoint(x: (focus.left + 1 - focus.right) / 2, y: (focus.top + 1 - focus.bottom) / 2)
+            let radius = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)]
+                .map { hypot($0.x - center.x, $0.y - center.y) }.max() ?? 1
+            context.drawRadialGradient(
+                drawn, startCenter: center, startRadius: 0, endCenter: center, endRadius: max(radius, 0.01), options: ends
+            )
+        }
+    }
+
+    /// How large a pattern's pixel is, in points: as on a screen at 96 to the inch.
+    static let patternPixel: CGFloat = 0.75
+
+    /// A pattern's tile, over and over from the frame's top left corner, in whatever it is clipped to.
+    /// A preset not drawn as Word draws it is filled with its two colours mixed half and half.
+    private static func fill(_ pattern: ShapePattern, in rect: CGRect, context: CGContext) {
+        color(pattern.backgroundHex).setFill()
+        PlatformGraphics.fill(rect)
+        let unit = patternPixel
+        let columns = Int(ceil(rect.width / unit)), rows = Int(ceil(rect.height / unit))
+        let path = CGMutablePath()
+        for row in 0..<rows {
+            var run: Int?
+            for column in 0...columns {
+                let on = column < columns
+                    && (ShapePattern.isForeground(pattern.preset, x: column % 8, y: row % 8) ?? ShapePattern.isForeground(
+                        "pct50", x: column % 8, y: row % 8) ?? false)
+                if on, run == nil { run = column }
+                if !on, let start = run {
+                    path.addRect(CGRect(x: rect.minX + CGFloat(start) * unit, y: rect.minY + CGFloat(row) * unit,
+                                        width: CGFloat(column - start) * unit, height: unit))
+                    run = nil
+                }
+            }
+        }
+        context.addPath(path)
+        context.setFillColor(color(pattern.foregroundHex).cgColor)
+        context.fillPath()
+    }
+
+    /// A shape's text, in its own area, or its part of the text its linked boxes share.
+    private static func drawText(_ shape: ShapeSpec, in rect: CGRect, context: CGContext, scheme: ColorScheme) {
         let ink: PlatformColor = shape.fillHex == nil && scheme == .dark ? .white : .black
         let fallbackColor = color(shape.textColorHex, fallback: shape.isTextBox || shape.fillHex == nil ? ink : .white)
         let text: NSAttributedString
@@ -69,13 +438,55 @@ public enum ObjectRenderer: Sendable {
                 .paragraphStyle: style,
             ])
         }
-        let area = inset.insetBy(dx: 7, dy: 4)
+        var area = textArea(for: shape, in: rect)
+        // Text running down or up is set across the area's height, and turned a quarter about its middle.
+        if shape.textDirection != .horizontal {
+            context.translateBy(x: area.midX, y: area.midY)
+            context.rotate(by: shape.textDirection == .down ? .pi / 2 : -.pi / 2)
+            area = CGRect(x: -area.height / 2, y: -area.width / 2, width: area.height, height: area.width)
+        }
+        if let linked = shape.linkedText, linked.areas.indices.contains(linked.index) {
+            drawLinked(text, linked, in: area)
+            return
+        }
         let height = ceil(text.boundingRect(with: CGSize(width: area.width, height: .greatestFiniteMagnitude),
                                             options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height)
-        // A text box's text runs from the top; a shape's sits in its middle.
-        let top = shape.isTextBox ? area.minY : area.midY - min(height, area.height) / 2
+        // Where the document says; else a text box's text runs from the top, and a shape's sits in its middle.
+        let top: CGFloat
+        switch shape.textAnchor ?? (shape.isTextBox ? .top : .middle) {
+        case .top: top = area.minY
+        case .middle: top = area.midY - min(height, area.height) / 2
+        case .bottom: top = area.maxY - min(height, area.height)
+        }
         text.draw(with: CGRect(x: area.minX, y: top, width: area.width, height: min(height, area.height)),
                   options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine], context: nil)
+    }
+
+    /// A linked text box's part of the text that runs through its boxes: what is left after the
+    /// boxes before it are full, as much as fits in its own area, from the top.
+    private static func drawLinked(_ text: NSAttributedString, _ linked: LinkedText, in area: CGRect) {
+        let storage = NSTextStorage(attributedString: text)
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        for (index, frame) in linked.areas.enumerated() {
+            let size = index == linked.index ? area.size : CGSize(width: frame.width, height: frame.height)
+            let container = NSTextContainer(size: size)
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container)
+        }
+        let container = layout.textContainers[linked.index]
+        let glyphs = layout.glyphRange(for: container)
+        guard glyphs.length > 0 else { return }
+        layout.drawGlyphs(forGlyphRange: glyphs, at: area.origin)
+    }
+
+    /// Where a shape's text goes: in from its edges by the document's insets, else by Libretto's own from its outline.
+    public static func textArea(for shape: ShapeSpec, in rect: CGRect) -> CGRect {
+        guard let insets = shape.textInsets else { return outlineRect(for: shape, in: rect).insetBy(dx: 7, dy: 4) }
+        return CGRect(
+            x: rect.minX + insets.left, y: rect.minY + insets.top,
+            width: max(1, rect.width - insets.left - insets.right), height: max(1, rect.height - insets.top - insets.bottom)
+        )
     }
 
     /// A shape's text in the formatting each of its paragraphs and runs has.
@@ -201,6 +612,22 @@ public enum ObjectRenderer: Sendable {
             return path
         default:
             return PlatformBezierPath(rect: rect)
+        }
+    }
+
+    // MARK: - Groups
+
+    /// A group's shapes, each in its frame, the group stretched to fill the picture as Word stretches it.
+    private static func drawGroup(_ group: ShapeGroup, in bounds: CGRect, context: CGContext, scheme: ColorScheme) {
+        let scaleX = bounds.width / max(group.width, 0.01)
+        let scaleY = bounds.height / max(group.height, 0.01)
+        for shape in group.shapes {
+            guard let frame = shape.frame else { continue }
+            let rect = CGRect(
+                x: bounds.minX + frame.x * scaleX, y: bounds.minY + frame.y * scaleY,
+                width: frame.width * scaleX, height: frame.height * scaleY
+            )
+            draw(shape, in: rect, context: context, scheme: scheme)
         }
     }
 

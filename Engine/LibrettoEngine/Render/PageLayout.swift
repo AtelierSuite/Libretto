@@ -312,6 +312,84 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     }
 
     public private(set) var placedFloats: [PlacedFloat] = []
+    /// Where the pictures a paragraph holds top and bottom start, by the
+    /// paragraph's first character: the room its first line makes for them.
+    private var floatTops: [Int: CGFloat] = [:]
+
+    /// Whether a floating picture keeps text above and below it, placed down
+    /// from its paragraph: one its paragraph makes room for.
+    private static func isReservedInParagraph(_ picture: InlineImage) -> Bool {
+        picture.wrap == .topAndBottom && picture.verticalAnchor == .paragraph && picture.page == nil
+    }
+
+    /// How far a floating object at `scale` is drawn past its frame, and how far text keeps clear past it.
+    private static func overhangs(_ picture: InlineImage, scale: CGFloat)
+        -> (drawn: ObjectRenderer.Overhang, kept: ObjectRenderer.Overhang) {
+        guard let object = picture.object else { return (.zero, .zero) }
+        let size = CGSize(width: picture.width, height: picture.height)
+        return (
+            ObjectRenderer.overhang(for: object, size: size).scaled(by: scale),
+            ObjectRenderer.overhang(for: object, size: size, effects: false).scaled(by: scale)
+        )
+    }
+
+    /// A floating picture's size on a page: no larger than the page, if it
+    /// is placed on the page, or than the text, if beside its paragraph.
+    private func floatSize(_ picture: InlineImage, page: Int) -> CGSize {
+        let shape = geometry.shape(page)
+        let isOnPage = picture.isHorizontalFromPage && picture.verticalAnchor == .page
+        let room = isOnPage ? shape.size : CGSize(width: shape.contentWidth, height: shape.contentHeight * 0.9)
+        let scale = min(1, room.width / max(picture.width, 1), room.height / max(picture.height, 1))
+        return CGSize(width: picture.width * scale, height: picture.height * scale)
+    }
+
+    /// The room the first line of a paragraph makes above itself for the
+    /// pictures in the paragraph that keep text above and below them, as Word
+    /// sets the paragraph's text below them; whether it made any.
+    ///
+    /// Made in the line rather than kept clear of the text afterwards, so
+    /// where the pictures go never depends on where the room for them moved
+    /// the paragraph to: placed from the line they push down, they would follow
+    /// it, push it on again, and never settle. Pictures and line that don't
+    /// fit on what is left of the page start the next page together.
+    private func reserveFloats(
+        _ rect: UnsafeMutablePointer<CGRect>, used: UnsafeMutablePointer<CGRect>, baseline: UnsafeMutablePointer<CGFloat>,
+        characters: NSRange
+    ) -> Bool {
+        guard let storage = textStorage, characters.location < storage.length else { return false }
+        let string = storage.string as NSString
+        let start = characters.location
+        guard start == 0 || string.character(at: start - 1) == TextCharacters.paragraphBreakUnit,
+              storage.attribute(.librettoBlock, at: start, effectiveRange: nil) == nil else {
+            return false
+        }
+        let paragraph = string.paragraphRange(for: NSRange(location: start, length: 0))
+        var line = rect.pointee
+        let page = geometry.page(containing: line.minY + 0.5)
+        var reserve: CGFloat = 0
+        storage.enumerateAttribute(.attachment, in: paragraph) { value, _, _ in
+            guard let attachment = value as? ImageAttachment, case .image(let picture) = attachment.inline.content,
+                  Self.isReservedInParagraph(picture) else { return }
+            let size = floatSize(picture, page: page)
+            let kept = Self.overhangs(picture, scale: size.width / max(picture.width, 1)).kept
+            reserve = max(reserve, picture.verticalOffset + kept.top + size.height + kept.bottom + picture.wrapDistances.bottom)
+        }
+        guard reserve > 0 else {
+            floatTops[start] = nil
+            return false
+        }
+        var top = line.minY
+        if top > geometry.textTop(page) + 1, top + reserve + line.height > geometry.textBottom(page) - (noteHeights[page] ?? 0) {
+            top = geometry.textTop(page + 1)
+        }
+        let added = top - line.minY + reserve
+        line.size.height += added
+        rect.pointee = line
+        used.pointee.origin.y += added
+        baseline.pointee += added
+        floatTops[start] = top
+        return true
+    }
     /// The narrowest space beside a picture that text wrapped tight or through goes into, in points.
     public static let narrowestWrap: CGFloat = 72
     private var floatExclusions: [CGRect] = []
@@ -329,14 +407,16 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let glyph = glyphIndexForCharacter(at: paragraph.location)
             guard glyph < numberOfGlyphs else { return }
             let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            // Above and below one its paragraph made room for, at the top of that room.
+            let isReserved = Self.isReservedInParagraph(picture)
+            let reservedTop = isReserved ? floatTops[paragraph.location] : nil
             // One fixed to a page is on that page, or the last there is, wherever its paragraph is.
-            let page = picture.page.map { min(max(0, $0), max(0, pages - 1)) } ?? geometry.page(containing: line.midY)
+            let page = picture.page.map { min(max(0, $0), max(0, pages - 1)) }
+                ?? geometry.page(containing: reservedTop.map { $0 + 0.5 } ?? line.midY)
             let shape = geometry.shape(page)
-            // One placed on the page may be as large as the page; one beside its paragraph, as the text.
-            let isOnPage = picture.isHorizontalFromPage && picture.verticalAnchor == .page
-            let room = isOnPage ? shape.size : CGSize(width: shape.contentWidth, height: shape.contentHeight * 0.9)
-            let scale = min(1, room.width / max(picture.width, 1), room.height / max(picture.height, 1))
-            let size = CGSize(width: picture.width * scale, height: picture.height * scale)
+            let size = floatSize(picture, page: page)
+            // A shape turned or with effects is drawn past its frame; text keeps clear of its turned corners.
+            let (drawn, kept) = Self.overhangs(picture, scale: size.width / max(picture.width, 1))
             // Across: from the margin, or the page's edge; the container starts at the text's leftmost edge.
             let origin = picture.isHorizontalFromPage ? 0 : shape.margins.left
             let span = picture.isHorizontalFromPage ? shape.size.width : shape.contentWidth
@@ -349,14 +429,16 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             }
             let y: CGFloat
             switch picture.verticalAnchor {
-            case .paragraph: y = line.minY + picture.verticalOffset
+            case .paragraph: y = reservedTop.map { $0 + kept.top } ?? line.minY + picture.verticalOffset
             case .margin: y = geometry.textTop(page) + picture.verticalOffset
             case .page: y = geometry.textTop(page) - shape.margins.top + picture.verticalOffset
             }
-            let frame = CGRect(x: pageX - geometry.textLeft, y: y, width: size.width, height: size.height)
+            let placed = CGRect(x: pageX - geometry.textLeft, y: y, width: size.width, height: size.height)
             floats.append(PlacedFloat(
-                frame: frame, page: page, image: image, behindText: picture.wrap == .behindText, location: range.location
+                frame: drawn.around(placed), page: page, image: image, behindText: picture.wrap == .behindText,
+                location: range.location
             ))
+            let frame = kept.around(placed)
             // Clear of the picture by the document's wrap distances.
             let distance = picture.wrapDistances
             let top = frame.minY - distance.top
@@ -397,7 +479,7 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                     }
                 }
                 exclusions += bands
-            case .topAndBottom:
+            case .topAndBottom where reservedTop == nil:
                 exclusions.append(CGRect(x: -1, y: top, width: geometry.contentWidth + 2, height: height))
             default: break
             }
@@ -674,10 +756,15 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         func isBreak(_ unit: unichar) -> Bool {
             unit == TextCharacters.pageBreakUnit || (unit == TextCharacters.columnBreakUnit && !inColumns)
         }
-        let spaced = spaceAsWord(
+        var spaced = spaceAsWord(
             lineFragmentRect, used: lineFragmentUsedRect, baseline: baselineOffset,
             characters: characters, glyphs: glyphRange, in: textContainer
         )
+        if reserveFloats(
+            lineFragmentRect, used: lineFragmentUsedRect, baseline: baselineOffset, characters: characters
+        ) {
+            spaced = true
+        }
         var endsPage = isBreak(string.character(at: last))
             || (last > 0 && string.character(at: last) == TextCharacters.paragraphBreakUnit
                 && isBreak(string.character(at: last - 1)))

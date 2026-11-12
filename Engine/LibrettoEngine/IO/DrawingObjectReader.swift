@@ -4,6 +4,7 @@ import Foundation
 /// SmartArt diagrams — into descriptions Libretto can draw.
 public enum DrawingObjectReader: Sendable {
     public static let shapeURI = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+    public static let groupURI = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
     public static let chartURI = "http://schemas.openxmlformats.org/drawingml/2006/chart"
     public static let diagramURI = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     public static let diagramDrawingType = "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing"
@@ -30,12 +31,70 @@ public enum DrawingObjectReader: Sendable {
         }
     }
 
-    /// The object an `wp:inline` or `wp:anchor` holds, if it is one Libretto can draw.
-    public static func object(in container: XMLElement, package: Package) -> DrawingObject? {
+    /// How a shape's text is read: a text box's `w:txbxContent` into paragraphs
+    /// in their formatting, and the text a linked box shows, with the boxes it runs through.
+    public struct TextReader {
+        public var paragraphs: (XMLElement) -> [ShapeParagraph]
+        public var linked: (XMLElement) -> (content: XMLElement, flow: LinkedText)?
+
+        public init(
+            paragraphs: @escaping (XMLElement) -> [ShapeParagraph],
+            linked: @escaping (XMLElement) -> (content: XMLElement, flow: LinkedText)? = { _ in nil }
+        ) {
+            self.paragraphs = paragraphs
+            self.linked = linked
+        }
+    }
+
+    /// A document's linked text boxes, by the `id` their `wps:txbx` and `wps:linkedTxbx` share:
+    /// the text that runs through them, and each box's text area, by its place (`seq`) in the run.
+    public static func textBoxChains(in root: XMLElement) -> [String: (content: XMLElement?, areas: [Int: ShapeFrame])] {
+        var chains: [String: (content: XMLElement?, areas: [Int: ShapeFrame])] = [:]
+        for wsp in descendants("wsp", in: root) {
+            if let box = wsp.firstChild(named: "txbx"), let id = box.attribute("id") {
+                chains[id, default: (nil, [:])].content = box.firstChild(named: "txbxContent")
+                chains[id, default: (nil, [:])].areas[0] = textArea(of: wsp)
+            } else if let link = wsp.firstChild(named: "linkedTxbx"), let id = link.attribute("id"),
+                      let place = link.attribute("seq").flatMap({ Int($0) }) {
+                chains[id, default: (nil, [:])].areas[place] = textArea(of: wsp)
+            }
+        }
+        return chains
+    }
+
+    /// How large a shape's text area is, in points: its frame, or its drawing's, less its insets.
+    static func textArea(of wsp: XMLElement) -> ShapeFrame {
+        var width = 0.0, height = 0.0
+        if let transform = wsp.firstChild(named: "spPr")?.firstChild(named: "xfrm") {
+            (_, _, width, height) = frame(transform)
+        }
+        var ancestor = wsp.parent
+        while width <= 0 || height <= 0, let container = ancestor {
+            if container.name == "anchor" || container.name == "inline", let extent = container.firstChild(named: "extent") {
+                width = Double(extent.attribute("cx") ?? "") ?? 0
+                height = Double(extent.attribute("cy") ?? "") ?? 0
+                break
+            }
+            ancestor = container.parent
+        }
+        var shape = ShapeSpec()
+        if let body = wsp.firstChild(named: "bodyPr") { readBody(body, into: &shape) }
+        let insets = shape.textInsets ?? .word
+        return ShapeFrame(
+            x: 0, y: 0, width: max(1, width / 12_700 - insets.left - insets.right),
+            height: max(1, height / 12_700 - insets.top - insets.bottom)
+        )
+    }
+
+    /// The object an `wp:inline` or `wp:anchor` holds, if it is one Libretto can draw;
+    /// its shapes' text in its formatting, if there is a `text` reader to read it.
+    public static func object(in container: XMLElement, package: Package, text: TextReader? = nil) -> DrawingObject? {
         guard let data = descendant("graphicData", in: container) else { return nil }
         switch data.attribute("uri") {
         case shapeURI?:
-            return data.firstChild(named: "wsp").map { .shape(shape($0)) }
+            return data.firstChild(named: "wsp").map { .shape(shape($0, text: text)) }
+        case groupURI?:
+            return data.firstChild(named: "wgp").flatMap { group($0, text: text) }.map { .group($0) }
         case chartURI?:
             guard let id = data.firstChild(named: "chart")?.attribute("id"), let chart = package.part(id) else { return nil }
             return self.chart(chart).map { .chart($0) }
@@ -53,21 +112,127 @@ public enum DrawingObjectReader: Sendable {
 
     // MARK: - Shapes
 
-    public static func shape(_ wsp: XMLElement) -> ShapeSpec {
+    public static func shape(_ wsp: XMLElement, text: TextReader? = nil) -> ShapeSpec {
         var shape = ShapeSpec()
         let properties = wsp.firstChild(named: "spPr")
         let style = wsp.firstChild(named: "style")
         read(properties: properties, style: style, into: &shape)
-        if let content = descendant("txbxContent", in: wsp) {
+        // A linked box shows its part of the text that runs through the boxes it is linked to.
+        let linked = text?.linked(wsp)
+        shape.linkedText = linked?.flow
+        if let content = linked?.content ?? descendant("txbxContent", in: wsp) {
             shape.isTextBox = true
             shape.text = content.children(named: "p").map { HeaderFooterReader.plainText(of: $0) }.joined(separator: "\n")
             if let rPr = descendant("rPr", in: content) {
                 shape.textColorHex = rPr.firstChild(named: "color")?.attribute("val").flatMap { $0 == "auto" ? nil : $0.uppercased() }
                 shape.fontSize = rPr.firstChild(named: "sz")?.attribute("val").flatMap(Double.init).map { $0 / 2 }
             }
+            // In its own formatting, where its paragraphs read as the text does.
+            if let paragraphs = text?.paragraphs(content), !paragraphs.isEmpty,
+               paragraphs.map(\.text).joined(separator: "\n") == shape.text {
+                shape.paragraphs = paragraphs
+            }
         }
+        if let body = wsp.firstChild(named: "bodyPr") { readBody(body, into: &shape) }
         shape.originalText = shape.text
         return shape
+    }
+
+    /// Where a shape's text sits, and how far in from its edges.
+    static func readBody(_ body: XMLElement, into shape: inout ShapeSpec) {
+        shape.textAnchor = body.attribute("anchor").flatMap(ShapeSpec.TextAnchor.init(rawValue:))
+        switch body.attribute("vert") {
+        case "vert"?, "eaVert"?: shape.textDirection = .down
+        case "vert270"?: shape.textDirection = .up
+        default: shape.textDirection = .horizontal
+        }
+        let names = ["lIns", "tIns", "rIns", "bIns"]
+        if names.contains(where: { body.attribute($0) != nil }) {
+            let word = ShapeInsets.word
+            let defaults = [word.left, word.top, word.right, word.bottom]
+            let values = zip(names, defaults).map { name, fallback in
+                body.attribute(name).flatMap(Double.init).map { max(0, $0) / 12_700 } ?? fallback
+            }
+            shape.textInsets = ShapeInsets(left: values[0], top: values[1], right: values[2], bottom: values[3])
+        }
+    }
+
+    // MARK: - Groups
+
+    /// A point in a group's own units and where it is in its parent's: `x' = scale × x + offset`.
+    struct GroupMapping {
+        var scaleX = 1.0, offsetX = 0.0, scaleY = 1.0, offsetY = 0.0
+
+        /// A frame in this group's units, in its parent's.
+        func frame(x: Double, y: Double, width: Double, height: Double) -> (x: Double, y: Double, width: Double, height: Double) {
+            (scaleX * x + offsetX, scaleY * y + offsetY, scaleX * width, scaleY * height)
+        }
+
+        /// A group within this one, whose `a:xfrm` sets its children's units (`chOff`, `chExt`)
+        /// into the frame it has in this one's (`off`, `ext`).
+        func child(_ transform: XMLElement?) -> GroupMapping {
+            guard let transform else { return self }
+            let (x, y, width, height) = DrawingObjectReader.frame(transform)
+            let childX = number(transform.firstChild(named: "chOff"), "x") ?? x
+            let childY = number(transform.firstChild(named: "chOff"), "y") ?? y
+            let childWidth = number(transform.firstChild(named: "chExt"), "cx") ?? width
+            let childHeight = number(transform.firstChild(named: "chExt"), "cy") ?? height
+            let inner = GroupMapping(
+                scaleX: childWidth > 0 ? width / childWidth : 1, offsetX: x - childX * (childWidth > 0 ? width / childWidth : 1),
+                scaleY: childHeight > 0 ? height / childHeight : 1, offsetY: y - childY * (childHeight > 0 ? height / childHeight : 1)
+            )
+            return GroupMapping(
+                scaleX: scaleX * inner.scaleX, offsetX: scaleX * inner.offsetX + offsetX,
+                scaleY: scaleY * inner.scaleY, offsetY: scaleY * inner.offsetY + offsetY
+            )
+        }
+
+        private func number(_ element: XMLElement?, _ name: String) -> Double? {
+            element?.attribute(name).flatMap(Double.init)
+        }
+    }
+
+    /// An `a:xfrm`'s offset and extent, in EMUs.
+    static func frame(_ transform: XMLElement) -> (x: Double, y: Double, width: Double, height: Double) {
+        func value(_ element: XMLElement?, _ name: String) -> Double { element?.attribute(name).flatMap(Double.init) ?? 0 }
+        let offset = transform.firstChild(named: "off")
+        let extent = transform.firstChild(named: "ext")
+        return (value(offset, "x"), value(offset, "y"), value(extent, "cx"), value(extent, "cy"))
+    }
+
+    /// A `wpg:wgp`'s shapes, those of the groups within it too, each framed in points
+    /// from the group's corner by its children's offset and extent (`chOff`, `chExt`).
+    public static func group(_ wgp: XMLElement, text: TextReader? = nil) -> ShapeGroup? {
+        guard let transform = wgp.firstChild(named: "grpSpPr")?.firstChild(named: "xfrm") else { return nil }
+        let (_, _, width, height) = frame(transform)
+        guard width > 0, height > 0 else { return nil }
+        // The group's own frame from its corner; its children's units into it.
+        var mapping = GroupMapping().child(transform)
+        let (x, y, _, _) = frame(transform)
+        mapping.offsetX -= x
+        mapping.offsetY -= y
+        var shapes: [ShapeSpec] = []
+        func collect(_ group: XMLElement, _ mapping: GroupMapping) {
+            for child in group.children {
+                switch child.name {
+                case "wsp":
+                    var shape = shape(child, text: text)
+                    guard let transform = child.firstChild(named: "spPr")?.firstChild(named: "xfrm") else { continue }
+                    let (x, y, width, height) = frame(transform)
+                    let placed = mapping.frame(x: x, y: y, width: width, height: height)
+                    shape.frame = ShapeFrame(
+                        x: placed.x / 12_700, y: placed.y / 12_700, width: placed.width / 12_700, height: placed.height / 12_700
+                    )
+                    shapes.append(shape)
+                case "grpSp":
+                    collect(child, mapping.child(child.firstChild(named: "grpSpPr")?.firstChild(named: "xfrm")))
+                default:
+                    continue
+                }
+            }
+        }
+        collect(wgp, mapping)
+        return shapes.isEmpty ? nil : ShapeGroup(width: width / 12_700, height: height / 12_700, shapes: shapes)
     }
 
     private static func diagramShape(_ sp: XMLElement) -> ShapeSpec {
@@ -98,19 +263,41 @@ public enum DrawingObjectReader: Sendable {
     /// Fill and line, from the shape's own properties, else its style's theme references.
     private static func read(properties: XMLElement?, style: XMLElement?, into shape: inout ShapeSpec) {
         shape.geometry = properties?.firstChild(named: "prstGeom")?.attribute("prst") ?? "rect"
+        if let transform = properties?.firstChild(named: "xfrm") {
+            shape.rotation = (Double(transform.attribute("rot") ?? "") ?? 0) / 60_000
+            shape.flipsHorizontally = ["1", "true"].contains(transform.attribute("flipH") ?? "")
+            shape.flipsVertically = ["1", "true"].contains(transform.attribute("flipV") ?? "")
+        }
         if properties?.firstChild(named: "noFill") != nil {
             shape.fillHex = nil
         } else if let fill = properties?.firstChild(named: "solidFill") {
             shape.fillHex = color(in: fill)
+            shape.fillAlpha = alpha(in: fill)
+        } else if let fill = properties?.firstChild(named: "gradFill"), let read = gradient(fill) {
+            shape.gradient = read
+            shape.fillHex = read.stops.first?.colorHex
+        } else if let fill = properties?.firstChild(named: "pattFill") {
+            // Word's own colours, black on white, where it gives none.
+            let foreground = color(in: fill.firstChild(named: "fgClr")) ?? "000000"
+            let background = color(in: fill.firstChild(named: "bgClr")) ?? "FFFFFF"
+            shape.pattern = ShapePattern(
+                preset: fill.attribute("prst") ?? "pct5", foregroundHex: foreground, backgroundHex: background
+            )
+            shape.fillHex = background
         } else if let reference = style?.firstChild(named: "fillRef") {
             shape.fillHex = color(in: reference)
         }
         if let line = properties?.firstChild(named: "ln") {
             if let width = line.attribute("w").flatMap(Double.init) { shape.lineWidth = width / 12_700 }
+            shape.lineDashes = dashes(of: line)
+            shape.hasRoundCaps = line.attribute("cap") == "rnd"
+            shape.lineStart = line.firstChild(named: "headEnd").flatMap(lineEnd)
+            shape.lineEnd = line.firstChild(named: "tailEnd").flatMap(lineEnd)
             if line.firstChild(named: "noFill") != nil {
                 shape.lineHex = nil
             } else if let fill = line.firstChild(named: "solidFill") {
                 shape.lineHex = color(in: fill)
+                shape.lineAlpha = alpha(in: fill)
             } else if let reference = style?.firstChild(named: "lnRef") {
                 shape.lineHex = color(in: reference)
             }
@@ -118,6 +305,99 @@ public enum DrawingObjectReader: Sendable {
             shape.lineHex = color(in: reference)
         }
         if let font = style?.firstChild(named: "fontRef") { shape.textColorHex = color(in: font) }
+        if let effects = properties?.firstChild(named: "effectLst") {
+            if let shadow = effects.firstChild(named: "outerShdw") {
+                func points(_ name: String) -> Double { (Double(shadow.attribute(name) ?? "") ?? 0) / 12_700 }
+                shape.shadow = ShapeShadow(
+                    blur: points("blurRad"), distance: points("dist"),
+                    direction: (Double(shadow.attribute("dir") ?? "") ?? 0) / 60_000,
+                    colorHex: color(in: shadow) ?? "000000", alpha: alpha(in: shadow),
+                    turnsWithShape: ["1", "true"].contains(shadow.attribute("rotWithShape") ?? "")
+                )
+            }
+            if let glow = effects.firstChild(named: "glow"), let hex = color(in: glow) {
+                let radius = (Double(glow.attribute("rad") ?? "") ?? 0) / 12_700
+                if radius > 0 { shape.glow = ShapeGlow(radius: radius, colorHex: hex, alpha: alpha(in: glow)) }
+            }
+        }
+    }
+
+    /// The effects Libretto draws as Word does, and an outer shadow's attributes that keep it so:
+    /// one not stretched or skewed.
+    static func isDrawn(effect: XMLElement) -> Bool {
+        switch effect.name {
+        case "outerShdw":
+            let unstretched = ["sx", "sy"].allSatisfy { (effect.attribute($0) ?? "100000") == "100000" }
+            let unskewed = ["kx", "ky"].allSatisfy { (effect.attribute($0) ?? "0") == "0" }
+            return unstretched && unskewed
+        case "glow":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// An `a:headEnd` or `a:tailEnd`, unless it is none.
+    static func lineEnd(_ element: XMLElement) -> ShapeLineEnd? {
+        guard let kind = element.attribute("type").flatMap(ShapeLineEnd.Kind.init(rawValue:)) else { return nil }
+        func size(_ name: String) -> Double { ["sm": 2, "lg": 5][element.attribute(name) ?? ""] ?? 3 }
+        return ShapeLineEnd(kind: kind, width: size("w"), length: size("len"))
+    }
+
+    /// Word's preset dashes, each dash and gap in widths of the line.
+    public static let presetDashes: [String: [Double]] = [
+        "dot": [1, 3], "dash": [4, 3], "dashDot": [4, 3, 1, 3], "lgDash": [8, 3], "lgDashDot": [8, 3, 1, 3],
+        "lgDashDotDot": [8, 3, 1, 3, 1, 3], "sysDot": [1, 1], "sysDash": [3, 1], "sysDashDot": [3, 1, 1, 1],
+        "sysDashDotDot": [3, 1, 1, 1, 1, 1],
+    ]
+
+    /// A line's dashes and gaps, in widths of the line: a preset's, or its own (`a:ds`, in thousandths
+    /// of a percent); `nil` for a solid line.
+    static func dashes(of line: XMLElement) -> [Double]? {
+        if let custom = line.firstChild(named: "custDash") {
+            let pattern = custom.children(named: "ds").flatMap { stop in
+                ["d", "sp"].map { (Double(stop.attribute($0) ?? "") ?? 0) / 100_000 }
+            }
+            return pattern.contains(where: { $0 > 0 }) ? pattern.map { max($0, 0.01) } : nil
+        }
+        return line.firstChild(named: "prstDash")?.attribute("val").flatMap { presetDashes[$0] }
+    }
+
+    /// An `a:gradFill`'s stops, in order, and which way it runs.
+    static func gradient(_ fill: XMLElement) -> ShapeGradient? {
+        let stops = fill.firstChild(named: "gsLst")?.children(named: "gs").compactMap { stop -> ShapeGradient.Stop? in
+            guard let hex = color(in: stop) else { return nil }
+            let position = (Double(stop.attribute("pos") ?? "") ?? 0) / 100_000
+            return ShapeGradient.Stop(position: min(1, max(0, position)), colorHex: hex, alpha: alpha(in: stop))
+        }.sorted { $0.position < $1.position } ?? []
+        guard !stops.isEmpty else { return nil }
+        let kind: ShapeGradient.Kind
+        if let path = fill.firstChild(named: "path") {
+            let rect = path.firstChild(named: "fillToRect")
+            func fraction(_ name: String) -> Double { (Double(rect?.attribute(name) ?? "") ?? 0) / 100_000 }
+            kind = .path(
+                focus: ShapeInsets(left: fraction("l"), top: fraction("t"), right: fraction("r"), bottom: fraction("b")),
+                isCircle: path.attribute("path") == "circle"
+            )
+        } else {
+            let line = fill.firstChild(named: "lin")
+            kind = .linear(
+                angle: (Double(line?.attribute("ang") ?? "") ?? 0) / 60_000,
+                scaled: ["1", "true"].contains(line?.attribute("scaled") ?? "")
+            )
+        }
+        let turns = !["0", "false"].contains(fill.attribute("rotWithShape") ?? "1")
+        return ShapeGradient(stops: stops, kind: kind, turnsWithShape: turns)
+    }
+
+    /// How solid the colour an element holds is: its `a:alpha`, from 0 to 1.
+    public static func alpha(in element: XMLElement?) -> Double {
+        guard let element else { return 1 }
+        for child in element.children where ["srgbClr", "schemeClr", "sysClr", "prstClr", "scrgbClr", "hslClr"].contains(child.name) {
+            guard let value = child.firstChild(named: "alpha")?.attribute("val").flatMap(Double.init) else { return 1 }
+            return min(1, max(0, value / 100_000))
+        }
+        return 1
     }
 
     /// The Office theme's colours, which shapes refer to by role.
@@ -252,6 +532,8 @@ public enum DrawingObjectReader: Sendable {
         switch data.attribute("uri") {
         case shapeURI?:
             return data.firstChild(named: "wsp").map(isSimplified(shape:)) ?? false
+        case groupURI?:
+            return data.firstChild(named: "wgp").map(isSimplified(group:)) ?? false
         case chartURI?:
             guard let id = data.firstChild(named: "chart")?.attribute("id"), let chart = package.part(id) else { return false }
             return isSimplified(chart: chart)
@@ -268,33 +550,58 @@ public enum DrawingObjectReader: Sendable {
     /// A shape's fills, effects, outline and text that Libretto draws more simply.
     static func isSimplified(shape: XMLElement) -> Bool {
         if let properties = shape.firstChild(named: "spPr") {
-            let effects: Set<String> = ["gradFill", "pattFill", "blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
+            let effects: Set<String> = ["blipFill", "grpFill", "custGeom", "scene3d", "sp3d"]
             if properties.children.contains(where: { effects.contains($0.name) }) { return true }
-            if let list = properties.firstChild(named: "effectLst"), !list.children.isEmpty { return true }
+            if let pattern = properties.firstChild(named: "pattFill"),
+               ShapePattern.isForeground(pattern.attribute("prst") ?? "pct5", x: 0, y: 0) == nil { return true }
+            // A gradient out to a rectangle or the shape's own path is drawn as one out to a circle.
+            if let path = properties.firstChild(named: "gradFill")?.firstChild(named: "path"),
+               path.attribute("path") != "circle" { return true }
+            if let list = properties.firstChild(named: "effectLst"), !list.children.allSatisfy(isDrawn(effect:)) { return true }
             if properties.firstChild(named: "effectDag") != nil { return true }
             if let geometry = properties.firstChild(named: "prstGeom")?.attribute("prst"),
                !ShapeSpec.drawnGeometries.contains(geometry) { return true }
-            if let transform = properties.firstChild(named: "xfrm"),
-               (Int(transform.attribute("rot") ?? "") ?? 0) != 0
-                || ["1", "true"].contains(transform.attribute("flipH") ?? "")
-                || ["1", "true"].contains(transform.attribute("flipV") ?? "") { return true }
             if let line = properties.firstChild(named: "ln") {
                 if line.firstChild(named: "gradFill") != nil || line.firstChild(named: "pattFill") != nil { return true }
-                if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid" { return true }
-                if line.firstChild(named: "custDash") != nil { return true }
+                if let dash = line.firstChild(named: "prstDash")?.attribute("val"), dash != "solid",
+                   presetDashes[dash] == nil { return true }
                 for end in ["headEnd", "tailEnd"] {
-                    if let type = line.firstChild(named: end)?.attribute("type"), type != "none" { return true }
+                    if let type = line.firstChild(named: end)?.attribute("type"), type != "none",
+                       ShapeLineEnd.Kind(rawValue: type) == nil { return true }
                 }
             }
         }
-        // Text set sideways or turned, and text flowing from one linked box into the next.
+        // Text set sideways or turned.
         if let body = shape.firstChild(named: "bodyPr") {
             if (Int(body.attribute("rot") ?? "") ?? 0) != 0 { return true }
-            if let vertical = body.attribute("vert"), vertical != "horz" { return true }
+            if let vertical = body.attribute("vert"), !["horz", "vert", "vert270", "eaVert"].contains(vertical) { return true }
         }
-        if shape.firstChild(named: "linkedTxbx") != nil { return true }
-        if shape.firstChild(named: "txbx")?.attribute("id") != nil { return true }
         return false
+    }
+
+    /// A group's shapes drawn more simply, and what it holds that is not drawn: pictures, charts,
+    /// ink. A group turned or flipped as a whole is drawn unturned.
+    static func isSimplified(group: XMLElement) -> Bool {
+        for child in group.children {
+            switch child.name {
+            case "wsp":
+                if isSimplified(shape: child) { return true }
+            case "grpSp":
+                if isSimplified(group: child) { return true }
+            case "grpSpPr", "cNvGrpSpPr", "cNvPr", "nvGrpSpPr":
+                if let transform = child.firstChild(named: "xfrm"), isTurned(transform) { return true }
+            default:
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Whether an `a:xfrm` turns or flips what it frames.
+    static func isTurned(_ transform: XMLElement) -> Bool {
+        (Int(transform.attribute("rot") ?? "") ?? 0) != 0
+            || ["1", "true"].contains(transform.attribute("flipH") ?? "")
+            || ["1", "true"].contains(transform.attribute("flipV") ?? "")
     }
 
     /// A chart's kinds, 3-D, labels, fills, lines and legend that Libretto draws more simply.

@@ -98,7 +98,9 @@ struct MobileLayout {
                     for (offset, inline) in paragraph.inlines.enumerated() {
                         if case .image(let image) = inline.content,
                            let picture = context.images.image(for: image, in: document.package, scheme: context.scheme) {
-                            items.append(MobileItem(id: "\(id)-image-\(offset)", content: .image(picture, width: image.width)))
+                            // An object's picture reaches past its frame as far as it is turned or has effects.
+                            let width = image.object == nil ? image.width : picture.size.width
+                            items.append(MobileItem(id: "\(id)-image-\(offset)", content: .image(picture, width: width)))
                             lastWasSpacer = false
                         }
                     }
