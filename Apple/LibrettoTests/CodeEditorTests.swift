@@ -166,6 +166,43 @@ struct CodeEditorTests {
         #expect(fragments == 1)
     }
 
+    @Test("The text is as wide as its widest line as it is typed, shortened, broken and joined")
+    func widthFollowsTyping() {
+        let long = "let long = \"" + String(repeating: "x", count: 100) + "\""
+        let (controller, _) = makeEditor("let a = 1\n" + long + "\nlet b = 2")
+        let textView = controller.view.textView
+        let text = { textView.text as NSString }
+        let width = textView.frame.width
+        let character = (" " as NSString).size(withAttributes: [.font: controller.view.font]).width
+
+        // Elsewhere: no wider.
+        textView.selectedRange = NSRange(location: 3, length: 0)
+        type("zz", in: controller)
+        #expect(textView.frame.width == width)
+        // On the widest line: wider, and narrower again as it is taken back.
+        let end = NSMaxRange(text().range(of: long))
+        textView.selectedRange = NSRange(location: end, length: 0)
+        type("yyy", in: controller)
+        #expect(abs(textView.frame.width - (width + 3 * character)) < 1)
+        textView.selectedRange = NSRange(location: end, length: 3)
+        textView.deleteBackward()
+        controller.textViewDidChange(textView)
+        #expect(abs(textView.frame.width - width) < 1)
+        // Broken in two, the widest line is the longer half; joined, it is whole again.
+        let middle = text().range(of: long).location + 60
+        textView.selectedRange = NSRange(location: middle, length: 0)
+        textView.insertText("\n")
+        controller.textViewDidChange(textView)
+        #expect(textView.frame.width < width - 30 * character)
+        textView.deleteBackward()
+        controller.textViewDidChange(textView)
+        #expect(abs(textView.frame.width - width) < 1)
+        // Another line made longer than it takes its place.
+        textView.selectedRange = NSRange(location: text().length, length: 0)
+        type(" // " + String(repeating: "w", count: 140), in: controller)
+        #expect(textView.frame.width > width + 20 * character)
+    }
+
     @Test("A document changed elsewhere, as by an undo, replaces the text")
     func update() {
         let (controller, _) = makeEditor("let a = 1")
