@@ -829,6 +829,29 @@ struct SyntaxHighlighterTests {
         }
     }
 
+    @Test("Colouring with nothing edited since leaves the text alone, until the scheme changes")
+    func coloringWithoutEdits() {
+        let sample = Array(repeating: Self.samples[.swift]!, count: 4).joined(separator: "\n")
+        let text = NSMutableAttributedString(string: sample, attributes: [.foregroundColor: UIColor.black])
+        var coloring = SyntaxColoring()
+        coloring.apply(.swift, to: text, scheme: .light, plainColor: .black)
+        let colored = colors(of: text)
+
+        // A keyboard committing what it composed says the text changed when its characters did not:
+        // the colouring is not scanned or set again. A colour it was not told of shows it was left alone.
+        let marked = NSRange(location: 0, length: 3)
+        text.addAttribute(.foregroundColor, value: UIColor.green, range: marked)
+        coloring.apply(.swift, to: text, scheme: .light, plainColor: .black)
+        #expect(text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor == .green)
+
+        text.addAttribute(.foregroundColor, value: SyntaxHighlighter.color(for: .attribute, scheme: .light), range: marked)
+        #expect(colors(of: text) == colored)
+        coloring.apply(.swift, to: text, scheme: .dark, plainColor: .white)
+        let whole = NSMutableAttributedString(attributedString: text)
+        SyntaxHighlighter.apply(.swift, to: whole, scheme: .dark, plainColor: .white)
+        #expect(colors(of: text) == colors(of: whole))
+    }
+
     /// The text's colours, run by run.
     private func colors(of text: NSAttributedString) -> [String] {
         var runs: [String] = []
