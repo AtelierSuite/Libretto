@@ -401,12 +401,17 @@ public enum MathRenderer: Sendable {
             let character = property(element, "naryPr", "chr") ?? "\u{222B}"
             let isIntegral = ("\u{222B}"..."\u{2233}").contains(character) || character == "\u{2A0C}"
             let underOver = (property(element, "naryPr", "limLoc") ?? (isIntegral ? "subSup" : "undOvr")) == "undOvr"
-            let symbol = Layout(size: size * 1.4, color: color).text(character)
-            func hidden(_ name: String) -> Bool { MathRenderer.isOn(
+            func flag(_ name: String) -> Bool { MathRenderer.isOn(
                 element.firstChild(named: "naryPr")?.firstChild(named: name).map { $0.attribute("val") ?? "1" }, default: false) }
-            let lower = hidden("subHide") ? .empty : element.firstChild(named: "sub").map { smaller.row($0) } ?? .empty
-            let upper = hidden("supHide") ? .empty : element.firstChild(named: "sup").map { smaller.row($0) } ?? .empty
+            let lower = flag("subHide") ? .empty : element.firstChild(named: "sub").map { smaller.row($0) } ?? .empty
+            let upper = flag("supHide") ? .empty : element.firstChild(named: "sup").map { smaller.row($0) } ?? .empty
             let body = row(element.firstChild(named: "e"))
+            var symbol = Layout(size: size * 1.4, color: color).text(character)
+            if flag("grow") {
+                // As tall as what it applies to, centred on the axis, as Word grows it.
+                let reach = max(body.ascent - axis, body.descent + axis) + size * 0.1
+                symbol = grown(character, from: symbol, height: reach * 2, slim: isIntegral)
+            }
             let operatorBox: Box
             if underOver {
                 operatorBox = limit(limit(symbol, lower, below: true, gap: size * 0.12), upper, below: false, gap: size * 0.12)
@@ -425,6 +430,28 @@ public enum MathRenderer: Sendable {
                 }
             }
             return .row([operatorBox, .space(size * 0.17), body])
+        }
+
+        /// An n-ary operator drawn a height tall, centred on the axis; an integral keeps close to its width.
+        private func grown(_ character: String, from natural: Box, height: CGFloat, slim: Bool) -> Box {
+            let font = Layout(size: size * 1.4, color: color).font(italic: false)
+            let path = MathRenderer.glyphPath(character, font: font)
+            let bounds = path.boundingBoxOfPath
+            guard !bounds.isNull, bounds.height > 0, height > bounds.height * 1.05 else { return natural }
+            let scaleY = height / bounds.height
+            let scaleX = slim ? 1 + (scaleY - 1) * 0.3 : scaleY
+            let side = size * 0.06
+            let axis = self.axis
+            let color = self.color
+            return Box(width: bounds.width * scaleX + side * 2, ascent: axis + height / 2, descent: height / 2 - axis) { origin in
+                var transform = CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY)
+                    .concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
+                    .concatenating(CGAffineTransform(translationX: side, y: axis - height / 2))
+                    .concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                    .concatenating(CGAffineTransform(translationX: origin.x, y: origin.y))
+                guard let placed = path.copy(using: &transform) else { return }
+                MathRenderer.fill(placed, color: color)
+            }
         }
 
         private func delimited(_ element: XMLElement) -> Box {
