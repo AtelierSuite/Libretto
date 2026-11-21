@@ -121,6 +121,28 @@ struct EquationTests {
         #expect(labels.contains { $0.contains("/") })
     }
 
+    @Test("An n-ary operator set to grow is as tall as what it applies to")
+    func naryGrows() throws {
+        let tall = "<m:f><m:num><m:f><m:num>\(r("a"))</m:num><m:den>\(r("b"))</m:den></m:f></m:num>"
+            + "<m:den><m:f><m:num>\(r("c"))</m:num><m:den>\(r("d"))</m:den></m:f></m:den></m:f>"
+        func sum(_ body: String, grow: Bool, chr: String = "∑") throws -> MathRenderer.Box {
+            let properties = "<m:chr m:val=\"\(chr)\"/><m:limLoc m:val=\"subSup\"/>" + (grow ? "<m:grow m:val=\"1\"/>" : "")
+                + "<m:subHide m:val=\"1\"/><m:supHide m:val=\"1\"/>"
+            return try box("<m:oMath><m:nary><m:naryPr>\(properties)</m:naryPr><m:sub/><m:sup/><m:e>\(body)</m:e></m:nary></m:oMath>")
+        }
+        let fraction = try box("<m:oMath>\(tall)</m:oMath>")
+        let fixed = try sum(tall, grow: false)
+        let grown = try sum(tall, grow: true)
+        #expect(grown.width > fixed.width + 1)
+        #expect(grown.ascent >= fraction.ascent - 0.5)
+        #expect(grown.descent >= fraction.descent - 0.5)
+        // A body no taller than the operator leaves it as it is.
+        #expect(try sum(r("x"), grow: true).width == (try sum(r("x"), grow: false)).width)
+        // An integral grows tall but stays slim.
+        let integral = try sum(tall, grow: true, chr: "∫")
+        #expect(integral.width < grown.width)
+    }
+
     @Test("A display equation is centred unless it says left or right")
     func displayAlignment() {
         #expect(MathRenderer.displayAlignment(of: ["<m:oMathPara \(Self.m)><m:oMath/></m:oMathPara>"]) == .center)
