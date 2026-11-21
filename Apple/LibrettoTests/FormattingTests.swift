@@ -93,6 +93,53 @@ struct FormattingTests {
         #expect(RenderContext(document: plain, scheme: .light, images: ImageStore()).defaultTabInterval == 36)
     }
 
+    @Test("Paragraphs of a style with contextual spacing drop the space between each other")
+    func contextualSpacing() throws {
+        var document = WordDocument()
+        document.body = [
+            .paragraph(Paragraph(text: "Intro")),
+            .paragraph(Paragraph(text: "One", styleID: "ListParagraph")),
+            .paragraph(Paragraph(text: "Two", styleID: "ListParagraph")),
+            .paragraph(Paragraph(text: "Three", styleID: "ListParagraph")),
+            .paragraph(Paragraph(text: "After")),
+        ]
+        let resolved = document.styles.resolvedParagraphProperties(ParagraphProperties(styleID: "ListParagraph"))
+        #expect(resolved.contextualSpacing == true)
+        let after = CGFloat(resolved.spacingAfter ?? 0) / 20
+        #expect(after > 0)
+
+        let context = RenderContext(document: document, scheme: .light, images: ImageStore())
+        let storage = NSMutableAttributedString(attributedString: DocumentRenderer.render(document.body, context: context).string)
+        func spacing(_ text: String) -> (before: CGFloat, after: CGFloat) {
+            let location = (storage.string as NSString).range(of: text).location
+            let style = storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
+            return (style?.paragraphSpacingBefore ?? -1, style?.paragraphSpacing ?? -1)
+        }
+        #expect(spacing("Intro").after == after)
+        #expect(spacing("One").after == 0)
+        #expect(spacing("Two").after == 0)
+        #expect(spacing("Three").after == after)
+
+        // Restyling the last item as body text gives the one before it its space back.
+        let three = (storage.string as NSString).range(of: "Three")
+        storage.addAttribute(.librettoParagraph, value: ParagraphBox(Paragraph(text: "Three")), range: NSRange(location: three.location, length: 6))
+        DocumentRenderer.restyle(storage, paragraphsIn: three, finalParagraph: Paragraph(text: "After"), context: context)
+        #expect(spacing("Two").after == after)
+    }
+
+    @Test("Contextual spacing is read and written back")
+    func contextualSpacingRoundTrip() throws {
+        var document = WordDocument()
+        document.body = [.paragraph(Paragraph(text: "Item"))]
+        guard case .paragraph(var paragraph) = document.body[0] else { return }
+        paragraph.properties.contextualSpacing = true
+        document.body[0] = .paragraph(paragraph)
+        let reread = try DOCXReader.document(from: DOCXWriter.data(from: document))
+        #expect(try xml(document).contains("<w:contextualSpacing/>"))
+        guard case .paragraph(let read) = reread.body.first else { Issue.record("No paragraph"); return }
+        #expect(read.properties.contextualSpacing == true)
+    }
+
     @Test("A style's tab stop the paragraph does without is cleared")
     func clearsStyleTabs() {
         let style = ParagraphProperties(tabStops: [TabStop(position: 720), TabStop(position: 1440)])
