@@ -55,8 +55,51 @@ struct MobileItem: Identifiable {
     }
 }
 
+/// Reader text: runs of formatted text, with inline equations standing in the line as their pictures.
+struct MobileText {
+    enum Piece {
+        case text(AttributedString)
+        case equation(UIImage, descent: CGFloat, label: String)
+    }
+
+    var pieces: [Piece] = []
+
+    mutating func append(_ text: AttributedString) {
+        if case .text(let last)? = pieces.last {
+            pieces[pieces.count - 1] = .text(last + text)
+        } else {
+            pieces.append(.text(text))
+        }
+    }
+
+    mutating func append(_ other: MobileText) {
+        for piece in other.pieces {
+            if case .text(let text) = piece { append(text) } else { pieces.append(piece) }
+        }
+    }
+
+    var isBlank: Bool {
+        pieces.allSatisfy { piece in
+            if case .text(let text) = piece { return text.characters.allSatisfy(\.isWhitespace) }
+            return false
+        }
+    }
+
+    var text: Text {
+        if pieces.count == 1, case .text(let only) = pieces[0] { return Text(only) }
+        return pieces.reduce(Text(verbatim: "")) { result, piece in
+            switch piece {
+            case .text(let text):
+                return Text("\(result)\(Text(text))")
+            case .equation(let image, let descent, let label):
+                return Text("\(result)\(Text(Image(uiImage: image)).baselineOffset(-descent).accessibilityLabel(label))")
+            }
+        }
+    }
+}
+
 struct MobileParagraph {
-    var text: AttributedString
+    var text: MobileText
     var label: AttributedString?
     var alignment: TextAlignment
     var indent: CGFloat
@@ -67,7 +110,7 @@ struct MobileParagraph {
 }
 
 struct MobileTable {
-    var rows: [[AttributedString]]
+    var rows: [[MobileText]]
     /// Each cell's shading, its own or its table style's.
     var fills: [[Color?]]
     var columnCount: Int
@@ -104,8 +147,15 @@ struct MobileLayout {
                             lastWasSpacer = false
                         }
                     }
+                    // A display equation stands on its own, centred, as a picture does.
+                    for (offset, inline) in paragraph.inlines.enumerated() {
+                        if let equation = builder.displayEquation(inline, paragraph: paragraph) {
+                            items.append(MobileItem(id: "\(id)-equation-\(offset)", content: .image(equation, width: equation.size.width)))
+                            lastWasSpacer = false
+                        }
+                    }
                     let built = builder.paragraph(paragraph, label: label)
-                    if built.text.characters.allSatisfy(\.isWhitespace), built.label == nil {
+                    if built.text.isBlank, built.label == nil {
                         // Empty paragraphs are how documents make space; one is enough.
                         if !lastWasSpacer { items.append(MobileItem(id: id, content: .spacer)) }
                         lastWasSpacer = true
@@ -115,10 +165,10 @@ struct MobileLayout {
                     }
                 case .table(let table):
                     let appearances = TableStyling.appearances(of: table, styles: document.styles)
-                    var rows: [[AttributedString]] = []
+                    var rows: [[MobileText]] = []
                     var fills: [[Color?]] = []
                     for (rowIndex, row) in table.rows.enumerated() {
-                        var texts: [AttributedString] = []
+                        var texts: [MobileText] = []
                         var colors: [Color?] = []
                         for (cellIndex, cell) in row.cells.enumerated() {
                             let appearance = appearances[rowIndex][cellIndex]
@@ -126,7 +176,7 @@ struct MobileLayout {
                                 context: TableStyling.context(context, for: appearance),
                                 readerSize: builder.readerSize, documentSize: builder.documentSize
                             )
-                            texts.append(cell.verticalMerge == .continue ? AttributedString() : styled.cell(cell))
+                            texts.append(cell.verticalMerge == .continue ? MobileText() : styled.cell(cell))
                             colors.append(appearance.fillHex.flatMap {
                                 AdaptiveColor.resolve(hex: $0, for: scheme, isText: false)
                             })
@@ -200,22 +250,42 @@ struct MobileTextBuilder {
         )
     }
 
-    func cell(_ cell: TableCell) -> AttributedString {
-        var result = AttributedString()
+    func cell(_ cell: TableCell) -> MobileText {
+        var result = MobileText()
         // A kept block's paragraphs are shown as the cell's own are.
         func shown(_ block: Block) -> [Paragraph] {
             if case .preserved(let kept) = block { return PreservedRenderer.shownContent(kept).flatMap(shown) }
             return block.paragraphs
         }
         for (index, paragraph) in cell.blocks.flatMap(shown).enumerated() {
-            if index > 0 { result += AttributedString("\n") }
-            result += attributed(paragraph)
+            if index > 0 { result.append(AttributedString("\n")) }
+            result.append(attributed(paragraph, displayEquationsInline: true))
         }
         return result
     }
 
-    private func attributed(_ paragraph: Paragraph) -> AttributedString {
-        var result = AttributedString()
+    /// A display equation's picture, for the reader to show on its own line.
+    func displayEquation(_ inline: Inline, paragraph: Paragraph) -> UIImage? {
+        guard case .paragraphChild(let xml, _) = inline.content, MathRenderer.displayAlignment(of: [xml]) != nil else { return nil }
+        return equation(xml, format: inline.format, paragraph: paragraph)?.image
+    }
+
+    private func equation(_ xml: String, format: RunFormat, paragraph: Paragraph) -> (image: UIImage, descent: CGFloat)? {
+        let resolved = context.styles.resolvedRunStyle(
+            format.style, paragraphStyleID: paragraph.properties.styleID ?? context.styles.defaultParagraphStyleID
+        )
+        let attributes = Typography.runAttributes(
+            format.style, paragraph: paragraph.properties, hyperlink: nil, revision: nil, context: context,
+            fontScale: scale(forPointSize: CGFloat(resolved.fontSize ?? 22) / 2)
+        )
+        let font = attributes[.font] as? UIFont ?? .preferredFont(forTextStyle: .body)
+        let color = attributes[.foregroundColor] as? UIColor ?? .label
+        return context.images.equation(xml, fontSize: font.pointSize, color: color)
+    }
+
+    /// A paragraph's text; its display equations are left to stand on their own unless `displayEquationsInline`.
+    private func attributed(_ paragraph: Paragraph, displayEquationsInline: Bool = false) -> MobileText {
+        var result = MobileText()
         for inline in paragraph.inlines {
             if context.styles.resolvedRunStyle(inline.format.style, paragraphStyleID: paragraph.properties.styleID).isHidden == true {
                 continue
@@ -226,6 +296,12 @@ struct MobileTextBuilder {
             case .tab: string = "  "
             case .lineBreak: string = "\n"
             case .pageBreak, .columnBreak, .image: continue
+            case .paragraphChild(let xml, _) where MathRenderer.isEquation(xml):
+                if !displayEquationsInline, MathRenderer.displayAlignment(of: [xml]) != nil { continue }
+                if let drawn = equation(xml, format: inline.format, paragraph: paragraph) {
+                    result.pieces.append(.equation(drawn.image, descent: drawn.descent, label: LinearMath.linear(fromXML: xml)))
+                }
+                continue
             case .runChild(_, let display), .paragraphChild(_, let display):
                 guard let display, !display.isEmpty else { continue }
                 if inline.displayRuns != nil {
@@ -233,7 +309,7 @@ struct MobileTextBuilder {
                     for run in inline.displayPieces(display) {
                         var piece = runText(run.text, format: run.format, paragraph: paragraph, revision: inline.revision)
                         if let url = inline.hyperlink?.url { piece.link = url }
-                        result += piece
+                        result.append(piece)
                     }
                     continue
                 }
@@ -244,7 +320,7 @@ struct MobileTextBuilder {
             }
             var piece = runText(string, format: inline.format, paragraph: paragraph, revision: inline.revision)
             if let url = inline.hyperlink?.url { piece.link = url }
-            result += piece
+            result.append(piece)
         }
         return result
     }
@@ -312,7 +388,7 @@ private struct MobileParagraphView: View {
                 Text(label)
                     .frame(minWidth: 16, alignment: .trailing)
             }
-            Text(paragraph.text)
+            paragraph.text.text
                 .lineSpacing(paragraph.lineSpacing)
                 .multilineTextAlignment(paragraph.alignment)
                 .frame(maxWidth: .infinity, alignment: frameAlignment)
@@ -356,9 +432,9 @@ private struct MobileTableView: View {
             ForEach(table.rows.indices, id: \.self) { row in
                 GridRow {
                     ForEach(0..<table.columnCount, id: \.self) { column in
-                        let text = column < table.rows[row].count ? table.rows[row][column] : AttributedString()
+                        let text = column < table.rows[row].count ? table.rows[row][column] : MobileText()
                         let fill = column < table.fills[row].count ? table.fills[row][column] : nil
-                        Text(text)
+                        text.text
                             .font(.subheadline)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
