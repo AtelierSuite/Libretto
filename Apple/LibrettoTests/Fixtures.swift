@@ -89,7 +89,7 @@ enum Fixtures {
         """
 
     static func parts(
-        body: String = body, includeNumbering: Bool = true, macroEnabled: Bool = false
+        body: String = body, includeNumbering: Bool = true, macroEnabled: Bool = false, settings: String? = nil
     ) -> [String: Data] {
         let mainType = macroEnabled
             ? "application/vnd.ms-word.document.macroEnabled.main+xml"
@@ -125,6 +125,17 @@ enum Fixtures {
             parts["word/numbering.xml"] = Data(numbering.utf8)
             overrides += "<Override PartName=\"/word/numbering.xml\" ContentType=\"\(OOXML.numberingContentType)\"/>"
             relationships += "<Relationship Id=\"rIdNumbering\" Type=\"\(OOXML.numberingType)\" Target=\"numbering.xml\"/>"
+        }
+        if let settings {
+            parts["word/settings.xml"] = Data("""
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <w:settings xmlns:w="\(w)">\(settings)</w:settings>
+                """.utf8)
+            overrides += """
+                <Override PartName="/word/settings.xml" \
+                ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
+                """
+            relationships += "<Relationship Id=\"rIdSettings\" Type=\"\(OOXML.settingsType)\" Target=\"settings.xml\"/>"
         }
         if macroEnabled {
             parts["word/vbaProject.bin"] = Data([0xD0, 0xCF, 0x11, 0xE0])

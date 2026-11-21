@@ -80,6 +80,19 @@ struct FormattingTests {
         #expect(paragraphStyle?.tabStops.first?.location == 216)
     }
 
+    @Test("Tabs past a paragraph's own stops fall at the document's default interval")
+    func defaultTabStop() throws {
+        let body = "<w:p><w:r><w:t xml:space=\"preserve\">a\tb\tc</w:t></w:r></w:p>"
+        let document = try DOCXReader.document(fromParts: Fixtures.parts(body: body, settings: "<w:defaultTabStop w:val=\"567\"/>"))
+        #expect(document.defaultTabStop == 567)
+        let context = RenderContext(document: document, scheme: .light, images: ImageStore())
+        let style = Typography.paragraphStyle(ParagraphProperties(), context: context, isListItem: false)
+        #expect(abs(style.defaultTabInterval - 28.35) < 0.001)
+
+        let plain = try DOCXReader.document(fromParts: Fixtures.parts(body: body))
+        #expect(RenderContext(document: plain, scheme: .light, images: ImageStore()).defaultTabInterval == 36)
+    }
+
     @Test("A style's tab stop the paragraph does without is cleared")
     func clearsStyleTabs() {
         let style = ParagraphProperties(tabStops: [TabStop(position: 720), TabStop(position: 1440)])

@@ -39,6 +39,8 @@ public struct WordDocument: Equatable, Sendable {
     /// How footnotes and endnotes are numbered, from the settings' `w:footnotePr` and `w:endnotePr`.
     public var footnoteFormat = "decimal"
     public var endnoteFormat = "lowerRoman"
+    /// Twips between the tab stops past a paragraph's own, from the settings' `w:defaultTabStop`.
+    public var defaultTabStop = 720
     /// Body-level elements after the last block, before the section properties.
     public var trailingXML: [String] = []
     /// The original package, part by part, for writing back what is not modelled.
