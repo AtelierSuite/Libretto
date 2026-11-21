@@ -79,9 +79,7 @@ public struct ListCounter: Sendable {
         case "lowerRoman": return roman(value).lowercased()
         case "upperRoman": return roman(value)
         case "decimalZero": return value < 10 ? "0\(value)" : String(value)
-        case "decimalEnclosedCircle" where (1...20).contains(value):
-            return String(Character(UnicodeScalar(0x2460 + value - 1)!))
-        default: return String(value)
+        default: return NumberFormats.format(value, as: format) ?? String(value)
         }
     }
 
