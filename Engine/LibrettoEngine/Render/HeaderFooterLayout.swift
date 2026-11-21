@@ -15,6 +15,8 @@ public struct WordDocumentHeaderFooter: Equatable, Sendable {
         public var footerDistance: CGFloat = 35
         /// How the page number shows, such as `lowerRoman`; `nil` for 1, 2, 3.
         public var pageNumberFormat: String?
+        /// The number the section's first page takes; `nil` to carry on from the section before.
+        public var pageNumberStart: Int?
 
         public init(
             headers: [HeaderFooterKind: HeaderFooterText] = [:],
@@ -22,7 +24,8 @@ public struct WordDocumentHeaderFooter: Equatable, Sendable {
             titlePage: Bool = false,
             headerDistance: CGFloat = 35,
             footerDistance: CGFloat = 35,
-            pageNumberFormat: String? = nil
+            pageNumberFormat: String? = nil,
+            pageNumberStart: Int? = nil
         ) {
             self.headers = headers
             self.footers = footers
@@ -30,6 +33,7 @@ public struct WordDocumentHeaderFooter: Equatable, Sendable {
             self.headerDistance = headerDistance
             self.footerDistance = footerDistance
             self.pageNumberFormat = pageNumberFormat
+            self.pageNumberStart = pageNumberStart
         }
     }
 
@@ -51,7 +55,7 @@ public struct WordDocumentHeaderFooter: Equatable, Sendable {
             return Section(
                 headers: headers, footers: footers, titlePage: setup.headerFooters.titlePage,
                 headerDistance: CGFloat(setup.headerDistance) / 20, footerDistance: CGFloat(setup.footerDistance) / 20,
-                pageNumberFormat: setup.pageNumberFormat
+                pageNumberFormat: setup.pageNumberFormat, pageNumberStart: setup.pageNumberStart
             )
         }
         if sections.isEmpty { sections = [Section()] }
@@ -62,6 +66,34 @@ public struct WordDocumentHeaderFooter: Equatable, Sendable {
     public func section(forPage index: Int) -> Section {
         let section = index < pageSections.count ? pageSections[index] : sections.count - 1
         return sections[min(max(0, section), sections.count - 1)]
+    }
+
+    private func sectionIndex(forPage index: Int) -> Int {
+        min(max(0, index < pageSections.count ? pageSections[index] : sections.count - 1), sections.count - 1)
+    }
+
+    /// The number page `index` shows: one more than the page before's, or
+    /// the section's start on the first page of a section that starts over.
+    public func pageNumber(forPage index: Int) -> Int {
+        pageNumbers(count: index + 1).last ?? 1
+    }
+
+    /// The numbers the first `count` pages show, worked out in one pass.
+    public func pageNumbers(count: Int) -> [Int] {
+        var numbers: [Int] = []
+        numbers.reserveCapacity(max(1, count))
+        var number = 0
+        for page in 0..<max(1, count) {
+            let section = sectionIndex(forPage: page)
+            let startsSection = page == 0 || sectionIndex(forPage: page - 1) != section
+            if startsSection, let start = sections[section].pageNumberStart {
+                number = start
+            } else {
+                number += 1
+            }
+            numbers.append(number)
+        }
+        return numbers
     }
 
     private func kind(forPage index: Int) -> HeaderFooterKind {

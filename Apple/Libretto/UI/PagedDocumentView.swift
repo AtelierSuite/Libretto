@@ -298,7 +298,7 @@ final class PageBackgroundView: UIView {
             }
             label.isHidden = false
             label.attributedText = HeaderFooterDrawing.attributed(
-                text, page: page, of: count, format: section.pageNumberFormat, color: .secondaryLabel
+                text, number: texts.pageNumber(forPage: page), of: count, format: section.pageNumberFormat, color: .secondaryLabel
             )
             let width = shape.contentWidth
             let size = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))

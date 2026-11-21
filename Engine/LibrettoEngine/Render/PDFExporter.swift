@@ -109,7 +109,8 @@ public enum HeaderFooterDrawing: Sendable {
         return (header, footer)
     }
 
-    public static func attributed(_ text: HeaderFooterText, page: Int, of count: Int, format: String? = nil, color: PlatformColor)
+    /// `number` is the page number to show, not the page's place in the document.
+    public static func attributed(_ text: HeaderFooterText, number: Int, of count: Int, format: String? = nil, color: PlatformColor)
         -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         switch text.alignment {
@@ -118,7 +119,7 @@ public enum HeaderFooterDrawing: Sendable {
         default: style.alignment = .natural
         }
         // Tabs in headers usually push text to the centre and right tab stops Word's styles define.
-        let resolved = text.resolved(page: page + 1, of: count, format: format).replacingOccurrences(of: "\t", with: "    ")
+        let resolved = text.resolved(page: number, of: count, format: format).replacingOccurrences(of: "\t", with: "    ")
         return NSAttributedString(
             string: resolved, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style]
         )
@@ -127,12 +128,13 @@ public enum HeaderFooterDrawing: Sendable {
     public static func draw(_ texts: WordDocumentHeaderFooter, page: Int, of count: Int, shape: PageGeometry.Shape, color: PlatformColor) {
         let section = texts.section(forPage: page)
         let frames = frames(section, shape: shape)
+        let number = texts.pageNumber(forPage: page)
         if let header = texts.header(forPage: page) {
-            attributed(header, page: page, of: count, format: section.pageNumberFormat, color: color)
+            attributed(header, number: number, of: count, format: section.pageNumberFormat, color: color)
                 .draw(with: frames.header, options: [.usesLineFragmentOrigin], context: nil)
         }
         if let footer = texts.footer(forPage: page) {
-            let text = attributed(footer, page: page, of: count, format: section.pageNumberFormat, color: color)
+            let text = attributed(footer, number: number, of: count, format: section.pageNumberFormat, color: color)
             let height = text.boundingRect(
                 with: CGSize(width: frames.footer.width, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin], context: nil

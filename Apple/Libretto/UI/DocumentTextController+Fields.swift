@@ -5,12 +5,16 @@ extension DocumentTextController {
     /// Where things are on the pages as laid out, for fields to give.
     func fieldEnvironment() -> FieldEnvironment {
         var pages: [Paragraph.ID: Int] = [:]
+        let numbers = WordDocumentHeaderFooter(
+            document: document, sections: layoutManager.sections.map(\.setup), pageSections: layoutManager.pageSections
+        ).pageNumbers(count: max(1, pageCount))
         func page(at location: Int) -> Int? {
             guard location < storage.length else { return nil }
             let glyph = layoutManager.glyphIndexForCharacter(at: location)
             guard glyph < layoutManager.numberOfGlyphs else { return nil }
             let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            return geometry.page(containing: line.midY) + 1
+            let index = geometry.page(containing: line.midY)
+            return index < numbers.count ? numbers[index] : (numbers.last ?? 0) + index - numbers.count + 1
         }
         storage.enumerateAttribute(.librettoParagraph, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
             guard let box = value as? ParagraphBox, pages[box.paragraph.id] == nil else { return }

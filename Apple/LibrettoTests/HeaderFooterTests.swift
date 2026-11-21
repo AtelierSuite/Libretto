@@ -42,6 +42,48 @@ struct HeaderFooterTests {
         #expect(!Fixtures.text(try Fixtures.written(reread), "word/document.xml").contains("pgNumType"))
     }
 
+    @Test("A section that starts its page numbers over is numbered from its start")
+    func pageNumberRestart() throws {
+        let body = Fixtures.body.replacingOccurrences(
+            of: "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/></w:sectPr>",
+            with: "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgNumType w:fmt=\"lowerRoman\"/></w:sectPr>"
+        )
+        var parts = Fixtures.parts(body: body)
+        let main = Fixtures.text(parts, "word/document.xml")
+            .replacingOccurrences(of: "<w:cols w:space=\"720\"/>", with: "<w:pgNumType w:start=\"1\"/><w:cols w:space=\"720\"/>")
+        parts["word/document.xml"] = Data(main.utf8)
+        let document = try DOCXReader.document(fromParts: parts)
+        #expect(document.pageSetup.pageNumberStart == 1)
+        let front = try #require(document.body.compactMap { block -> PageSetup? in
+            if case .paragraph(let paragraph) = block { return paragraph.section } else { return nil }
+        }.first)
+        #expect(front.pageNumberStart == nil)
+
+        // Three pages of front matter, then the body starting over at 1.
+        let texts = WordDocumentHeaderFooter(document: document, sections: [front, document.pageSetup], pageSections: [0, 0, 0, 1, 1])
+        #expect((0..<5).map(texts.pageNumber(forPage:)) == [1, 2, 3, 1, 2])
+        #expect(texts.pageNumbers(count: 5) == [1, 2, 3, 1, 2])
+        #expect(texts.header(forPage: 3).map {
+            HeaderFooterDrawing.attributed($0, number: texts.pageNumber(forPage: 3), of: 5, color: .black).string
+        } == "Page 1")
+        #expect(texts.section(forPage: 2).pageNumberFormat == "lowerRoman")
+        #expect(document.header.map {
+            HeaderFooterDrawing.attributed($0, number: texts.pageNumber(forPage: 2), of: 5, format: "lowerRoman", color: .black).string
+        } == "Page iii")
+
+        let rewritten = Fixtures.text(try Fixtures.written(document), "word/document.xml")
+        #expect(rewritten.contains("w:start=\"1\""))
+    }
+
+    @Test("A first section with a start of its own numbers its first page from it")
+    func firstSectionStart() {
+        var setup = PageSetup()
+        setup.pageNumberStart = 5
+        let texts = WordDocumentHeaderFooter(document: WordDocument(), sections: [setup], pageSections: [0, 0])
+        #expect(texts.pageNumber(forPage: 0) == 5)
+        #expect(texts.pageNumber(forPage: 1) == 6)
+    }
+
     @Test("A first-page footer gets a part, a relationship and a reference of its own")
     func addsFirstPageFooter() throws {
         var document = try Fixtures.document()
