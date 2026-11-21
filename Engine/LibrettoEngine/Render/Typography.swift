@@ -174,6 +174,7 @@ public enum Typography: Sendable {
             attributes[.baselineOffset] = (attributes[.baselineOffset] as? CGFloat ?? 0) + CGFloat(position) / 2 * fontScale
         }
         if style.allCaps == true { attributes[.librettoAllCaps] = true }
+        if style.isHidden == true { attributes[.librettoHidden] = true }
         if let spacing = style.characterSpacing, spacing != 0 {
             attributes[.kern] = CGFloat(spacing) / 20 * fontScale
         }

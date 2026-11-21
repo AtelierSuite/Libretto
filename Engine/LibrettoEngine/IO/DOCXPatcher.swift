@@ -235,6 +235,7 @@ public enum DOCXPatcher: Sendable {
             if new.isItalic != old.isItalic { set(["i", "iCs"], toggle(new.isItalic)) }
             if new.isStruckThrough != old.isStruckThrough { set(["strike"], toggle(new.isStruckThrough)) }
             if new.allCaps != old.allCaps { set(["caps"], toggle(new.allCaps)) }
+            if new.isHidden != old.isHidden { set(["vanish"], toggle(new.isHidden)) }
             if new.underline != old.underline || new.underlineStyle != old.underlineStyle {
                 set(["u"], new.underline.map { ["val": $0 ? new.underlineStyle ?? "single" : "none"] })
             }

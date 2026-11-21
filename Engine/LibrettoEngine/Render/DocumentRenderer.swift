@@ -406,7 +406,7 @@ public enum DocumentRenderer: Sendable {
 
     private static let displayKeys: [NSAttributedString.Key] = [
         .font, .foregroundColor, .backgroundColor, .underlineStyle, .strikethroughStyle, .baselineOffset,
-        .underlineColor, .strikethroughColor, .kern, .strokeWidth, .strokeColor, .shadow, .librettoAllCaps,
+        .underlineColor, .strikethroughColor, .kern, .strokeWidth, .strokeColor, .shadow, .librettoAllCaps, .librettoHidden,
     ]
 
     private static func restyleParagraph(

@@ -137,6 +137,17 @@ public enum TableRenderer: Sendable {
             let attributes = output.attributes(at: range.location, effectiveRange: nil)
             output.replaceCharacters(in: range, with: NSAttributedString(string: text, attributes: attributes))
         }
+        // Hidden text is left out of the drawing, as the page leaves it out; paragraph marks stay.
+        var hidden: [NSRange] = []
+        output.enumerateAttribute(.librettoHidden, in: NSRange(location: 0, length: output.length)) { value, range, _ in
+            if value != nil { hidden.append(range) }
+        }
+        for range in hidden.reversed() {
+            let kept = (output.string as NSString).substring(with: range).filter { $0 == "\n" }
+            output.replaceCharacters(in: range, with: NSAttributedString(
+                string: kept, attributes: output.attributes(at: range.location, effectiveRange: nil)
+            ))
+        }
         // Drawn text has no use for attachments it cannot show.
         output.removeAttribute(.attachment, range: NSRange(location: 0, length: output.length))
         return output
