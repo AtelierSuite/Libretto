@@ -99,6 +99,9 @@ public enum DOCXReader: Sendable {
             document.notes += NoteReader.notes(from: root, kind: kind)
         }
         document.originalNotes = document.notes
+        if let interval = settings?.firstChild(named: "defaultTabStop")?.attribute("val").flatMap(Int.init), interval > 0 {
+            document.defaultTabStop = interval
+        }
         if let format = settings?.firstDescendant(atPath: "footnotePr/numFmt")?.attribute("val") {
             document.footnoteFormat = format
         }

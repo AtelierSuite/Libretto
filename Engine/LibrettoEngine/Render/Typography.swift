@@ -21,6 +21,8 @@ public struct RenderContext: Sendable {
     public var backgroundHex: String?
     /// Each note reference's number, by `kind:id`.
     public var noteNumbers: [String: String] = [:]
+    /// Points between the tab stops past a paragraph's own.
+    public var defaultTabInterval: CGFloat = 36
 
     public init(document: WordDocument, scheme: ColorScheme, images: ImageStore) {
         styles = document.styles
@@ -31,6 +33,7 @@ public struct RenderContext: Sendable {
         contentHeight = document.pageSetup.contentHeight
         self.images = images
         noteNumbers = NoteNumbering.numbers(in: document)
+        defaultTabInterval = CGFloat(document.defaultTabStop) / 20
     }
 
     public var defaultTextColor: PlatformColor { scheme == .dark ? .white : .black }
@@ -387,7 +390,7 @@ public enum Typography: Sendable {
                 style.minimumLineHeight = CGFloat(spacing.line) / 20
             }
         }
-        style.defaultTabInterval = 36
+        style.defaultTabInterval = context.defaultTabInterval
         style.tabStops = (resolved.tabStops ?? []).compactMap { stop in
             let location = CGFloat(stop.position) / 20
             switch stop.alignment {
