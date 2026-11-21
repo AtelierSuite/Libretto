@@ -110,6 +110,7 @@ public enum DOCXPatcher: Sendable {
             if new.keepNext != old.keepNext { set("keepNext", flag(new.keepNext)) }
             if new.keepLines != old.keepLines { set("keepLines", flag(new.keepLines)) }
             if new.widowControl != old.widowControl { set("widowControl", flag(new.widowControl)) }
+            if new.contextualSpacing != old.contextualSpacing { set("contextualSpacing", flag(new.contextualSpacing)) }
             if new.shadingHex != old.shadingHex {
                 set("shd", new.shadingHex.map { ["val": "clear", "color": "auto", "fill": $0] })
             }

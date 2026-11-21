@@ -58,6 +58,7 @@ public enum DocumentRenderer: Sendable {
                 if isLast { finalParagraph = Paragraph() }
             }
         }
+        respace(output, around: NSRange(location: 0, length: output.length), finalParagraph: finalParagraph, styles: baseContext.styles)
         return RenderedText(string: output, finalParagraph: finalParagraph, trailingMarkers: trailing)
     }
 
@@ -330,7 +331,62 @@ public enum DocumentRenderer: Sendable {
             restyleParagraph(storage, range: paragraphRange, finalParagraph: finalParagraph, context: context)
             location = NSMaxRange(paragraphRange)
         } while location < NSMaxRange(covered)
+        respace(storage, around: covered, finalParagraph: finalParagraph, styles: context.styles)
         storage.endEditing()
+    }
+
+    // MARK: - Contextual spacing
+
+    /// Leaves out the space before and after paragraphs set to drop it next
+    /// to a paragraph of the same style (`w:contextualSpacing`), for the
+    /// paragraphs touching `range` and those either side of them.
+    public static func respace(
+        _ storage: NSMutableAttributedString, around range: NSRange, finalParagraph: Paragraph, styles: StyleSheet
+    ) {
+        let string = storage.string as NSString
+        guard string.length > 0 else { return }
+        let start = min(range.location, string.length)
+        var covered = string.paragraphRange(for: NSRange(location: start, length: min(range.length, string.length - start)))
+        if covered.location > 0 {
+            covered = NSUnionRange(covered, string.paragraphRange(for: NSRange(location: covered.location - 1, length: 0)))
+        }
+        if NSMaxRange(covered) < string.length {
+            covered = NSUnionRange(covered, string.paragraphRange(for: NSRange(location: NSMaxRange(covered), length: 0)))
+        }
+
+        func paragraph(in paragraphRange: NSRange) -> ParagraphProperties? {
+            if paragraphRange.length > 0,
+               storage.attribute(.librettoBlock, at: NSMaxRange(paragraphRange) - 1, effectiveRange: nil) != nil { return nil }
+            let properties = (paragraphBox(in: storage, paragraphRange: paragraphRange)?.paragraph ?? finalParagraph).properties
+            return styles.resolvedParagraphProperties(properties)
+        }
+        func paragraphRange(before range: NSRange) -> NSRange? {
+            range.location > 0 ? string.paragraphRange(for: NSRange(location: range.location - 1, length: 0)) : nil
+        }
+        func paragraphRange(after range: NSRange) -> NSRange? {
+            NSMaxRange(range) < string.length ? string.paragraphRange(for: NSRange(location: NSMaxRange(range), length: 0)) : nil
+        }
+
+        var location = covered.location
+        repeat {
+            let current = string.paragraphRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(current)
+            guard current.length > 0, let own = paragraph(in: current),
+                  let style = storage.attribute(.paragraphStyle, at: current.location, effectiveRange: nil) as? NSParagraphStyle
+            else { continue }
+            let styleID = own.styleID ?? styles.defaultParagraphStyleID
+            func matches(_ neighbour: NSRange?) -> Bool {
+                guard own.contextualSpacing == true, let neighbour, let other = paragraph(in: neighbour) else { return false }
+                return (other.styleID ?? styles.defaultParagraphStyleID) == styleID
+            }
+            let before = matches(paragraphRange(before: current)) ? 0 : CGFloat(own.spacingBefore ?? 0) / 20
+            let after = matches(paragraphRange(after: current)) ? 0 : CGFloat(own.spacingAfter ?? 0) / 20
+            guard style.paragraphSpacingBefore != before || style.paragraphSpacing != after,
+                  let adjusted = style.mutableCopy() as? NSMutableParagraphStyle else { continue }
+            adjusted.paragraphSpacingBefore = before
+            adjusted.paragraphSpacing = after
+            storage.addAttribute(.paragraphStyle, value: adjusted, range: current)
+        } while location < NSMaxRange(covered)
     }
 
     /// The box of the paragraph a range of text belongs to: its mark's, or

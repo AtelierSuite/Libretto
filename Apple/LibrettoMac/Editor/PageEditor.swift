@@ -322,6 +322,7 @@ final class PageEditor: NSObject, NSTextViewDelegate {
             for range in changed {
                 DocumentRenderer.restyle(storage, paragraphsIn: range, finalParagraph: finalParagraph, context: context)
             }
+            DocumentRenderer.respace(storage, around: textView.selectedRange(), finalParagraph: finalParagraph, styles: context.styles)
         }
         relayout()
         scheduleSync()

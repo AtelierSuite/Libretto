@@ -341,6 +341,8 @@ public struct ParagraphProperties: Equatable, Hashable, Sendable {
     public var keepNext: Bool?
     public var keepLines: Bool?
     public var widowControl: Bool?
+    /// Whether the space before and after is left out next to a paragraph of the same style.
+    public var contextualSpacing: Bool?
     /// Six-digit RGB behind the paragraph.
     public var shadingHex: String?
     public var borders: ParagraphBorders?
@@ -366,6 +368,7 @@ public struct ParagraphProperties: Equatable, Hashable, Sendable {
             keepNext: other.keepNext ?? keepNext,
             keepLines: other.keepLines ?? keepLines,
             widowControl: other.widowControl ?? widowControl,
+            contextualSpacing: other.contextualSpacing ?? contextualSpacing,
             shadingHex: other.shadingHex ?? shadingHex,
             borders: other.borders ?? borders,
             tabStops: tabStops,
@@ -397,6 +400,7 @@ public struct ParagraphProperties: Equatable, Hashable, Sendable {
         keepNext: Bool? = nil,
         keepLines: Bool? = nil,
         widowControl: Bool? = nil,
+        contextualSpacing: Bool? = nil,
         shadingHex: String? = nil,
         borders: ParagraphBorders? = nil,
         tabStops: [TabStop]? = nil,
@@ -416,6 +420,7 @@ public struct ParagraphProperties: Equatable, Hashable, Sendable {
         self.keepNext = keepNext
         self.keepLines = keepLines
         self.widowControl = widowControl
+        self.contextualSpacing = contextualSpacing
         self.shadingHex = shadingHex
         self.borders = borders
         self.tabStops = tabStops

@@ -701,6 +701,7 @@ public enum PropertyReader: Sendable {
         result.keepNext = isOn(pPr.firstChild(named: "keepNext"))
         result.keepLines = isOn(pPr.firstChild(named: "keepLines"))
         result.widowControl = isOn(pPr.firstChild(named: "widowControl"))
+        result.contextualSpacing = isOn(pPr.firstChild(named: "contextualSpacing"))
         result.shadingHex = pPr.firstChild(named: "shd").flatMap(fill)
         if let pBdr = pPr.firstChild(named: "pBdr") {
             var borders = ParagraphBorders()
