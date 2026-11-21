@@ -585,25 +585,79 @@ public enum MathRenderer: Sendable {
             }
         }
 
+        /// The space between rows of a matrix or equation array, as its `rSpRule` and `rSp` say: single by default,
+        /// one and a half or double lines, exactly `rSp` twips, or `rSp` half-lines.
+        private func rowGap(_ properties: XMLElement?) -> CGFloat {
+            let single = size * 0.2
+            let line = size * 1.15
+            let value = CGFloat(properties?.firstChild(named: "rSp")?.attribute("val").flatMap { Int($0) } ?? 0)
+            switch properties?.firstChild(named: "rSpRule")?.attribute("val") {
+            case "1": return single + line * 0.5
+            case "2": return single + line
+            case "3": return value / 20
+            case "4": return single + max(0, value / 2 - 1) * line
+            default: return single
+            }
+        }
+
+        /// The baseline of lines a total height tall, measured down from their top, as `baseJc` says.
+        private func baseline(_ baseJc: String?, total: CGFloat, first: Box, last: Box) -> CGFloat {
+            switch baseJc {
+            case "top": return first.ascent
+            case "bot", "bottom": return total - last.descent
+            default: return total / 2 + axis
+            }
+        }
+
         private func matrix(_ element: XMLElement) -> Box {
+            let properties = element.firstChild(named: "mPr")
             let rows = element.children(named: "mr").map { $0.children(named: "e").map { strut(row($0)) } }
             let columns = rows.map(\.count).max() ?? 0
+            guard columns > 0 else { return .empty }
             let widths = (0..<columns).map { column in rows.compactMap { $0.indices.contains(column) ? $0[column].width : nil }.max() ?? 0 }
-            let gap = size * 0.6
+            // Each `m:mc` lines up as many columns as its count says, in turn; the rest are centred.
+            var justifications: [String] = []
+            for group in properties?.firstChild(named: "mcs")?.children(named: "mc") ?? [] {
+                let groupProperties = group.firstChild(named: "mcPr")
+                let count = groupProperties?.firstChild(named: "count")?.attribute("val").flatMap { Int($0) } ?? 1
+                let justification = groupProperties?.firstChild(named: "mcJc")?.attribute("val") ?? "center"
+                justifications += Array(repeating: justification, count: max(1, count))
+            }
+            let single = size * 0.6
+            let value = CGFloat(properties?.firstChild(named: "cGp")?.attribute("val").flatMap { Int($0) } ?? 0)
+            let gap: CGFloat
+            switch properties?.firstChild(named: "cGpRule")?.attribute("val") {
+            case "1": gap = single * 1.5
+            case "2": gap = single * 2
+            case "3": gap = value / 20
+            case "4": gap = single * value / 2
+            default: gap = single
+            }
+            // A column and the gap after it take at least the minimum column spacing.
+            let minimum = CGFloat(properties?.firstChild(named: "cSp")?.attribute("val").flatMap { Int($0) } ?? 0) / 20
+            let advances = widths.map { max($0 + gap, minimum) }
+            let width = advances.dropLast().reduce(0, +) + (widths.last ?? 0)
             let heights = rows.map { cells in (cells.map(\.ascent).max() ?? 0, cells.map(\.descent).max() ?? 0) }
-            let total = heights.reduce(0) { $0 + $1.0 + $1.1 } + CGFloat(max(0, rows.count - 1)) * size * 0.2
-            let width = widths.reduce(0, +) + gap * CGFloat(max(0, columns - 1))
-            let axis = self.axis
-            return Box(width: width, ascent: total / 2 + axis, descent: total / 2 - axis) { origin in
-                var y = origin.y - total / 2 - axis
+            let leading = rowGap(properties)
+            let total = heights.reduce(0) { $0 + $1.0 + $1.1 } + CGFloat(max(0, rows.count - 1)) * leading
+            let base = baseline(
+                properties?.firstChild(named: "baseJc")?.attribute("val"), total: total,
+                first: Box(width: 0, ascent: heights[0].0, descent: heights[0].1) { _ in },
+                last: Box(width: 0, ascent: heights[heights.count - 1].0, descent: heights[heights.count - 1].1) { _ in }
+            )
+            return Box(width: width, ascent: base, descent: total - base) { origin in
+                var y = origin.y - base
                 for (index, cells) in rows.enumerated() {
                     y += heights[index].0
                     var x = origin.x
                     for (column, cell) in cells.enumerated() {
-                        cell.draw(CGPoint(x: x + (widths[column] - cell.width) / 2, y: y))
-                        x += widths[column] + gap
+                        let room = widths[column] - cell.width
+                        let justification = column < justifications.count ? justifications[column] : "center"
+                        let offset = justification == "left" ? 0 : justification == "right" ? room : room / 2
+                        cell.draw(CGPoint(x: x + offset, y: y))
+                        x += advances[column]
                     }
-                    y += heights[index].1 + size * 0.2
+                    y += heights[index].1 + leading
                 }
             }
         }
@@ -653,17 +707,12 @@ public enum MathRenderer: Sendable {
                     }
                 }
             }
-            let leading = size * 0.2
+            let leading = rowGap(element.firstChild(named: "eqArrPr"))
             let total = rows.reduce(0) { $0 + $1.ascent + $1.descent } + leading * CGFloat(rows.count - 1)
             // Where the array's own baseline falls, measured down from its top.
-            let baseline: CGFloat
-            switch property(element, "eqArrPr", "baseJc") {
-            case "top": baseline = rows[0].ascent
-            case "bot", "bottom": baseline = total - rows[rows.count - 1].descent
-            default: baseline = total / 2 + axis
-            }
-            return Box(width: width, ascent: baseline, descent: total - baseline) { origin in
-                var y = origin.y - baseline
+            let base = baseline(property(element, "eqArrPr", "baseJc"), total: total, first: rows[0], last: rows[rows.count - 1])
+            return Box(width: width, ascent: base, descent: total - base) { origin in
+                var y = origin.y - base
                 for row in rows {
                     y += row.ascent
                     row.draw(CGPoint(x: origin.x, y: y))

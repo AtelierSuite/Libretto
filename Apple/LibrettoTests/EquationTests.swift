@@ -143,6 +143,60 @@ struct EquationTests {
         #expect(integral.width < grown.width)
     }
 
+    /// The left and right ends of the ink in the top and bottom halves of an equation's picture.
+    private func inkEnds(_ omml: String) throws -> (top: ClosedRange<Int>, bottom: ClosedRange<Int>) {
+        let xml = omml.replacingOccurrences(of: "<m:oMath>", with: "<m:oMath \(Self.m)>", options: .anchored)
+        let image = try #require(MathRenderer.image(forXML: xml, fontSize: 40, color: .black)?.image.cgImage)
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try #require(CGContext(
+            data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        func ends(_ rows: Range<Int>) -> ClosedRange<Int> {
+            var columns: [Int] = []
+            for y in rows { for x in 0..<width where pixels[(y * width + x) * 4 + 3] > 128 { columns.append(x) } }
+            return (columns.min() ?? 0)...(columns.max() ?? 0)
+        }
+        return (ends(0..<height / 2), ends(height / 2..<height))
+    }
+
+    @Test("A matrix lines its columns up and spaces its rows and columns as its properties say")
+    func matrixProperties() throws {
+        func matrix(_ properties: String, _ rows: [[String]]) -> String {
+            let cells = rows.map { "<m:mr>" + $0.map { "<m:e>\(r($0))</m:e>" }.joined() + "</m:mr>" }.joined()
+            return "<m:oMath><m:m><m:mPr>\(properties)</m:mPr>\(cells)</m:m></m:oMath>"
+        }
+        let column = [["x"], ["xxxx"]]
+        let left = try inkEnds(matrix("<m:mcs><m:mc><m:mcPr><m:count m:val=\"1\"/><m:mcJc m:val=\"left\"/></m:mcPr></m:mc></m:mcs>", column))
+        #expect(abs(left.top.lowerBound - left.bottom.lowerBound) <= 3)
+        let right = try inkEnds(matrix("<m:mcs><m:mc><m:mcPr><m:count m:val=\"1\"/><m:mcJc m:val=\"right\"/></m:mcPr></m:mc></m:mcs>", column))
+        #expect(abs(right.top.upperBound - right.bottom.upperBound) <= 3)
+        let centred = try inkEnds(matrix("", column))
+        #expect(centred.top.lowerBound - centred.bottom.lowerBound > 10)
+
+        let cells = [["a", "b"], ["c", "d"]]
+        let plain = try box(matrix("", cells))
+        #expect(try box(matrix("<m:cGpRule m:val=\"2\"/>", cells)).width > plain.width + 1)
+        #expect(abs(try box(matrix("<m:cGpRule m:val=\"3\"/><m:cGp m:val=\"1440\"/>", cells)).width - plain.width - (72 - Self.size * 0.6)) < 0.5)
+        #expect(try box(matrix("<m:cSp m:val=\"2880\"/>", cells)).width >= 144)
+        let doubled = try box(matrix("<m:rSpRule m:val=\"2\"/>", cells))
+        #expect(doubled.ascent + doubled.descent > plain.ascent + plain.descent + Self.size)
+        let top = try box(matrix("<m:baseJc m:val=\"top\"/>", cells))
+        #expect(top.ascent < plain.ascent)
+    }
+
+    @Test("An equation array spaces its lines as its row spacing says")
+    func equationArrayRowSpacing() throws {
+        func array(_ properties: String) throws -> MathRenderer.Box {
+            try box("<m:oMath><m:eqArr><m:eqArrPr>\(properties)</m:eqArrPr><m:e>\(r("a=b"))</m:e><m:e>\(r("c=d"))</m:e></m:eqArr></m:oMath>")
+        }
+        let single = try array("")
+        let exact = try array("<m:rSpRule m:val=\"3\"/><m:rSp m:val=\"400\"/>")
+        #expect(abs((exact.ascent + exact.descent) - (single.ascent + single.descent) - (20 - Self.size * 0.2)) < 0.5)
+    }
+
     @Test("A display equation is centred unless it says left or right")
     func displayAlignment() {
         #expect(MathRenderer.displayAlignment(of: ["<m:oMathPara \(Self.m)><m:oMath/></m:oMathPara>"]) == .center)
