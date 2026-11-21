@@ -1085,6 +1085,7 @@ public enum PageSetupReader: Sendable {
             }
         }
         setup.pageNumberFormat = sectPr.firstChild(named: "pgNumType")?.attribute("fmt").flatMap { $0 == "decimal" ? nil : $0 }
+        setup.pageNumberStart = sectPr.firstChild(named: "pgNumType")?.attribute("start").flatMap { Int($0) }
         setup.originalHeaderFooters = setup.headerFooters
         return setup
     }

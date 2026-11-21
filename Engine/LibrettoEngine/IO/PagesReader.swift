@@ -1771,7 +1771,9 @@ public struct PagesConverter {
         guard let section = archive[sectionID], section.type == PagesReader.Types.section else { return setup }
         // The writer keeps what it does not model of a section, such as where its page numbers start, as it was read.
         setup.preservedXML = setup.preservedXML?.replacing(#/<w:pgNumType\b[^>]*\/>/#, with: "")
+        setup.pageNumberStart = nil
         if section.message.bool(21) == true, let start = section.message.optionalUInt(22) {
+            setup.pageNumberStart = Int(clamping: start)
             setup.preservedXML = (setup.preservedXML ?? "<w:sectPr></w:sectPr>").replacingOccurrences(
                 of: "</w:sectPr>", with: "<w:pgNumType w:start=\"\(Int(clamping: start))\"/></w:sectPr>"
             )

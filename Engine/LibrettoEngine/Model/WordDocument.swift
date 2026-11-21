@@ -1604,6 +1604,8 @@ public struct PageSetup: Equatable, Sendable {
     /// `w:pgNumType`'s format for the page numbers its headers and footers
     /// show, such as `lowerRoman`; `nil` for 1, 2, 3.
     public var pageNumberFormat: String?
+    /// `w:pgNumType`'s `w:start`: the number the section's first page takes, or `nil` to carry on counting.
+    public var pageNumberStart: Int?
     public var preservedXML: String?
     public var original: PageSetupValues?
 
