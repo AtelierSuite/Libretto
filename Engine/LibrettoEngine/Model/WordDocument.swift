@@ -106,17 +106,23 @@ public struct WordDocument: Equatable, Sendable {
         return placed
     }
 
+    /// A paragraph's text without its hidden text.
+    private func visibleText(of paragraph: Paragraph) -> String {
+        paragraph.inlines.filter { inline in
+            styles.resolvedRunStyle(inline.format.style, paragraphStyleID: paragraph.properties.styleID).isHidden != true
+        }.map(\.plainText).joined()
+    }
+
     /// The document's words, for the word count.
     public var wordCount: Int {
         allParagraphs.reduce(0) { total, paragraph in
             #if canImport(Darwin)
             var count = 0
-            paragraph.plainText.enumerateSubstrings(
-                in: paragraph.plainText.startIndex..., options: [.byWords, .substringNotRequired]
-            ) { _, _, _, _ in count += 1 }
+            let text = visibleText(of: paragraph)
+            text.enumerateSubstrings(in: text.startIndex..., options: [.byWords, .substringNotRequired]) { _, _, _, _ in count += 1 }
             return total + count
             #else
-            return total + Self.wordCount(paragraph.plainText)
+            return total + Self.wordCount(visibleText(of: paragraph))
             #endif
         }
     }
@@ -1369,6 +1375,8 @@ public struct RunStyle: Equatable, Hashable, Sendable {
     public var emboss: Bool?
     /// Engraved, as Word calls it.
     public var imprint: Bool?
+    /// Hidden text (`w:vanish`), kept in the file but left off the page.
+    public var isHidden: Bool?
 
     public enum VerticalPosition: String, Sendable {
         case superscript
@@ -1405,7 +1413,8 @@ public struct RunStyle: Equatable, Hashable, Sendable {
             outline: other.outline ?? outline,
             shadow: other.shadow ?? shadow,
             emboss: other.emboss ?? emboss,
-            imprint: other.imprint ?? imprint
+            imprint: other.imprint ?? imprint,
+            isHidden: other.isHidden ?? isHidden
         )
     }
 
@@ -1429,7 +1438,8 @@ public struct RunStyle: Equatable, Hashable, Sendable {
         outline: Bool? = nil,
         shadow: Bool? = nil,
         emboss: Bool? = nil,
-        imprint: Bool? = nil
+        imprint: Bool? = nil,
+        isHidden: Bool? = nil
     ) {
         self.characterStyleID = characterStyleID
         self.fontName = fontName
@@ -1451,6 +1461,7 @@ public struct RunStyle: Equatable, Hashable, Sendable {
         self.shadow = shadow
         self.emboss = emboss
         self.imprint = imprint
+        self.isHidden = isHidden
     }
 }
 

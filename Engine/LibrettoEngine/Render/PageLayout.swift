@@ -655,10 +655,10 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return pages
     }
 
-    // MARK: - Capitals
+    // MARK: - Capitals and hidden text
 
     /// Text in capitals keeps its letters as typed; it is drawn with the
-    /// glyphs of their capitals.
+    /// glyphs of their capitals. Hidden text gets null glyphs, which take no room.
     public func layoutManager(
         _ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
         properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>,
@@ -668,22 +668,34 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         let first = characterIndexes[0]
         let last = characterIndexes[glyphRange.length - 1]
         guard first < storage.length else { return 0 }
-        var hasCaps = false
-        storage.enumerateAttribute(
-            .librettoAllCaps, in: NSRange(location: first, length: min(storage.length, last + 1) - first)
-        ) { value, _, stop in
-            if value != nil {
-                hasCaps = true
-                stop.pointee = true
+        let span = NSRange(location: first, length: min(storage.length, last + 1) - first)
+        func occurs(_ key: NSAttributedString.Key) -> Bool {
+            var found = false
+            storage.enumerateAttribute(key, in: span) { value, _, stop in
+                if value != nil {
+                    found = true
+                    stop.pointee = true
+                }
             }
+            return found
         }
-        guard hasCaps else { return 0 }
+        let hasCaps = occurs(.librettoAllCaps)
+        let hasHidden = occurs(.librettoHidden)
+        guard hasCaps || hasHidden else { return 0 }
         let string = storage.string as NSString
         var replaced = Array(UnsafeBufferPointer(start: glyphs, count: glyphRange.length))
+        var replacedProperties = Array(UnsafeBufferPointer(start: properties, count: glyphRange.length))
         var changed = false
         for offset in 0..<glyphRange.length {
             let index = characterIndexes[offset]
-            guard index < storage.length, storage.attribute(.librettoAllCaps, at: index, effectiveRange: nil) != nil,
+            guard index < storage.length else { continue }
+            if hasHidden, storage.attribute(.librettoHidden, at: index, effectiveRange: nil) != nil,
+               string.character(at: index) != TextCharacters.paragraphBreakUnit {
+                replacedProperties[offset] = .null
+                changed = true
+                continue
+            }
+            guard hasCaps, storage.attribute(.librettoAllCaps, at: index, effectiveRange: nil) != nil,
                   let scalar = UnicodeScalar(string.character(at: index)),
                   CharacterSet.lowercaseLetters.contains(scalar) else { continue }
             let upper = Array(String(Character(scalar)).uppercased().utf16)
@@ -697,10 +709,12 @@ public final class PageLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         }
         guard changed else { return 0 }
         replaced.withUnsafeBufferPointer { buffer in
-            layoutManager.setGlyphs(
-                buffer.baseAddress!, properties: properties, characterIndexes: characterIndexes, font: font,
-                forGlyphRange: glyphRange
-            )
+            replacedProperties.withUnsafeBufferPointer { glyphProperties in
+                layoutManager.setGlyphs(
+                    buffer.baseAddress!, properties: glyphProperties.baseAddress!, characterIndexes: characterIndexes, font: font,
+                    forGlyphRange: glyphRange
+                )
+            }
         }
         return glyphRange.length
     }

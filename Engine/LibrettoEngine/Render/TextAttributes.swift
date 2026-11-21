@@ -25,6 +25,8 @@ extension NSAttributedString.Key {
     public static let librettoBlock = NSAttributedString.Key("libretto.block")
     /// On text drawn in capitals, which the layout manager draws upper-case glyphs for.
     public static let librettoAllCaps = NSAttributedString.Key("libretto.allCaps")
+    /// Hidden text: kept in the text, but given no glyphs to draw or room to take.
+    public static let librettoHidden = NSAttributedString.Key("libretto.hidden")
     /// A `DropCapBox` on a drop cap's paragraph, whose letter is drawn large
     /// beside the start of the next paragraph rather than on a line of its own.
     public static let librettoDropCap = NSAttributedString.Key("libretto.dropCap")

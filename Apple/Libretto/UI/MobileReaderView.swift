@@ -217,6 +217,9 @@ struct MobileTextBuilder {
     private func attributed(_ paragraph: Paragraph) -> AttributedString {
         var result = AttributedString()
         for inline in paragraph.inlines {
+            if context.styles.resolvedRunStyle(inline.format.style, paragraphStyleID: paragraph.properties.styleID).isHidden == true {
+                continue
+            }
             let string: String
             switch inline.content {
             case .text(let text): string = text

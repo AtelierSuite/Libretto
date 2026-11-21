@@ -772,6 +772,7 @@ public enum PropertyReader: Sendable {
         result.verticalAlignment = rPr.firstChild(named: "vertAlign")?.attribute("val")
             .flatMap(RunStyle.VerticalPosition.init(rawValue:))
         result.allCaps = isOn(rPr.firstChild(named: "caps"))
+        result.isHidden = isOn(rPr.firstChild(named: "vanish")) ?? isOn(rPr.firstChild(named: "specVanish"))
         return result
     }
 

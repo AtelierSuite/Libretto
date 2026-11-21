@@ -140,6 +140,37 @@ struct FormattingTests {
         #expect(read.properties.contextualSpacing == true)
     }
 
+    @Test("Hidden text is read, kept, takes no room on the page and is left out of the word count")
+    func hiddenText() throws {
+        let body = """
+            <w:p><w:r><w:t xml:space="preserve">Shown </w:t></w:r>\
+            <w:r><w:rPr><w:vanish/></w:rPr><w:t xml:space="preserve">secret words here </w:t></w:r>\
+            <w:r><w:t>end</w:t></w:r></w:p>
+            """
+        let document = try DOCXReader.document(fromParts: Fixtures.parts(body: body))
+        guard case .paragraph(let paragraph) = document.body.first else { Issue.record("No paragraph"); return }
+        #expect(paragraph.inlines.map(\.format.style.isHidden) == [nil, true, nil])
+        #expect(document.wordCount == 2)
+
+        let visible = try DOCXReader.document(fromParts: Fixtures.parts(
+            body: "<w:p><w:r><w:t xml:space=\"preserve\">Shown end</w:t></w:r></w:p>"
+        ))
+        let laid = WordSpacingTests.layOut(document)
+        let plain = WordSpacingTests.layOut(visible)
+        func endX(_ laid: WordSpacingTests.Laid) -> CGFloat {
+            let location = (laid.storage.string as NSString).range(of: "end").location
+            return laid.layoutManager.location(forGlyphAt: laid.layoutManager.glyphIndexForCharacter(at: location)).x
+        }
+        #expect(abs(endX(laid) - endX(plain)) < 0.5)
+
+        #expect(Fixtures.text(try Fixtures.written(document), "word/document.xml").contains("<w:vanish/>"))
+
+        // In a table cell too.
+        let cell = TableCell(blocks: [document.body[0]])
+        let context = RenderContext(document: document, scheme: .light, images: ImageStore())
+        #expect(TableRenderer.cellText(cell, context: context).string == "Shown end")
+    }
+
     @Test("A style's tab stop the paragraph does without is cleared")
     func clearsStyleTabs() {
         let style = ParagraphProperties(tabStops: [TabStop(position: 720), TabStop(position: 1440)])
