@@ -97,6 +97,30 @@ struct EquationTests {
         #expect(DocumentRenderer.paragraphStyle(display, context: context, isListItem: false).alignment == .center)
     }
 
+    @Test("The phone reader draws equations: inline ones in their line, display ones on their own")
+    func readerEquations() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Resources/Equations.docx")
+        let document = try DOCXReader.document(from: Data(contentsOf: url))
+        let equations = document.body.flatMap(\.paragraphs).flatMap(\.inlines).compactMap { inline -> String? in
+            guard case .paragraphChild(let xml, _) = inline.content, MathRenderer.isEquation(xml) else { return nil }
+            return xml
+        }
+        let displays = equations.filter { MathRenderer.displayAlignment(of: [$0]) != nil }
+        #expect(!displays.isEmpty)
+
+        let items = MobileLayout(document: document, scheme: .light).items
+        let inline = items.flatMap { item -> [MobileText.Piece] in
+            guard case .paragraph(let paragraph) = item.content else { return [] }
+            return paragraph.text.pieces
+        }.filter { if case .equation = $0 { true } else { false } }
+        let standing = items.filter { $0.id.contains("-equation-") }
+        #expect(inline.count == equations.count - displays.count)
+        #expect(standing.count == displays.count)
+        // The fraction reads as its linear form to VoiceOver, not as its letters run together.
+        let labels = inline.compactMap { piece -> String? in if case .equation(_, _, let label) = piece { label } else { nil } }
+        #expect(labels.contains { $0.contains("/") })
+    }
+
     @Test("A display equation is centred unless it says left or right")
     func displayAlignment() {
         #expect(MathRenderer.displayAlignment(of: ["<m:oMathPara \(Self.m)><m:oMath/></m:oMathPara>"]) == .center)
